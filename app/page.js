@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client'
 import { useState, useEffect } from 'react';
 
@@ -6,46 +5,30 @@ export default function EVA(){
   const [msgs,setMsgs]=useState([]);
   const [input,setInput]=useState('');
   const [loading,setLoading]=useState(false);
-  
   useEffect(()=>{ 
     const h=new Date().getHours();
-    let g="Good morning, Boss. I'm here.";
+    let g="Good morning, Boss.";
     if(h>=12) g="Good afternoon, Boss.";
     if(h>=17) g="Good evening, Boss.";
     setMsgs([{role:'eva',text:g}]) 
   },[]);
-  
   const handleSend=async()=>{
     if(!input.trim()) return;
     const t=input; 
     setMsgs(m=>[...m,{role:'user',text:t}]); 
-    setInput(''); 
-    setLoading(true);
+    setInput(''); setLoading(true);
     try{
       const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:t})});
       const d=await r.json();
-      setMsgs(m=>[...m,{role:'eva',text:d.reply||"Sorry Boss.", files: d.files || null}]);
-    }catch{ 
-      setMsgs(m=>[...m,{role:'eva',text:"Network issue."}]) 
-    }
+      setMsgs(m=>[...m,{role:'eva',text:d.reply||"Sorry Boss."}]);
+    }catch{ setMsgs(m=>[...m,{role:'eva',text:"Network issue."}]) }
     setLoading(false);
   };
-  
   return(
     <div style={{minHeight:'100vh',background:'#0a0a14',color:'white',padding:16,fontFamily:'sans-serif',display:'flex',flexDirection:'column'}}>
       <div style={{fontSize:22,fontWeight:'bold',letterSpacing:4}}>EVA</div>
       <div style={{flex:1,marginTop:24,display:'flex',flexDirection:'column',gap:10,overflowY:'auto',marginBottom:20}}>
-        {msgs.map((m,i)=>
-          <div key={i} style={{maxWidth:'85%',padding:12,borderRadius:16,fontSize:14,background:m.role==='eva'?'#1a1a2e':'#7c3aed',alignSelf:m.role==='eva'?'flex-start':'flex-end'}}>
-            <div>{m.text}</div>
-            {m.files && m.files['/App.tsx'] && (
-              <div style={{marginTop:10, background:'white', color:'black', padding:10, borderRadius:10}}>
-                <div style={{fontSize:11, fontWeight:'bold'}}>🔥 EVA Website Built - Code Ready!</div>
-                <button onClick={()=>navigator.clipboard.writeText(m.files['/App.tsx'])} style={{marginTop:6, fontSize:10, background:'#7c3aed', color:'white', padding:'4px 8px', borderRadius:4, border:'none'}}>Copy Full Code</button>
-              </div>
-            )}
-          </div>
-        )}
+        {msgs.map((m,i)=><div key={i} style={{maxWidth:'85%',padding:12,borderRadius:16,fontSize:14,background:m.role==='eva'?'#1a1a2e':'#7c3aed',alignSelf:m.role==='eva'?'flex-start':'flex-end'}}>{m.text}</div>)}
         {loading && <div style={{padding:'12px 16px',background:'#1a1a2e',borderRadius:18,width:'fit-content'}}>● ● ●</div>}
       </div>
       <div style={{display:'flex',alignItems:'center',gap:8,background:'#1a1a2a',borderRadius:24,padding:8}}>
