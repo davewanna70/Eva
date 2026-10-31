@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import EvaWebsitePreview from "../components/EvaWebsitePreview"
+import EvaWebsitePreview from "@/components/EvaWebsitePreview"
 
 function getGreeting(){
   const h=new Date().getHours();
@@ -11,24 +11,24 @@ function getGreeting(){
 }
 
 export default function EVA(){
-  const [msgs,setMsgs]=useState<any>([]);
+  const [msgs,setMsgs]=useState<any[]>([]);
   const [input,setInput]=useState('');
   const [loading,setLoading]=useState(false);
+  
   useEffect(()=>{ setMsgs([{role:'eva',text:getGreeting()}]) },[]);
   
   const handleSend=async()=>{
     if(!input.trim()) return;
     const t=input; 
-    setMsgs((m:any)=>[...m,{role:'user',text:t}]); 
+    setMsgs(m=>[...m,{role:'user',text:t}]); 
     setInput(''); 
     setLoading(true);
     try{
       const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:t})});
       const d=await r.json();
-      // This now captures website files too
-      setMsgs((m:any)=>[...m,{role:'eva',text:d.reply||"Sorry Boss, I didn't get that.", files: d.files || null}]);
+      setMsgs(m=>[...m,{role:'eva',text:d.reply||"Sorry Boss, I didn't get that.", files: d.files || null}]);
     }catch{ 
-      setMsgs((m:any)=>[...m,{role:'eva',text:"Network issue Boss, try again."}]) 
+      setMsgs(m=>[...m,{role:'eva',text:"Network issue Boss, try again."}]) 
     }
     setLoading(false);
   };
@@ -42,7 +42,6 @@ export default function EVA(){
         {msgs.map((m:any,i:number)=>
           <div key={i} style={{maxWidth:'85%',padding:12,borderRadius:16,fontSize:14,background:m.role==='eva'?'#1a1a2e':'#7c3aed',alignSelf:m.role==='eva'?'flex-start':'flex-end'}}>
             <div>{m.text}</div>
-            {/* Website preview will show here */}
             {m.files && <EvaWebsitePreview files={m.files} />}
           </div>
         )}
@@ -55,4 +54,4 @@ export default function EVA(){
       </div>
     </div>
   )
-          }
+}
