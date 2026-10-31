@@ -10,8 +10,8 @@ export default function EVA(){
   useEffect(()=>{ 
     const h=new Date().getHours();
     let g="Good morning, Boss. I'm here.";
-    if(h>=12) g="Good afternoon, Boss. I'm here.";
-    if(h>=17) g="Good evening, Boss. I'm here.";
+    if(h>=12) g="Good afternoon, Boss.";
+    if(h>=17) g="Good evening, Boss.";
     setMsgs([{role:'eva',text:g}]) 
   },[]);
   
@@ -26,7 +26,7 @@ export default function EVA(){
       const d=await r.json();
       setMsgs(m=>[...m,{role:'eva',text:d.reply||"Sorry Boss.", files: d.files || null}]);
     }catch{ 
-      setMsgs(m=>[...m,{role:'eva',text:"Network issue Boss."}]) 
+      setMsgs(m=>[...m,{role:'eva',text:"Network issue."}]) 
     }
     setLoading(false);
   };
@@ -34,16 +34,14 @@ export default function EVA(){
   return(
     <div style={{minHeight:'100vh',background:'#0a0a14',color:'white',padding:16,fontFamily:'sans-serif',display:'flex',flexDirection:'column'}}>
       <div style={{fontSize:22,fontWeight:'bold',letterSpacing:4}}>EVA</div>
-      <div style={{fontSize:9,color:'#555',letterSpacing:3,marginTop:2}}>YOUR PERSONAL AI</div>
       <div style={{flex:1,marginTop:24,display:'flex',flexDirection:'column',gap:10,overflowY:'auto',marginBottom:20}}>
         {msgs.map((m,i)=>
           <div key={i} style={{maxWidth:'85%',padding:12,borderRadius:16,fontSize:14,background:m.role==='eva'?'#1a1a2e':'#7c3aed',alignSelf:m.role==='eva'?'flex-start':'flex-end'}}>
             <div>{m.text}</div>
             {m.files && m.files['/App.tsx'] && (
               <div style={{marginTop:10, background:'white', color:'black', padding:10, borderRadius:10}}>
-                <div style={{fontSize:11, fontWeight:'bold'}}>🔥 EVA Website Built</div>
-                <div style={{fontSize:10, background:'#eee', padding:6, marginTop:6, maxHeight:200, overflow:'auto'}}>{m.files['/App.tsx'].slice(0,600)}...</div>
-                <button onClick={()=>navigator.clipboard.writeText(m.files['/App.tsx'])} style={{marginTop:6, fontSize:10, background:'#7c3aed', color:'white', padding:'4px 8px', borderRadius:4, border:'none'}}>Copy Code</button>
+                <div style={{fontSize:11, fontWeight:'bold'}}>🔥 EVA Website Built - Code Ready!</div>
+                <button onClick={()=>navigator.clipboard.writeText(m.files['/App.tsx'])} style={{marginTop:6, fontSize:10, background:'#7c3aed', color:'white', padding:'4px 8px', borderRadius:4, border:'none'}}>Copy Full Code</button>
               </div>
             )}
           </div>
@@ -56,4 +54,4 @@ export default function EVA(){
       </div>
     </div>
   )
-              }
+}
