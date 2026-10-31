@@ -6,6 +6,11 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    serverActions: {
+      allowedOrigins: ["*"],
+    },
+  },
 }
 
 module.exports = nextConfig
