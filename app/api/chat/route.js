@@ -44,7 +44,7 @@ Live: ${live}
 `;
 
     // CORRECT MODEL - This one dey work 100%
-    const modelToUse = "meta-llama/llama-3.2-3b-instruct:free";
+    const modelToUse = "google/gemma-2-9b-it:free";
 
     const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
       method:'POST',
