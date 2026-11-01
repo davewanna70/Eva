@@ -1,40 +1,85 @@
-'use client'
-import { useState, useEffect } from 'react';
+'use client';
+import { useState, useRef } from 'react';
 
-export default function EVA(){
-  const [msgs,setMsgs]=useState([]);
-  const [input,setInput]=useState('');
-  const [loading,setLoading]=useState(false);
-  useEffect(()=>{ 
-    const h=new Date().getHours();
-    let g="Good morning, Boss.";
-    if(h>=12) g="Good afternoon, Boss.";
-    if(h>=17) g="Good evening, Boss.";
-    setMsgs([{role:'eva',text:g}]) 
-  },[]);
-  const handleSend=async()=>{
-    if(!input.trim()) return;
-    const t=input; 
-    setMsgs(m=>[...m,{role:'user',text:t}]); 
-    setInput(''); setLoading(true);
-    try{
-      const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:t})});
-      const d=await r.json();
-      setMsgs(m=>[...m,{role:'eva',text:d.reply||"Sorry Boss."}]);
-    }catch{ setMsgs(m=>[...m,{role:'eva',text:"Network issue."}]) }
+export default function Home() {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [gender, setGender] = useState('female');
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [speaking, setSpeaking] = useState(false);
+  const audioRef = useRef(null);
+
+  function cleanForVoice(text) {
+    return text.replace(/[*#_~`]/g, '').replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  async function speak(text) {
+    if (!voiceOn) return;
+    const cleaned = cleanForVoice(text);
+    if (!cleaned) return;
+    try {
+      setSpeaking(true);
+      const res = await fetch('/api/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleaned, gender })
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (audioRef.current) {
+        audioRef.current.src = url;
+        audioRef.current.play();
+        audioRef.current.onended = () => setSpeaking(false);
+      }
+    } catch (e) { setSpeaking(false); }
+  }
+
+  async function sendMessage() {
+    if (!input.trim()) return;
+    const userMsg = { role: 'user', content: input };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setLoading(true);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: input })
+      });
+      const data = await res.json();
+      const botMsg = { role: 'assistant', content: data.reply || 'Sorry Boss' };
+      setMessages(prev => [...prev, botMsg]);
+      if (voiceOn) speak(data.reply);
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Error Boss' }]);
+    }
     setLoading(false);
-  };
-  return(
-    <div style={{minHeight:'100vh',background:'#0a0a14',color:'white',padding:16,fontFamily:'sans-serif',display:'flex',flexDirection:'column'}}>
-      <div style={{fontSize:22,fontWeight:'bold',letterSpacing:4}}>EVA</div>
-      <div style={{flex:1,marginTop:24,display:'flex',flexDirection:'column',gap:10,overflowY:'auto',marginBottom:20}}>
-        {msgs.map((m,i)=><div key={i} style={{maxWidth:'85%',padding:12,borderRadius:16,fontSize:14,background:m.role==='eva'?'#1a1a2e':'#7c3aed',alignSelf:m.role==='eva'?'flex-start':'flex-end'}}>{m.text}</div>)}
-        {loading && <div style={{padding:'12px 16px',background:'#1a1a2e',borderRadius:18,width:'fit-content'}}>● ● ●</div>}
+  }
+
+  return (
+    <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', background: '#000', color: '#fff', minHeight: '100vh' }}>
+      <h1>EVA • {gender === 'female' ? 'FEMALE' : 'MALE'} {speaking ? '🔊' : ''}</h1>
+      <div style={{ height: '60vh', overflowY: 'auto', border: '1px solid #333', padding: '10px', marginBottom: '15px' }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ margin: '10px 0', color: m.role === 'user' ? '#0ff' : '#fff' }}>
+            <b>{m.role === 'user' ? 'You' : `Eva ${gender}`}:</b> {m.content}
+          </div>
+        ))}
+        {loading && <div>Eva typing...</div>}
       </div>
-      <div style={{display:'flex',alignItems:'center',gap:8,background:'#1a1a2a',borderRadius:24,padding:8}}>
-        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder="Message Eva..." style={{flex:1,background:'transparent',border:'none',outline:'none',color:'white',fontSize:14}} />
-        <button onClick={handleSend} style={{width:40,height:40,borderRadius:20,background:'#7c3aed',border:'none',color:'white',fontWeight:'bold'}}>↑</button>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMessage()} placeholder="Talk to Eva..." style={{ flex: 1, padding: '12px', background: '#111', color: '#fff', border: '1px solid #333' }} />
+        <button onClick={sendMessage} style={{ padding: '12px 20px', background: '#fff', color: '#000' }}>Send</button>
       </div>
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', background: '#111', padding: '15px', borderRadius: '10px', border: '1px solid #222' }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => setGender('female')} style={{ padding: '10px 15px', background: gender === 'female' ? '#ff007f' : '#333', color: '#fff', borderRadius: '20px', border: 'none' }}>👩 Female</button>
+          <button onClick={() => setGender('male')} style={{ padding: '10px 15px', background: gender === 'male' ? '#007fff' : '#333', color: '#fff', borderRadius: '20px', border: 'none' }}>👨 Male JARVIS</button>
+        </div>
+        <button onClick={() => setVoiceOn(!voiceOn)} style={{ padding: '10px 15px', background: voiceOn ? '#0f0' : '#f00', color: voiceOn ? '#000' : '#fff', borderRadius: '20px', border: 'none', fontWeight: 'bold' }}>{voiceOn ? '🔊 Voice ON' : '🔇 Voice OFF'}</button>
+      </div>
+      <audio ref={audioRef} hidden />
     </div>
-  )
-}
+  );
+          }
