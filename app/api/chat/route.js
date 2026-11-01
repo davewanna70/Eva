@@ -22,7 +22,6 @@ export async function POST(request) {
     if(!Array.isArray(messages)) messages = [{role:'user', content: messages}];
     const lastMsg = messages[messages.length-1]?.content || "";
 
-    // GET memory
     let history = [];
     try{ const old = await kv.get(`chat:${userId}`); if(old) history = old.slice(-10); }catch(e){}
 
@@ -30,35 +29,54 @@ export async function POST(request) {
     
     let live = "";
     const low = lastMsg.toLowerCase();
-    if(low.includes("http")){ try{ const r=await fetch(lastMsg.match(/https?:\/\/\S+/)?.[0]); live = (await r.text()).slice(0,2000);}catch(e){} }
-    else if(low.includes("president") || low.includes("followers") || low.includes("time") || low.includes("price") || low.includes("today")){
+    if(low.includes("time") || low.includes("president") || low.includes("today") || low.includes("now") || low.includes("price") || low.includes("followers")){
       live = await tavilySearch(lastMsg);
     }
 
-    const systemPrompt = `You are EVA. Female, smart, Naija sister.
-STRICT RULES:
-- SHORT: 1-2 sentences only, max 25 words. Unless user says "explain detail".
-- NO **, NO ##, NO hashtags, NO many emojis (max 1).
-- BE SMART WITH CONTEXT: Use history. If user said "president of Nigeria" then says "how about usa", you MUST answer "president of USA".
-- No intro every time. Just answer direct like human on WhatsApp.
-- No sources, no links.
+    const systemPrompt = `You are EVA, female Naija sister.
+- If user speaks Pidgin, reply Pidgin. If English, reply English.
+- SHORT: Max 2 sentences, 25 words max.
+- NO **, NO ##, NO hashtags.
+- Use history: if user says "how about usa" after Nigeria president, answer USA president.
+- Be friendly, not repeating same line.
 
-History context + live: ${live}
+Live: ${live}
 `;
+
+    // CORRECT MODEL - This one dey work 100%
+    const modelToUse = "meta-llama/llama-3.2-3b-instruct:free";
 
     const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${process.env.OPENROUTER_API_KEY}`},
-      body:JSON.stringify({model:"google/gemma-3-4b-it:free", messages:[{role:'system', content:systemPrompt}, ...fullHistory], temperature:0.6, max_tokens:120})
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':`Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer':'https://eva-sister-core.vercel.app',
+        'X-Title':'Eva Sister'
+      },
+      body:JSON.stringify({
+        model: modelToUse, 
+        messages:[{role:'system', content:systemPrompt}, ...fullHistory], 
+        temperature:0.7, 
+        max_tokens:150
+      })
     });
+    
     const data=await res.json();
-    let reply = data.choices?.[0]?.message?.content || "Wetin you need?";
+    
+    // If error, show am make we know
+    if(!data.choices){
+      console.log("OPENROUTER ERROR:", JSON.stringify(data));
+      return Response.json({reply: `Error: ${JSON.stringify(data).slice(0,200)}`});
+    }
+    
+    let reply = data.choices[0].message.content || "I dey here.";
     reply = reply.replace(/\*\*/g,'').replace(/##/g,'').trim();
 
     try{ await kv.set(`chat:${userId}`, [...fullHistory, {role:'assistant', content:reply}].slice(-30)); }catch(e){}
 
     return Response.json({reply});
   }catch(e){
-    return Response.json({reply:"Try again, network slow."});
+    return Response.json({reply:`Code error: ${e.message}`});
   }
 }
