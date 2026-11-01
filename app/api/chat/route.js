@@ -24,7 +24,6 @@ async function tavilySearch(query){
 export async function POST(request){
   try{
     const body = await request.json();
-    // FIX: Accept any format - messages, history, or single message
     let messages = body.messages || body.history || [];
     if(!messages.length && (body.message || body.input || body.prompt)){
       messages = [{role:'user', content: body.message || body.input || body.prompt}];
@@ -33,7 +32,7 @@ export async function POST(request){
     
     const apiKey = process.env.OPENROUTER_API_KEY;
     const lastText = (messages[messages.length-1]?.content || '').toLowerCase();
-    const needsLive = lastText.includes('live')||lastText.includes('follower')||lastText.includes('today')||lastText.includes('price')||lastText.includes('score')||lastText.includes('news');
+    const needsLive = lastText.includes('live')||lastText.includes('follower')||lastText.includes('today')||lastText.includes('price')||lastText.includes('news')||lastText.includes('score');
     
     const tools = needsLive ? [
       {type:'function',function:{name:'directFetch',description:'Fetch live url content',parameters:{type:'object',properties:{url:{type:'string'}},required:['url']}}},
@@ -42,8 +41,9 @@ export async function POST(request){
 
     const systemPrompt = 'You are EVA, female Naija AI, sexy, helpful, smart, you have LIVE internet tools. Date: '+new Date().toDateString();
 
+    // USE AUTO-ROUTER - NEVER FAILS AGAIN
     const payload = {
-      model: 'google/gemma-2-9b-it:free',
+      model: 'openrouter/free',
       messages: [{role:'system',content:systemPrompt},...messages],
       tools: tools.length?tools:undefined,
       tool_choice: tools.length?'auto':undefined
@@ -59,13 +59,21 @@ export async function POST(request){
     let msg = data.choices?.[0]?.message;
     
     if(!msg){
-      payload.model = 'meta-llama/llama-3.1-8b-instruct:free';
+      // Fallback 1: Gemma 4 31B free
+      payload.model = 'google/gemma-4-31b-it:free';
+      res = await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+apiKey},body:JSON.stringify(payload)});
+      data = await res.json();
+      msg = data.choices?.[0]?.message;
+    }
+    if(!msg){
+      // Fallback 2: Nemotron free
+      payload.model = 'nvidia/nemotron-3-nano-30b-a3b:free';
       res = await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+apiKey},body:JSON.stringify(payload)});
       data = await res.json();
       msg = data.choices?.[0]?.message;
     }
 
-    if(!msg) return Response.json({reply:'Boss check OPENROUTER_API_KEY. Error: '+JSON.stringify(data).substring(0,400)});
+    if(!msg) return Response.json({reply:'Boss OpenRouter error: '+JSON.stringify(data).substring(0,500)});
 
     if(msg.tool_calls){
       const toolResults=[];
@@ -85,6 +93,6 @@ export async function POST(request){
 
     return Response.json({reply: msg.content});
   }catch(e){
-    return Response.json({reply:'Eva error fixed: '+e.message});
+    return Response.json({reply:'Eva fix error: '+e.message});
   }
 }
