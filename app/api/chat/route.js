@@ -1,12 +1,13 @@
 // @ts-nocheck
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'
+import { kv } from '@vercel/kv';
 
 async function directFetch(url){
   try{
-    const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0'},signal:AbortSignal.timeout(5000)});
-    if(!r.ok) return 'Fetch failed '+r.status;
-    return 'LIVE DATA:\n'+(await r.text()).substring(0,8000);
-  }catch(e){ return 'Fetch error: '+e.message }
+    const r=await fetch(url,{headers:{'User-Agent':'Eva'}});
+    if(r.ok) return (await r.text()).slice(0,3000);
+    return '';
+  }catch(e){ return '' }
 }
 
 async function tavilySearch(query){
@@ -14,85 +15,89 @@ async function tavilySearch(query){
     const res=await fetch('https://api.tavily.com/search',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({api_key:process.env.TAVILY_API_KEY,query,max_results:5})
+      body:JSON.stringify({api_key:process.env.TAVILY_API_KEY, query, max_results:3, include_answer:true})
     });
     const data=await res.json();
-    return JSON.stringify(data).substring(0,8000);
-  }catch(e){ return 'Search fail' }
+    return (data.answer || JSON.stringify(data.results).slice(0,3000));
+  }catch(e){ return '' }
 }
 
-export async function POST(request){
+export async function POST(request) {
   try{
     const body = await request.json();
-    let messages = body.messages || body.history || [];
-    if(!messages.length && (body.message || body.input || body.prompt)){
-      messages = [{role:'user', content: body.message || body.input || body.prompt}];
+    let messages = body.messages || body.message || [];
+    const userId = body.userId || "default_user";
+    if(!Array.isArray(messages)) messages = [{role:'user', content: messages}];
+    
+    const lastUserMsg = messages[messages.length-1]?.content || "";
+
+    // --- MEMORY: GET ---
+    let history = [];
+    try{
+      const old = await kv.get(`chat:${userId}`);
+      if(Array.isArray(old)) history = old.slice(-12); // last 12 only for speed + context
+    }catch(e){}
+
+    // --- SMART CONTEXT FIX: If user says "how about X" "in Owerri" "in USA" ---
+    // We keep history so AI knows we are still talking about same topic
+    const fullMessagesForAI = [...history, ...messages];
+
+    // --- ONLY USE LIVE TOOLS WHEN NEEDED ---
+    const lower = lastUserMsg.toLowerCase();
+    const needsLive = lower.includes("http") || lower.includes("today") || lower.includes("now") || lower.includes("live") || lower.includes("price") || lower.includes("how many") || lower.includes("followers") || lower.includes("president") || lower.includes("time");
+    
+    let liveContext = "";
+    if(needsLive){
+      if(lower.includes("http")) liveContext = await directFetch(lastUserMsg.match(/https?:\/\/\S+/)?.[0] || "");
+      else if(lower.includes("follower") || lower.includes("president") || lower.includes("time") || lower.includes("price")) {
+         liveContext = await tavilySearch(lastUserMsg);
+      }
     }
-    if(!Array.isArray(messages)) messages = [messages];
-    
+
+    const systemPrompt = `
+You are EVA, female AI sister. You are super smart, fast, and human.
+RULES YOU MUST OBEY:
+1. SHORT: Max 1-2 sentences. Max 25 words. Never give long essay unless user says "explain in detail".
+2. NO FORMATTING: Never use **bold**, ##, **, hashtags, too many commas. Talk normal like WhatsApp.
+3. NO EMOJIS overload: Max 1 emoji per reply, or none.
+4. SMART CONTEXT: If user asks "how about usa" after "who is president of Nigeria", you MUST understand they mean "who is president of USA". Always use previous conversation to understand.
+5. BE CONCISE: If they ask "how many followers does Wizkid have on tiktok" answer: "Wizkid has about 3.4M on TikTok as of now." STOP. No source, no over 53M likes story.
+6. TIME: If they ask time, give short time only. Example: "It's 3:45 PM in Owerri now."
+7. NEVER say "As an AI", "Hey there! gorgeous! EVA here your sexy smart Naija AI" - Stop that intro everytime. Just answer direct.
+
+User ID: ${userId}
+${liveContext ? `LIVE INFO: ${liveContext}` : ""}
+`;
+
     const apiKey = process.env.OPENROUTER_API_KEY;
-    const lastText = (messages[messages.length-1]?.content || '').toLowerCase();
-    const needsLive = lastText.includes('live')||lastText.includes('follower')||lastText.includes('today')||lastText.includes('price')||lastText.includes('news')||lastText.includes('score');
-    
-    const tools = needsLive ? [
-      {type:'function',function:{name:'directFetch',description:'Fetch live url content',parameters:{type:'object',properties:{url:{type:'string'}},required:['url']}}},
-      {type:'function',function:{name:'tavilySearch',description:'Search web',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}}}
-    ] : [];
-
-    const systemPrompt = 'You are EVA, female Naija AI, sexy, helpful, smart, you have LIVE internet tools. Date: '+new Date().toDateString();
-
-    // USE AUTO-ROUTER - NEVER FAILS AGAIN
-    const payload = {
-      model: 'openrouter/free',
-      messages: [{role:'system',content:systemPrompt},...messages],
-      tools: tools.length?tools:undefined,
-      tool_choice: tools.length?'auto':undefined
+    // FAST MODEL ONLY - no 3 fallbacks = faster (2 sec not 6 sec)
+    const payload={
+      model:"google/gemma-3-4b-it:free",
+      messages:[{role:'system', content:systemPrompt}, ...fullMessagesForAI],
+      temperature:0.7,
+      max_tokens:120
     };
 
-    let res = await fetch('https://openrouter.ai/api/v1/chat/completions',{
+    const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
       method:'POST',
-      headers:{'Content-Type':'application/json',Authorization:'Bearer '+apiKey,'HTTP-Referer':'https://eva.vercel.app','X-Title':'Eva AI'},
-      body: JSON.stringify(payload)
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+      body:JSON.stringify(payload)
     });
-    
-    let data = await res.json();
-    let msg = data.choices?.[0]?.message;
-    
-    if(!msg){
-      // Fallback 1: Gemma 4 31B free
-      payload.model = 'google/gemma-4-31b-it:free';
-      res = await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+apiKey},body:JSON.stringify(payload)});
-      data = await res.json();
-      msg = data.choices?.[0]?.message;
-    }
-    if(!msg){
-      // Fallback 2: Nemotron free
-      payload.model = 'nvidia/nemotron-3-nano-30b-a3b:free';
-      res = await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+apiKey},body:JSON.stringify(payload)});
-      data = await res.json();
-      msg = data.choices?.[0]?.message;
-    }
+    const data=await res.json();
+    let reply = data.choices?.[0]?.message?.content || "I dey here. Wetin you need?";
 
-    if(!msg) return Response.json({reply:'Boss OpenRouter error: '+JSON.stringify(data).substring(0,500)});
+    // Clean reply: remove ** and ##
+    reply = reply.replace(/\*\*/g, '').replace(/##/g, '').replace(/#\w+/g, '').trim();
 
-    if(msg.tool_calls){
-      const toolResults=[];
-      for(const tc of msg.tool_calls){
-        const args = JSON.parse(tc.function.arguments);
-        const result = tc.function.name==='directFetch'?await directFetch(args.url):await tavilySearch(args.query);
-        toolResults.push({tool_call_id:tc.id,role:'tool',name:tc.function.name,content:result});
-      }
-      const res2 = await fetch('https://openrouter.ai/api/v1/chat/completions',{
-        method:'POST',
-        headers:{'Content-Type':'application/json',Authorization:'Bearer '+apiKey},
-        body:JSON.stringify({model:payload.model,messages:[{role:'system',content:systemPrompt},...messages,msg,...toolResults]})
-      });
-      data = await res2.json();
-      msg = data.choices?.[0]?.message;
-    }
+    // --- MEMORY: SAVE ---
+    try{
+      const toSave = [...fullMessagesForAI, {role:'assistant', content:reply}];
+      await kv.set(`chat:${userId}`, toSave.slice(-30)); // keep last 30
+    }catch(e){}
 
-    return Response.json({reply: msg.content});
+    return Response.json({reply});
+
   }catch(e){
-    return Response.json({reply:'Eva fix error: '+e.message});
+    return Response.json({reply: "Network slow, try again."});
   }
 }
