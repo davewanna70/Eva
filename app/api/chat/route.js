@@ -16,51 +16,36 @@ async function tavilySearch(query) {
     const data = await res.json(); return JSON.stringify(data);
   } catch (e) { return `Tavily failed: ${e.message}`; }
 }
+
+async function callGroq(payload, apiKey, baseUrl) {
+  // Try models one by one until one works
+  const modelsToTry = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'llama-3.1-70b-versatile'];
+  for (const model of modelsToTry) {
+    try {
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ ...payload, model }),
+      });
+      const data = await res.json();
+      if (data.choices) return data;
+      console.log(`Model ${model} failed:`, JSON.stringify(data).substring(0,200));
+    } catch (e) { console.log(`Model ${model} error:`, e.message); }
+  }
+  return null;
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
     const messages = body.messages || [];
-    
     let lastMsg = "";
-    if (messages.length > 0) {
-      lastMsg = (messages[messages.length-1]?.content || "").toLowerCase();
-    }
-
+    if (messages.length > 0) lastMsg = (messages[messages.length-1]?.content || "").toLowerCase();
     const needsLive = /followers|price|how much|live|score|now|today|current|speed|bugatti|tiktok|instagram|iphone|bitcoin|weather|goals|stats/i.test(lastMsg);
     const systemPrompt = `You are EVA, friendly Naija AI. Tools: directFetch(url) for LIVE, tavilySearch(query) fallback. Date: ${new Date().toDateString()}`;
-    
     const tools = needsLive ? [
       { type: 'function', function: { name: 'directFetch', description: 'Fetch LIVE', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
       { type: 'function', function: { name: 'tavilySearch', description: 'Search web', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
     ] : [];
-
     const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
-    const baseUrl = process.env.GROQ_API_KEY ? 'https://api.groq.com/openai/v1' : 'https://api.openai.com/v1';
-    const model = process.env.GROQ_API_KEY ? 'llama3-8b-8192' : 'gpt-4o-mini';
-
-    const baseMessages = [{ role: 'system', content: systemPrompt }].concat(messages);
-    let payload = { model: model, messages: baseMessages };
-    if (tools.length > 0) { payload.tools = tools; payload.tool_choice = 'auto'; }
-
-    let aiRes = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(payload) });
-    let data = await aiRes.json();
-    if (!data.choices) return Response.json({ reply: "Eva small wahala Boss, try again: " + JSON.stringify(data).substring(0,200) });
-    
-    let msg = data.choices[0].message;
-    if (msg.tool_calls) {
-      const toolResults = [];
-      for (const tc of msg.tool_calls) {
-        const args = JSON.parse(tc.function.arguments);
-        const result = tc.function.name === 'directFetch' ? await directFetch(args.url) : await tavilySearch(args.query);
-        toolResults.push({ tool_call_id: tc.id, role: 'tool', name: tc.function.name, content: result });
-      }
-      const secondPayload = { model: model, messages: baseMessages.concat([msg]).concat(toolResults) };
-      aiRes = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(secondPayload) });
-      data = await aiRes.json();
-      msg = data.choices[0].message;
-    }
-    return Response.json({ reply: msg.content });
-  } catch (err) { 
-    return Response.json({ reply: "Eva dey here Boss, how I fit help? (" + err.message + ")" }); 
-  }
-}
+    const baseUrl = process.env.GROQ_API_KEY ? 'https://api.groq.com/openai/v1' : 'https://api.openai
