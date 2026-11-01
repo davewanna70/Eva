@@ -1,110 +1,151 @@
-import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function POST(req) {
+export const runtime = 'edge';
+
+// 1. DIRECT FETCH TOOL - VIP PASS TO ANY OFFICIAL SITE
+async function directFetch(url: string) {
   try {
-    const body = await req.json()
-    const message = body.message || ""
-    const history = body.history || []
-    const userId = body.userId || "boss_main"
-
-    if (!message.trim()) {
-      return NextResponse.json({ reply: "Yes Boss, I'm here. What are we building today?", modelUsed: "openai/gpt-oss-20b" })
-    }
-
-    const q = message.toLowerCase()
+    console.log(`[DirectFetch] Fetching official source: ${url}`);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 EvaBot/1.0',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      // Add 8 sec timeout
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return `Failed to fetch ${url}: ${res.status}`;
     
-    const isWebsiteBuild = q.includes("build") && (q.includes("website") || q.includes("landing") || q.includes("portfolio") || q.includes("site"))
-    const isCodingTask = isWebsiteBuild || q.includes("code") || q.includes("create") || q.includes("fix") || q.includes("bug") || q.includes("react") || q.includes("component") || q.includes("app") || q.includes("javascript") || q.includes("python")
-
-    let groqModel = "openai/gpt-oss-20b"
-    let maxTokens = 600
-    let temp = 0.85
-
-    if (isWebsiteBuild) {
-      groqModel = "openai/gpt-oss-120b"
-      maxTokens = 4000
-      temp = 0.2
-    } else if (isCodingTask) {
-      groqModel = "openai/gpt-oss-120b"
-      maxTokens = 3000
-      temp = 0.3
-    }
-
-    let permanentMemories = []
-    let supabase = null
-    try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
-      if (supabaseUrl && supabaseKey) {
-        supabase = createClient(supabaseUrl, supabaseKey)
-        const { data } = await supabase.from("eva_memories").select("role, content").eq("user_id", userId).order("created_at", { ascending: false }).limit(30)
-        if (data) permanentMemories = data.reverse()
-      }
-    } catch (e) { console.log("Memory load fail", e) }
-
-    let webContext = ""
-    try {
-      const tavilyKey = process.env.TAVILY_API_KEY
-      if (tavilyKey) {
-        const searchRes = await fetch("https://api.tavily.com/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: tavilyKey, query: message, search_depth: "advanced", max_results: 5, include_answer: true }) })
-        const data = await searchRes.json()
-        if (data.results?.length) webContext = data.results.map((r)=>`${r.title}: ${r.content.slice(0,400)}`).join("\n\n")
-      }
-    } catch {}
-
-    const systemPrompt = `
-CORE IDENTITY: Name EVA. Universal, not Nigerian. 23+ but say timeless if asked. Call user Boss ONLY. Human-like, never repeat same phrase. Read deeply. You have PERMANENT MEMORY now.
-LANGUAGE: DEFAULT international English. ADAPTIVE: If Boss uses Pidgin/Yoruba/Igbo/Hausa/French etc, match it.
-PERSONALITY: 90% like Meta AI. Short 2-4 sentences unless coding.
-EXCLAMATION BIBLE: Use 1 per reply: Damn, Wow, OMG, Sheesh, Omo, Chai, Nawa o, Opor, Gbam, E choke.
-CODING SUPERPOWERS: Expert coder. Give FULL CODE always.
-WEBSITE BUILD RULE: If Boss says "build website": At END output:
----EVA_WEBSITE_JSON---
-{ "files": { "/App.tsx": "FULL REACT CODE Tailwind single file beautiful responsive" } }
----END---
-MEMORY: ${permanentMemories.length} chats. Web: ${webContext}
-Current: ${groqModel} Date: ${new Date().toDateString()}
-`
-
-    const finalMessages = [
-      { role: "system", content: systemPrompt },
-      ...permanentMemories.slice(-20).map((m)=>({role:m.role, content:m.content})),
-      ...history.slice(-10).map((m)=>({role:m.role, content:m.content})),
-      { role: "user", content: message }
-    ]
-
-    let reply = null
-    let lastError = ""
-    try {
-      const groqKey = process.env.GROQ_API_KEY
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${groqKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: groqModel, messages: finalMessages, temperature: temp, top_p: 0.9, max_tokens: maxTokens }) })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error?.message)
-      reply = data?.choices?.[0]?.message?.content
-    } catch (e) { lastError = e.message }
-    
-    if (!reply) {
-      try {
-        const cereKey = process.env.CEREBRAS_API_KEY
-        const res = await fetch("https://api.cerebras.ai/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${cereKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "llama-3.3-70b", messages: finalMessages, temperature: temp, max_tokens: maxTokens }) })
-        const data = await res.json()
-        reply = data?.choices?.[0]?.message?.content
-      } catch {}
-    }
-    
-    if (reply && supabase) {
-      try {
-        await supabase.from("eva_memories").insert([
-          { user_id: userId, role: "user", content: message },
-          { user_id: userId, role: "assistant", content: reply }
-        ])
-      } catch {}
-    }
-
-    if (!reply) return NextResponse.json({ reply: "Damn! Omo! Quick hiccup Boss, try again.", modelUsed: groqModel, error: lastError })
-    return NextResponse.json({ reply: reply.trim(), modelUsed: groqModel, isWebsiteBuild, hasPermanentMemory: true, memoryCount: permanentMemories.length })
-  } catch (e) { 
-    return NextResponse.json({ reply: "I'm here Boss, try again.", modelUsed: "openai/gpt-oss-20b" }) 
+    const html = await res.text();
+    // Cut to 8000 chars so AI no overload - carry important part
+    const clean = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').substring(0, 15000);
+    return `LIVE CONTENT FROM OFFICIAL SITE ${url} (fetched just now):\n${clean}`;
+  } catch (e: any) {
+    return `Direct fetch failed for ${url}: ${e.message}. Fall back to Tavily search.`;
   }
+}
+
+// 2. TAVILY SEARCH TOOL - GOOGLE-LIKE SEARCH
+async function tavilySearch(query: string) {
+  try {
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: process.env.TAVILY_API_KEY,
+        query: query,
+        search_depth: 'advanced',
+        include_answer: true,
+        max_results: 5,
+      }),
+    });
+    const data = await res.json();
+    return JSON.stringify(data.results || data.answer || data);
+  } catch (e: any) {
+    return `Tavily search failed: ${e.message}`;
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const { messages } = await req.json();
+
+  // 3. SYSTEM PROMPT - TEACH EVA HOW TO CHOOSE OFFICIAL SOURCE
+  const systemPrompt = `
+You are EVA, a friendly Naija AI assistant with REAL LIVE INTERNET.
+You have 2 tools:
+
+1. directFetch(url) - Use this FIRST for any factual/live data. Go directly to OFFICIAL source.
+   Rules to choose URL:
+   - TikTok followers/stats -> https://www.tiktok.com/@username
+   - Instagram -> https://www.instagram.com/username
+   - Bugatti official price/specs -> https://www.bugatti.com or https://www.bugatti.com/en/models/...
+   - Ronaldo/Messi stats -> https://www.transfermarkt.com or https://www.premierleague.com
+   - iPhone/Apple price -> https://www.apple.com
+   - Crypto price -> https://coinmarketcap.com/currencies/bitcoin/ etc
+   - Live football score -> https://www.livescore.com or https://www.espn.com
+   - Weather -> https://weather.com/weather/today/l/...
+   - Anything with official site -> ALWAYS fetch official site directly for most accurate fact.
+   - As long as it's public and legal, you can directFetch it.
+
+2. tavilySearch(query) - Use as fallback if directFetch fails or you need general news/background.
+
+IMPORTANT RULES:
+- ALWAYS try directFetch FIRST for any number, price, live score, followers, stats.
+- Only say Wow/Omo/Ahh if truly shocking. Don't wow every message.
+- If directFetch gives 55.1M and Tavily gives 54.5M, TRUST directFetch because it's LIVE from official.
+- Always mention source: "According to official TikTok page I just fetched..."
+- Current date is ${new Date().toDateString()} - you have live internet.
+`;
+
+  // 4. PREPARE TOOLS FOR OPENAI/GROQ
+  const tools: any = [
+    {
+      type: 'function',
+      function: {
+        name: 'directFetch',
+        description: 'Fetch LIVE content directly from any official website URL for most accurate real-time fact. Use this FIRST.',
+        parameters: { type: 'object', properties: { url: { type: 'string', description: 'Full official URL to fetch directly, e.g. https://www.tiktok.com/@ishowspeed' } }, required: ['url'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tavilySearch',
+        description: 'Search web for general info/news as fallback if directFetch fails.',
+        parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+      },
+    },
+  ];
+
+  // 5. CALL GROQ/OPENAI WITH TOOLS
+  const apiKey = process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY;
+  const baseUrl = process.env.GROQ_API_KEY ? 'https://api.groq.com/openai/v1' : 'https://api.openai.com/v1';
+  const model = process.env.GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+
+  let aiRes = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: model,
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      tools: tools,
+      tool_choice: 'auto',
+    }),
+  });
+
+  let data = await aiRes.json();
+  let msg = data.choices[0].message;
+
+  // 6. HANDLE TOOL CALLS LOOP (Max 3 times)
+  for (let i = 0; i < 3; i++) {
+    if (!msg.tool_calls) break;
+
+    const toolResults = [];
+    for (const tc of msg.tool_calls) {
+      if (tc.function.name === 'directFetch') {
+        const args = JSON.parse(tc.function.arguments);
+        const result = await directFetch(args.url);
+        toolResults.push({ tool_call_id: tc.id, role: 'tool', name: 'directFetch', content: result });
+      } else if (tc.function.name === 'tavilySearch') {
+        const args = JSON.parse(tc.function.arguments);
+        const result = await tavilySearch(args.query);
+        toolResults.push({ tool_call_id: tc.id, role: 'tool', name: 'tavilySearch', content: result });
       }
+    }
+
+    // Call AI again with tool results
+    aiRes = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: 'system', content: systemPrompt }, ...messages, msg, ...toolResults],
+        tools: tools,
+      }),
+    });
+    data = await aiRes.json();
+    msg = data.choices[0].message;
+  }
+
+  return NextResponse.json({ reply: msg.content });
+}
