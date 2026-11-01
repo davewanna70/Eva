@@ -1,24 +1,23 @@
 // @ts-nocheck
-import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
-async function directFetch(url: string) {
+async function directFetch(url) {
   try {
     console.log(`[DirectFetch] ${url}`);
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 EvaBot' },
-      signal: AbortSignal.timeout(3000), // 3 sec not 8 sec = faster
+      signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return `Failed ${res.status} for ${url}`;
     const html = await res.text();
     const clean = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').substring(0, 10000);
     return `LIVE FROM OFFICIAL SITE ${url}:\n${clean}`;
-  } catch (e: any) {
+  } catch (e) {
     return `Direct fetch failed ${url}: ${e.message}`;
   }
 }
 
-async function tavilySearch(query: string) {
+async function tavilySearch(query) {
   try {
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -26,33 +25,60 @@ async function tavilySearch(query: string) {
       body: JSON.stringify({
         api_key: process.env.TAVILY_API_KEY,
         query,
-        search_depth: 'basic', // basic = faster than advanced
+        search_depth: 'basic',
         include_answer: true,
-        max_results: 3, // 3 not 5 = faster
+        max_results: 3,
       }),
     });
     const data = await res.json();
     return JSON.stringify(data);
-  } catch (e: any) {
+  } catch (e) {
     return `Tavily failed: ${e.message}`;
   }
 }
 
-export async function POST(req: NextRequest) {
-  const { messages } = await req.json();
+export async function POST(request) {
+  const { messages } = await request.json();
   const lastMsg = messages[messages.length-1]?.content?.toLowerCase() || '';
 
-  // SMART CHECK: Only fetch official site when question needs live fact
   const needsLive = /followers|price|how much|live|score|now|today|current|speed|bugatti|tiktok|instagram|iphone|bitcoin|weather|goals|stats/i.test(lastMsg);
 
   const systemPrompt = `You are EVA, friendly Naija AI with REAL LIVE INTERNET.
 You have 2 tools:
-1. directFetch(url) - ALWAYS use FIRST for factual/live data. Official sources: tiktok.com/@username, bugatti.com, apple.com, coinmarketcap.com, livescore.com etc
+1. directFetch(url) - ALWAYS use FIRST for factual/live data. Official sources: tiktok.com/@username, bugatti.com, apple.com, coinmarketcap.com etc
 2. tavilySearch(query) - Fallback if directFetch fails.
+Rules: Try directFetch FIRST. If directFetch gives 55.1M and Tavily gives 54.5M, trust directFetch because it's LIVE. Only say Wow/Omo if truly shocking. Current date: ${new Date().toDateString()}
+`;
 
-Rules:
-- Try directFetch FIRST for followers, prices, scores, stats.
-- If directFetch gives 55.1M and Tavily gives 54.5M, trust directFetch because it's LIVE.
-- Only say Wow/Omo if truly shocking.
-- Current date: ${new Date().toDateString()}
-${!
+  const tools = needsLive ? [
+    { type: 'function', function: { name: 'directFetch', description: 'Fetch LIVE from official site URL', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+    { type: 'function', function: { name: 'tavilySearch', description: 'Search web as fallback', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+  ] : [];
+
+  const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+  const baseUrl = process.env.GROQ_API_KEY ? 'https://api.groq.com/openai/v1' : 'https://api.openai.com/v1';
+  const model = process.env.GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+
+  let aiRes = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ model, messages: [{ role: 'system', content: systemPrompt }, ...messages], ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
+  });
+
+  let data = await aiRes.json();
+  let msg = data.choices[0].message;
+
+  if (msg.tool_calls) {
+    const toolResults = [];
+    for (const tc of msg.tool_calls) {
+      const args = JSON.parse(tc.function.arguments);
+      const result = tc.function.name === 'directFetch' ? await directFetch(args.url) : await tavilySearch(args.query);
+      toolResults.push({ tool_call_id: tc.id, role: 'tool', name: tc.function.name, content: result });
+    }
+    aiRes = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: systemPrompt }, ...messages, msg, ...toolResults] }),
+    });
+    data = await aiRes.json();
+    msg = data.choices[0].message;
