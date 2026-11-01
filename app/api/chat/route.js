@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic';
 
 async function directFetch(url) {
   try {
-    console.log(`[DirectFetch] ${url}`);
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 EvaBot' },
       signal: AbortSignal.timeout(3000),
@@ -40,29 +39,30 @@ async function tavilySearch(query) {
 export async function POST(request) {
   const { messages } = await request.json();
   const lastMsg = messages[messages.length-1]?.content?.toLowerCase() || '';
-
   const needsLive = /followers|price|how much|live|score|now|today|current|speed|bugatti|tiktok|instagram|iphone|bitcoin|weather|goals|stats/i.test(lastMsg);
 
-  const systemPrompt = `You are EVA, friendly Naija AI with REAL LIVE INTERNET.
-You have 2 tools:
-1. directFetch(url) - ALWAYS use FIRST for factual/live data. Official sources: tiktok.com/@username, bugatti.com, apple.com, coinmarketcap.com etc
-2. tavilySearch(query) - Fallback if directFetch fails.
-Rules: Try directFetch FIRST. If directFetch gives 55.1M and Tavily gives 54.5M, trust directFetch because it's LIVE. Only say Wow/Omo if truly shocking. Current date: ${new Date().toDateString()}
-`;
+  const systemPrompt = `You are EVA, friendly Naija AI with REAL LIVE INTERNET. You have 2 tools: 1. directFetch(url) - ALWAYS use FIRST for factual/live data. Official sources: tiktok.com/@username, bugatti.com, apple.com etc 2. tavilySearch(query) - Fallback. Rules: Try directFetch FIRST. If directFetch gives 55.1M and Tavily gives 54.5M, trust directFetch because it's LIVE. Current date: ${new Date().toDateString()}`;
 
   const tools = needsLive ? [
-    { type: 'function', function: { name: 'directFetch', description: 'Fetch LIVE from official site URL', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
-    { type: 'function', function: { name: 'tavilySearch', description: 'Search web as fallback', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+    { type: 'function', function: { name: 'directFetch', description: 'Fetch LIVE from official site', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+    { type: 'function', function: { name: 'tavilySearch', description: 'Search web fallback', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
   ] : [];
 
   const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
   const baseUrl = process.env.GROQ_API_KEY ? 'https://api.groq.com/openai/v1' : 'https://api.openai.com/v1';
   const model = process.env.GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
 
+  const baseMessages = [{ role: 'system', content: systemPrompt }].concat(messages);
+  let payload = { model: model, messages: baseMessages };
+  if (tools.length > 0) {
+    payload.tools = tools;
+    payload.tool_choice = 'auto';
+  }
+
   let aiRes = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages: [{ role: 'system', content: systemPrompt }, ...messages], ...(tools.length ? { tools, tool_choice: 'auto' } : {}) }),
+    body: JSON.stringify(payload),
   });
 
   let data = await aiRes.json();
@@ -75,10 +75,15 @@ Rules: Try directFetch FIRST. If directFetch gives 55.1M and Tavily gives 54.5M,
       const result = tc.function.name === 'directFetch' ? await directFetch(args.url) : await tavilySearch(args.query);
       toolResults.push({ tool_call_id: tc.id, role: 'tool', name: tc.function.name, content: result });
     }
+    const secondPayload = { model: model, messages: baseMessages.concat([msg]).concat(toolResults) };
     aiRes = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages: [{ role: 'system', content: systemPrompt }, ...messages, msg, ...toolResults] }),
+      body: JSON.stringify(secondPayload),
     });
     data = await aiRes.json();
     msg = data.choices[0].message;
+  }
+
+  return Response.json({ reply: msg.content });
+}
