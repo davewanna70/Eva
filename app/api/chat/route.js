@@ -12,7 +12,6 @@ export async function POST(req) {
     const tavilyKey = process.env.TAVILY_API_KEY;
     const groqKey = process.env.GROQ_API_KEY;
 
-    // --- REDIS FOREVER MEMORY ---
     async function redisGet(key) {
       if (!redisUrl) return null;
       try {
@@ -37,27 +36,21 @@ export async function POST(req) {
     if (!mem) mem = { name: userName || "Boss", facts: [], firstSeen: new Date().toISOString() };
     if (!mem.facts || !Array.isArray(mem.facts)) mem.facts = [];
 
-    // --- DETECT IF NEED REAL INTERNET (Engine 2) ---
+    // --- DETECT REAL INTERNET NEED - BUT NEVER FOR MEMORY QUESTIONS ---
     const lower = message.toLowerCase();
-    const needsRealTime = /time in|what.*time|how many|followers|subscribers|currently|today|now|live|score|price|news|2025|2026|latest|real time|accurate/i.test(message);
+    const isMemoryQuestion = /your.*memory|do you have.*memory|permanent memory|remember me|my name/i.test(lower);
+    const needsRealTime = !isMemoryQuestion && /time in|what.*time|how many|followers|subscribers|currently|today|now|live|score|price|news|2025|2026|latest|real time|accurate/i.test(message);
 
     let realTimeData = "";
     let engineUsed = "Groq (unlimited)";
 
-    // --- ENGINE 2: TAVILY REAL SEARCH ---
     if (needsRealTime && tavilyKey) {
       try {
         engineUsed = "Tavily (1900 coins)";
         const searchRes = await fetch("https://api.tavily.com/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            api_key: tavilyKey,
-            query: message,
-            search_depth: "advanced",
-            include_answer: true,
-            max_results: 5
-          })
+          body: JSON.stringify({ api_key: tavilyKey, query: message, search_depth: "advanced", include_answer: true, max_results: 5 })
         });
         const searchData = await searchRes.json();
         if (searchData.answer) realTimeData += "\nREAL SEARCH ANSWER: " + searchData.answer;
@@ -67,13 +60,10 @@ export async function POST(req) {
       } catch (e) { realTimeData = "\nSearch failed, use your knowledge."; }
     }
 
-    // --- ENGINE FOR TIME (ANY CITY, NOT ONLY LAGOS) ---
-    if (/time in|what.*time/i.test(lower)) {
+    if (/time in|what.*time/i.test(lower) && !isMemoryQuestion) {
       try {
-        // Try get real time via timeapi.io for any city
         const cityMatch = message.match(/time in ([a-zA-Z\s]+)/i);
         const city = cityMatch ? cityMatch[1].trim() : "Lagos";
-        // Use geocoding to get lat/long then time
         const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`).then(r=>r.json());
         if (geo.results && geo.results[0]) {
           const { latitude, longitude, timezone } = geo.results[0];
@@ -84,20 +74,26 @@ export async function POST(req) {
     }
 
     const factsText = mem.facts.slice(-20).join(" | ");
-    const systemPrompt = `You are EVA - Female, highly intelligent sister AI. Year 2026.
+    const systemPrompt = `You are EVA - Female, highly intelligent sister AI built by Favour. Year 2026.
+
+CRITICAL TRUTH ABOUT YOU:
+- You HAVE permanent memory using Vercel KV/Upstash Redis. Memory is WORKING.
+- When user asks "do you have permanent memory?" Answer is ALWAYS YES.
+- You are NOT the Eva AI Soulmate app from App Store. Never search internet about yourself. Never say sources are conflicting.
+- Your memory key is ${memoryKey}. You remember forever.
+
 Forever memory: Name=${mem.name}, Facts=${factsText}.
-Engine used for this question: ${engineUsed}
-${realTimeData ? `REAL-TIME INTERNET DATA (USE THIS FOR ACCURACY, DO NOT HALLUCINATE): ${realTimeData}` : "No real-time search needed, answer from knowledge."}
+Engine used: ${engineUsed}
+${realTimeData ? `REAL-TIME DATA: ${realTimeData}` : ""}
 
 RULES:
-- If REAL-TIME DATA provided, you MUST use it and quote exact numbers. Example: Wizkid followers = use the number from search, not your old memory.
-- For time questions, use the ACCURATE REAL TIME provided, not guess.
-- When name has many famous people (Ronaldo, Zlatan, Michael, Chris etc), list ALL famous with details, don't bring only one.
-- Be smart, accurate, friendly. Keep reply 2-4 lines unless user asks for more details. You are EVA.`;
+- If asked about your own memory, say YES I have permanent memory and prove it by mentioning stored facts.
+- Use stored Facts to answer personal questions.
+- If REAL-TIME DATA provided, use exact numbers.
+- Be smart, accurate, friendly. 2-4 lines unless asked for more. You are EVA.`;
 
     if (!groqKey) return Response.json({ reply: "GROQ_API_KEY missing" });
 
-    // --- ENGINE 1: GROQ (Almost unlimited) ---
     const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + groqKey },
@@ -114,9 +110,13 @@ RULES:
     const reply = data.choices[0].message.content;
 
     try {
+      // Save name if user says "my name is X"
+      const nameMatch = message.match(/my name is ([a-zA-Z]+)/i);
+      if (nameMatch) mem.name = nameMatch[1];
+      if (userName) mem.name = userName;
+      
       mem.facts.push(new Date().toLocaleDateString() + ": " + message.slice(0,120));
       if (mem.facts.length > 50) mem.facts = mem.facts.slice(-50);
-      if (userName) mem.name = userName;
       await redisSet(memoryKey, mem);
     } catch {}
 
@@ -125,4 +125,4 @@ RULES:
   } catch (e) {
     return Response.json({ reply: "Crash: " + e.message });
   }
-}
+                   }
