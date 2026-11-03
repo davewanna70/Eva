@@ -1,22 +1,23 @@
+// @ts-nocheck
 'use client';
 import { useState, useRef } from 'react';
 
 export default function Home() {
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [gender, setGender] = useState('female');
   const [voiceOn, setVoiceOn] = useState(true);
   const [speaking, setSpeaking] = useState(false);
-  const [replyTo, setReplyTo] = useState<any>(null);
+  const [replyTo, setReplyTo] = useState(null);
   const touchStartX = useRef(0);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const audioRef = useRef(null);
 
-  function cleanForVoice(text: string) {
+  function cleanForVoice(text) {
     return text.replace(/```[\s\S]*?```/g, ' code block ').replace(/[*#_~`]/g, '').replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
   }
 
-  async function speak(text: string) {
+  async function speak(text) {
     if (!voiceOn) return;
     const cleaned = cleanForVoice(text);
     if (!cleaned) return;
@@ -37,7 +38,7 @@ export default function Home() {
     } catch (e) { setSpeaking(false); }
   }
 
-  function RenderMessage({ content }: { content: string }) {
+  function RenderMessage({ content }) {
     const parts = content.split(/```/);
     return (
       <>
@@ -57,10 +58,10 @@ export default function Home() {
     );
   }
 
-  function handleTouchStart(e: any) { touchStartX.current = e.touches[0].clientX; }
-  function handleTouchEnd(e: any, msg: any) {
+  function handleTouchStart(e) { touchStartX.current = e.touches[0].clientX; }
+  function handleTouchEnd(e, msg) {
     const diff = touchStartX.current - e.changedTouches[0].clientX;
-    if (diff > 60) { // swipe left
+    if (diff > 60) {
       setReplyTo(msg);
     }
   }
@@ -69,7 +70,7 @@ export default function Home() {
     if (!input.trim()) return;
     let finalMessage = input;
     if (replyTo) {
-      finalMessage = `Replying to "${replyTo.content.slice(0,60)}": ${input}`;
+      finalMessage = 'Replying to "' + replyTo.content.slice(0,60) + '": ' + input;
     }
     const userMsg = { role: 'user', content: finalMessage, reply: replyTo };
     setMessages(prev => [...prev, userMsg]);
@@ -111,7 +112,6 @@ export default function Home() {
               </div>
             )}
             <b>{m.role === 'user' ? 'You' : `Eva ${gender}`}:</b> <RenderMessage content={m.content} />
-            <div style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>← swipe left or double-click to reply</div>
           </div>
         ))}
         {loading && <div>Eva typing...</div>}
@@ -138,4 +138,4 @@ export default function Home() {
       <audio ref={audioRef} hidden />
     </div>
   );
-}
+              }
