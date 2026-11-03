@@ -31,7 +31,7 @@ export async function POST(request) {
         'X-Title':'Eva Sister'
       },
       body:JSON.stringify({
-           google/gemma-3-27b-it
+           model: "google/gemma-3-27b-it",
         messages:[{role:'system', content:systemPrompt}, ...fullHistory], 
         temperature:0.7, 
         max_tokens:150
