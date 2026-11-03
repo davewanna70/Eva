@@ -12,74 +12,89 @@ export async function POST(req) {
     const tavilyKey = process.env.TAVILY_API_KEY;
     const groqKey = process.env.GROQ_API_KEY;
 
-    // --- FIXED REDIS FOREVER MEMORY ---
     async function redisGet(key) {
       if (!redisUrl || !redisToken) return null;
       try {
-        const r = await fetch(`${redisUrl}/get/${encodeURIComponent(key)}`, { 
-          headers: { Authorization: `Bearer ${redisToken}` } 
-        });
+        const url = redisUrl + "/get/" + encodeURIComponent(key);
+        const r = await fetch(url, { headers: { Authorization: "Bearer " + redisToken } });
         const j = await r.json();
         if (!j.result) return null;
         try { return JSON.parse(j.result); } catch { return j.result; }
-      } catch (e) { 
-        console.log("GET FAIL", e); 
-        return null; 
-      }
+      } catch (e) { return null; }
     }
-    
+
     async function redisSet(key, value) {
-      if (!redisUrl || !redisToken) {
-        console.log("NO REDIS URL/TOKEN");
-        return;
-      }
+      if (!redisUrl || !redisToken) return;
       try {
         const stringValue = JSON.stringify(value);
-        // Use pipeline endpoint - most reliable for Vercel KV
         const r = await fetch(redisUrl, {
           method: "POST",
-          headers: { 
-            Authorization: `Bearer ${redisToken}`, 
-            "Content-Type": "application/json" 
-          },
+          headers: { Authorization: "Bearer " + redisToken, "Content-Type": "application/json" },
           body: JSON.stringify([["SET", key, stringValue]])
         });
-        const j = await r.json();
-        console.log("SET RESULT", JSON.stringify(j).slice(0,200));
-      } catch (e) { 
-        console.log("SET FAIL", e); 
-      }
+        await r.json();
+      } catch (e) {}
     }
 
     const memoryKey = "eva:forever:" + (userId || "boss");
     let mem = await redisGet(memoryKey);
-    if (!mem || typeof mem !== 'object') {
+    if (!mem || typeof mem !== "object") {
       mem = { name: userName || "Boss", facts: [], firstSeen: new Date().toISOString() };
     }
     if (!mem.facts || !Array.isArray(mem.facts)) mem.facts = [];
     if (!mem.name) mem.name = userName || "Boss";
 
-    // --- DETECT REAL INTERNET NEED - BUT NEVER FOR MEMORY ---
     const lower = message.toLowerCase();
-    const isMemoryQuestion = /your.*memory|do you have.*memory|permanent memory|remember me|my name|who am i/i.test(lower);
-    const needsRealTime = !isMemoryQuestion && /time in|what.*time|how many|followers|subscribers|currently|today|now|live|score|price|news|2025|2026|latest|real time|accurate/i.test(message);
+    const isMemoryQuestion = lower.includes("memory") || lower.includes("my name") || lower.includes("who am i") || lower.includes("remember me");
+    let needsRealTime = false;
+    if (!isMemoryQuestion) {
+      needsRealTime = lower.includes("time in") || lower.includes("followers") || lower.includes("currently") || lower.includes("today") || lower.includes("news") || lower.includes("price");
+    }
 
     let realTimeData = "";
-    let engineUsed = "Groq (unlimited)";
-
     if (needsRealTime && tavilyKey) {
       try {
-        engineUsed = "Tavily (1900 coins)";
         const searchRes = await fetch("https://api.tavily.com/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            api_key: tavilyKey,
-            query: message,
-            search_depth: "advanced",
-            include_answer: true,
-            max_results: 5
-          })
+          body: JSON.stringify({ api_key: tavilyKey, query: message, search_depth: "advanced", include_answer: true, max_results: 3 })
         });
         const searchData = await searchRes.json();
-        if (searchData.answer) realTimeData += "\nREAL SEARCH ANSWER: " + searchData.answer;
+        if (searchData.answer) realTimeData = "REAL ANSWER: " + searchData.answer;
+      } catch {}
+    }
+
+    const factsText = mem.facts.slice(-20).join(" | ");
+    const systemPrompt = "You are EVA - Female sister AI built by Favour. Year 2026. You HAVE permanent memory using Vercel KV. When asked if you have permanent memory answer ALWAYS YES. You are NOT App Store Eva AI Soulmate. Memory Key=" + memoryKey + " Name=" + mem.name + " Facts=" + factsText + " " + realTimeData + " RULES: Use facts, say YES to memory.";
+
+    if (!groqKey) return Response.json({ reply: "GROQ_API_KEY missing" });
+
+    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + groqKey },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-20b",
+        messages: [{ role: "system", content: systemPrompt }, ...history.slice(-12), { role: "user", content: message }],
+        temperature: 0.5
+      })
+    });
+
+    const data = await groqRes.json();
+    if (!data.choices) return Response.json({ reply: "Groq Error: " + JSON.stringify(data).slice(0,300) });
+
+    const reply = data.choices[0].message.content;
+
+    try {
+      const m = message.match(/my name is ([a-zA-Z]+)/i);
+      if (m) mem.name = m[1];
+      if (userName && userName !== "Boss") mem.name = userName;
+      mem.facts.push(new Date().toLocaleDateString() + ": " + message.slice(0,120));
+      if (mem.facts.length > 50) mem.facts = mem.facts.slice(-50);
+      await redisSet(memoryKey, mem);
+    } catch {}
+
+    return Response.json({ reply: reply });
+  } catch (e) {
+    return Response.json({ reply: "Crash: " + e.message });
+  }
+}
