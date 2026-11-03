@@ -14,7 +14,7 @@ export default function Home() {
   const audioRef = useRef(null);
 
   function cleanForVoice(text) {
-    return text.replace(/```[\s\S]*?```/g, ' code block ').replace(/[*#_~`]/g, '').replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+    return text.replace(/```[\s\S]*?```/g, ' code ').replace(/[*#_~`]/g, '').replace(/https?:\/\/\S+/g, '').trim();
   }
 
   async function speak(text) {
@@ -35,7 +35,28 @@ export default function Home() {
         audioRef.current.play();
         audioRef.current.onended = () => setSpeaking(false);
       }
-    } catch (e) { setSpeaking(false); }
+    } catch(e){ setSpeaking(false); }
+  }
+
+  // MULTI-COLOR CODE RENDERER
+  function CodeBlock({ code }) {
+    const lines = code.replace(/^(javascript|js)\n/, '').split('\n');
+    return (
+      <pre style={{ background: '#1e1e1e', padding: '12px', borderRadius: '8px', margin: '10px 0', border: '1px solid #333', overflowX: 'auto' }}>
+        <code style={{ fontFamily: 'monospace', fontSize: '13px' }}>
+          {lines.map((line, i) => {
+            // super simple tokenizer for colors
+            let content = line;
+            let color = '#d4d4d4';
+            if (line.trim().startsWith('//')) color = '#6A9955'; // comment green
+            else if (/^\s*(function|return|const|let|if|else)\b/.test(line)) color = '#569cd6'; // blue keyword
+            else if (line.includes('console')) color = '#DCDCAA'; // yellowish
+
+            return <div key={i} style={{ color, whiteSpace: 'pre-wrap' }}>{line || ' '}</div>
+          })}
+        </code>
+      </pre>
+    );
   }
 
   function RenderMessage({ content }) {
@@ -43,99 +64,75 @@ export default function Home() {
     return (
       <>
         {parts.map((part, i) => {
-          if (i % 2 === 1) {
-            const code = part.replace(/^(javascript|js|python|ts|tsx)\s*\n/, '');
-            return (
-              <pre key={i} style={{ background: '#1e1e1e', padding: '12px', borderRadius: '8px', overflowX: 'auto', margin: '10px 0', border: '1px solid #333', color: '#d4d4d4', fontFamily: 'monospace', fontSize: '13px', whiteSpace: 'pre-wrap' }}>
-                <code>{code}</code>
-              </pre>
-            );
-          } else {
-            return <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>;
-          }
+          if (i % 2 === 1) return <CodeBlock key={i} code={part} />;
+          return <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>;
         })}
       </>
     );
   }
 
-  function handleTouchStart(e) { touchStartX.current = e.touches[0].clientX; }
-  function handleTouchEnd(e, msg) {
+  function handleTouchStart(e){ touchStartX.current = e.touches[0].clientX; }
+  function handleTouchEnd(e, msg){
     const diff = touchStartX.current - e.changedTouches[0].clientX;
-    if (diff > 60) {
-      setReplyTo(msg);
-    }
+    if(diff > 50) setReplyTo(msg);
   }
 
   async function sendMessage() {
     if (!input.trim()) return;
     let finalMessage = input;
-    if (replyTo) {
-      finalMessage = 'Replying to "' + replyTo.content.slice(0,60) + '": ' + input;
-    }
-    const userMsg = { role: 'user', content: finalMessage, reply: replyTo };
+    if (replyTo) finalMessage = 'Reply to [' + replyTo.content.slice(0,40) + ']: ' + input;
+
+    const userMsg = { role: 'user', content: finalMessage, reply: replyTo, id: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     const currentInput = finalMessage;
     setInput('');
     setReplyTo(null);
     setLoading(true);
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: currentInput })
-      });
+      const res = await fetch('/api/chat', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ message: currentInput }) });
       const data = await res.json();
-      const botMsg = { role: 'assistant', content: data.reply || 'Sorry Boss' };
+      const botMsg = { role: 'assistant', content: data.reply, id: Date.now()+1 };
       setMessages(prev => [...prev, botMsg]);
       if (voiceOn) speak(data.reply);
-    } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Error Boss' }]);
-    }
+    } catch(e){ setMessages(prev => [...prev, { role: 'assistant', content: 'Error Boss', id: Date.now() }]); }
     setLoading(false);
   }
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px', background: '#000', color: '#fff', minHeight: '100vh' }}>
-      <h1>EVA • {gender === 'female' ? 'FEMALE' : 'MALE'} {speaking ? '🔊' : ''}</h1>
-      <div style={{ height: '60vh', overflowY: 'auto', border: '1px solid #333', padding: '10px', marginBottom: '15px' }}>
+      <h1>EVA • {gender.toUpperCase()} {speaking ? '🔊' : ''}</h1>
+      
+      <div style={{ height: '62vh', overflowY: 'auto', border: '1px solid #333', padding: '10px', marginBottom: '10px' }}>
         {messages.map((m, i) => (
-          <div 
-            key={i} 
-            onTouchStart={handleTouchStart}
-            onTouchEnd={(e) => handleTouchEnd(e, m)}
-            onDoubleClick={() => setReplyTo(m)}
-            style={{ margin: '14px 0', padding: '8px', background: replyTo === m ? '#222' : 'transparent', borderRadius: '8px', color: m.role === 'user' ? '#0ff' : '#fff', lineHeight: '1.5' }}
-          >
-            {m.reply && (
-              <div style={{ borderLeft: '3px solid #ff007f', paddingLeft: '8px', marginBottom: '6px', fontSize: '12px', color: '#aaa', background: '#111' }}>
-                ↩️ {m.reply.content.slice(0,80)}
-              </div>
-            )}
-            <b>{m.role === 'user' ? 'You' : `Eva ${gender}`}:</b> <RenderMessage content={m.content} />
+          <div key={m.id || i} onTouchStart={handleTouchStart} onTouchEnd={(e)=>handleTouchEnd(e,m)} style={{ margin: '12px 0', padding: '10px', background: replyTo?.id === m.id ? '#1a1a1a' : 'transparent', borderRadius: '8px', position: 'relative' }}>
+            {m.reply && <div style={{ borderLeft: '3px solid #ff007f', padding: '6px 8px', marginBottom: '6px', background: '#111', fontSize: '12px', color: '#888' }}>↩️ {m.reply.content.slice(0,70)}</div>}
+            <div style={{ color: m.role === 'user' ? '#0ff' : '#fff' }}><b>{m.role === 'user' ? 'You' : 'Eva'}:</b> <RenderMessage content={m.content} /></div>
+            <button onClick={()=>setReplyTo(m)} style={{ marginTop: '6px', fontSize: '11px', background: '#222', color: '#aaa', border: '1px solid #333', borderRadius: '12px', padding: '3px 10px' }}>↩️ Reply</button>
           </div>
         ))}
         {loading && <div>Eva typing...</div>}
       </div>
 
       {replyTo && (
-        <div style={{ background: '#111', borderLeft: '3px solid #ff007f', padding: '8px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: '12px', color: '#aaa' }}>Replying to: {replyTo.content.slice(0,60)}...</div>
-          <button onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', color: '#fff' }}>✕</button>
+        <div style={{ background: '#111', borderLeft: '3px solid #ff007f', padding: '8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '12px', color: '#aaa' }}>Replying to: {replyTo.content.slice(0,50)}...</span>
+          <button onClick={()=>setReplyTo(null)} style={{ background: 'none', border: 'none', color: '#fff' }}>✕</button>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMessage()} placeholder={replyTo ? "Reply..." : "Talk to Eva..."} style={{ flex: 1, padding: '12px', background: '#111', color: '#fff', border: '1px solid #333' }} />
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendMessage()} placeholder={replyTo ? 'Replying...' : 'Talk to Eva...'} style={{ flex: 1, padding: '12px', background: '#111', color: '#fff', border: '1px solid #333' }} />
         <button onClick={sendMessage} style={{ padding: '12px 20px', background: '#fff', color: '#000' }}>Send</button>
       </div>
-      <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', background: '#111', padding: '15px', borderRadius: '10px', border: '1px solid #222' }}>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => setGender('female')} style={{ padding: '10px 15px', background: gender === 'female' ? '#ff007f' : '#333', color: '#fff', borderRadius: '20px', border: 'none' }}>👩 Female</button>
-          <button onClick={() => setGender('male')} style={{ padding: '10px 15px', background: gender === 'male' ? '#007fff' : '#333', color: '#fff', borderRadius: '20px', border: 'none' }}>👨 Male JARVIS</button>
+
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', background: '#111', padding: '12px', borderRadius: '10px', border: '1px solid #222' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={()=>setGender('female')} style={{ padding: '8px 12px', background: gender==='female'?'#ff007f':'#333', color: '#fff', borderRadius: '20px', border: 'none' }}>Female</button>
+          <button onClick={()=>setGender('male')} style={{ padding: '8px 12px', background: gender==='male'?'#007fff':'#333', color: '#fff', borderRadius: '20px', border: 'none' }}>Male</button>
         </div>
-        <button onClick={() => setVoiceOn(!voiceOn)} style={{ padding: '10px 15px', background: voiceOn ? '#0f0' : '#f00', color: voiceOn ? '#000' : '#fff', borderRadius: '20px', border: 'none', fontWeight: 'bold' }}>{voiceOn ? '🔊 Voice ON' : '🔇 Voice OFF'}</button>
+        <button onClick={()=>setVoiceOn(!voiceOn)} style={{ padding: '8px 12px', background: voiceOn?'#0f0':'#f00', color: voiceOn?'#000':'#fff', borderRadius: '20px', border: 'none' }}>{voiceOn?'🔊 ON':'🔇 OFF'}</button>
       </div>
       <audio ref={audioRef} hidden />
     </div>
   );
-              }
+            }
