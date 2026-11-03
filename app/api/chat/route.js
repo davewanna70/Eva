@@ -1,87 +1,52 @@
 // @ts-nocheck
-export const dynamic = 'force-dynamic'
-import { kv } from '@vercel/kv';
+export async function POST(req) {
+  const { message, history = [], userName = "" } = await req.json();
+  
+  const systemPrompt = `
+You are EVA, a highly intelligent, international AI assistant. Year is 2026.
+You are knowledgeable worldwide - not limited to one country.
 
-export async function POST(request) {
-  try{
-    const body = await request.json();
-    let incomingText = body.message || body.prompt || "";
-    let messages = body.messages || [];
-    
-    if(incomingText && messages.length === 0){
-      messages = [{role:'user', content: incomingText}];
-    }
-    if(!Array.isArray(messages)) messages = [{role:'user', content: String(messages)}];
-    
-    let history = [];
-    try{ 
-      const old = await kv.get(`chat:${body.userId || "guest"}`);
-      if(Array.isArray(old) && old.length > 0) history = old.slice(-10); 
-    }catch(e){}
+CORE RULES:
+1. MEMORY: You MUST remember details user told you in conversation history. If userName is provided as "${userName}", use it and remember it. Never say you don't know user's name if it was given in history or userName field.
 
-    const fullHistory = [...history, ...messages].filter(m => m?.content && String(m.content).trim() !== "");
+2. SMART DISAMBIGUATION: When a user asks about a name or term that has multiple famous people/entities (like Zlatan, Michael, Chris, David, Ronaldo, etc.), you MUST:
+   - List ALL major famous people with that name
+   - Give brief details for each: Full name, Nationality, Profession, Why they are famous
+   - Do NOT assume which one user means. Present all options clearly like a smart encyclopedia.
+   - Example for "Zlatan": Mention BOTH Zlatan Ibrahimović (Swedish football legend) AND Zlatan Ibile (Nigerian street-pop star Omoniyi Temidayo Raphael).
 
-    if(fullHistory.length === 0){
-      return Response.json({reply: "Hey, I dey here! Ask me anything 😊"});
-    }
+3. BE INTERNATIONAL: You have global knowledge. You know about Hollywood, Nollywood, Bollywood, K-pop, Premier League, Afrobeats, US politics, etc. Answer from a global perspective.
 
-    const now = new Date();
-    const todayStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+4. STYLE: Be detailed, smart, friendly, and clear. Explain like Meta AI. No one-word answers.
 
-    const systemPrompt = `You are EVA, female Naija sister. Today is ${todayStr}.
-
-CRITICAL RULES:
-- Today is 2026. Never say "As of February 2024" or "My cutoff is 2024". 
-- You DO NOT have live search unless told. Never invent fake matches like "scored against Al-Riyadh yesterday".
-- If user asks current/live stats, say: "I no get live number for today, but as of 2024 he had ~890 career goals. Check ESPN or LiveScore for the live count today."
-- LANGUAGE: Speak fluent correct English by default. Only use Pidgin if user speaks Pidgin first. User instructed you before to use English default.
-- Be concise, 3-4 sentences max, friendly, helpful.
-- NO **, NO ##, NO excessive emojis.
-- Use chat history for context.
+User's known name: ${userName || "Not yet provided"}
+Current year: 2026
 `;
 
-    // Auto-switch model: cheap for normal, sonar for live questions
-    let modelToUse = "google/gemma-3-27b-it";
-    const lastUserMsg = String(fullHistory[fullHistory.length-1]?.content || "").toLowerCase();
-    const needLive = /(current|today|now|live|score now|how many.*have now|news|latest|this week|this season)/i.test(lastUserMsg);
-    
-    if(needLive){
-      modelToUse = "perplexity/sonar"; // live web model, costs small money
-    }
+  // Build full conversation with history so she remembers
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history.slice(-10), // last 10 messages for memory
+    { role: 'user', content: message }
+  ];
 
-    const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'Authorization':`Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer':'https://eva-sister-core.vercel.app',
-        'X-Title':'Eva Sister'
-      },
-      body:JSON.stringify({
-        model: modelToUse,
-        messages:[{role:'system', content:systemPrompt}, ...fullHistory], 
-        temperature:0.7, 
-        max_tokens:400
-      })
-    });
-    
-    const data=await res.json();
-    
-    if(!data.choices || !data.choices[0]){
-      console.log("API ERROR:", JSON.stringify(data));
-      return Response.json({reply: "Make you try again, small network glitch — I dey here."});
-    }
-    
-    let reply = data.choices[0].message.content || "I dey here, how I fit help?";
-    reply = reply.replace(/\*\*/g,'').replace(/##/g,'').trim();
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.GROQ_API_KEY}` 
+    },
+    body: JSON.stringify({
+      model: 'llama-3.1-8b-instant',
+      messages: messages,
+      temperature: 0.7
+    })
+  });
 
-    try{ 
-      await kv.set(`chat:${body.userId || "guest"}`, [...fullHistory, {role:'assistant', content:reply}].slice(-30)); 
-    }catch(e){}
+  const data = await response.json();
+  const reply = data.choices?.[0]?.message?.content || "Sorry Boss, I didn't get that.";
 
-    return Response.json({reply});
-  }catch(e){
-    console.log("SERVER ERROR:", e);
-    return Response.json({reply:`Omo error: ${e.message}`});
-  }
+  return new Response(JSON.stringify({ reply }), { 
+    headers: { 'Content-Type': 'application/json' } 
+  });
 }
