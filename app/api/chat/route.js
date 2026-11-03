@@ -5,21 +5,34 @@ import { kv } from '@vercel/kv';
 export async function POST(request) {
   try{
     const body = await request.json();
+    // FIX: Accept both message and messages
+    let incomingText = body.message || body.prompt || "";
     let messages = body.messages || [];
-    const userId = body.userId || "guest";
-    if(!Array.isArray(messages)) messages = [{role:'user', content: messages}];
+    
+    if(incomingText && messages.length === 0){
+      messages = [{role:'user', content: incomingText}];
+    }
+    if(!Array.isArray(messages)) messages = [{role:'user', content: String(messages)}];
     
     let history = [];
-    try{ const old = await kv.get(`chat:${userId}`); if(old) history = old.slice(-10); }catch(e){}
+    try{ 
+      const old = await kv.get(`chat:${body.userId || "guest"}`);
+      if(Array.isArray(old) && old.length > 0) history = old.slice(-10); 
+    }catch(e){}
 
-    const fullHistory = [...history, ...messages];
+    const fullHistory = [...history, ...messages].filter(m => m.content && m.content.trim() !== "");
+
+    // If still empty, no ask empty AI
+    if(fullHistory.length === 0){
+      return Response.json({reply: "Hey, I dey here! Ask me anything 😊"});
+    }
 
     const systemPrompt = `You are EVA, female Naija sister.
-- If user speaks Pidgin, reply in Pidgin. If English, English. Match user language.
-- SHORT: Max 2 sentences, 25 words.
+- Match user language: Pidgin if user speaks Pidgin, else English.
+- SHORT but helpful: Max 3 sentences.
 - NO **, NO ##.
-- Be smart with context. Use history.
-- Friendly, no repeat.
+- Use history for context.
+- Friendly, helpful, no repeat.
 `;
 
     const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
@@ -31,10 +44,10 @@ export async function POST(request) {
         'X-Title':'Eva Sister'
       },
       body:JSON.stringify({
-           model: "google/gemma-3-27b-it",
+        model: "google/gemma-3-27b-it",
         messages:[{role:'system', content:systemPrompt}, ...fullHistory], 
         temperature:0.7, 
-        max_tokens:150
+        max_tokens:300
       })
     });
     
@@ -48,10 +61,13 @@ export async function POST(request) {
     let reply = data.choices[0].message.content || "I dey here, how I fit help?";
     reply = reply.replace(/\*\*/g,'').replace(/##/g,'').trim();
 
-    try{ await kv.set(`chat:${userId}`, [...fullHistory, {role:'assistant', content:reply}].slice(-30)); }catch(e){}
+    try{ 
+      await kv.set(`chat:${body.userId || "guest"}`, [...fullHistory, {role:'assistant', content:reply}].slice(-30)); 
+    }catch(e){}
 
     return Response.json({reply});
   }catch(e){
+    console.log("SERVER ERROR:", e);
     return Response.json({reply:`Omo error: ${e.message}`});
   }
-        }
+}
