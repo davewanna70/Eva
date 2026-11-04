@@ -31,23 +31,25 @@ export default function EVA() {
 
       {/* MIDDLE - ONLY REPLY */}
       <div style={{ position: "relative", flex: 1, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "0 20px" }}>
-        {reply && <div style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, width: "100%", maxWidth: 420, backdropFilter: "blur(8px)" }}>{reply}</div>}
+        {reply && <div style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, width: "100%", maxWidth: 420 }}>{reply}</div>}
       </div>
 
-      {/* BOTTOM - TRANSPARENT LIKE DISCOVER - NO BLACK GRADIENT AGAIN */}
+      {/* BOTTOM - 100% TRANSPARENT, NO FILL, NO BLUR */}
       <div style={{ position: "relative", padding: "12px 16px 18px", background: "transparent" }}>
-        {/* ASK BAR - SAME TRANSPARENT AS DISCOVER */}
-        <div style={{ display: "flex", gap: 10, maxWidth: 520, margin: "0 auto", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", padding: 8, borderRadius: 999, backdropFilter: "blur(10px)" }}>
+        
+        {/* ASK BAR - PURE TRANSPARENT LIKE DISCOVER */}
+        <div style={{ display: "flex", gap: 10, maxWidth: 520, margin: "0 auto", background: "transparent", border: "1px solid rgba(255,255,255,0.45)", padding: 8, borderRadius: 999 }}>
           <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && askEVA()} placeholder="Ask EVA..." autoComplete="off" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "white", padding: "0 12px", fontSize: 15 }} />
-          <button onClick={askEVA} style={{ background: "rgba(139,92,246,0.75)", border: "1px solid rgba(255,255,255,0.30)", color: "white", padding: "10px 18px", borderRadius: 999, fontWeight: "bold", backdropFilter: "blur(10px)" }}>Ask →</button>
+          <button onClick={askEVA} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.45)", color: "white", padding: "10px 18px", borderRadius: 999, fontWeight: "bold" }}>Ask →</button>
         </div>
 
-        {/* DISCOVER - SAME STYLE */}
+        {/* DISCOVER - SAME PURE TRANSPARENT */}
         <div style={{ display: "flex", maxWidth: 520, margin: "10px auto 0" }}>
-          <button onClick={openDiscover} style={{ background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", padding: "9px 16px", borderRadius: 999, fontSize: 13, display: "flex", alignItems: "center", gap: 6, backdropFilter: "blur(10px)" }}>
+          <button onClick={openDiscover} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.45)", color: "white", padding: "9px 16px", borderRadius: 999, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
             ✨ Discover
           </button>
         </div>
+
       </div>
 
     </div>
