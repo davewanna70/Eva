@@ -1,81 +1,61 @@
 "use client";
+import { useState } from "react";
 
 export default function EVA() {
+  const [speaking, setSpeaking] = useState(false);
+  const [mood, setMood] = useState("normal"); // normal | happy | surprised
+
   return (
-    <div style={{ minHeight: "100vh", background: "#020617", color: "white", display: "flex", flexDirection: "column", alignItems: "center", padding: 16, overflow: "hidden" }}>
-      
+    <div style={{ minHeight: "100vh", position: "relative", overflow: "hidden", background: "#05001a", display: "flex", flexDirection: "column", alignItems: "center", padding: 16 }}>
+
+      {/* 1. YOUR FINE IMAGE - WATER + FACE + COLORS */}
+      <img src="/eva-bg.png" alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+
+      {/* 2. MOTION DIMENSIONAL LINES - DEY MOVE */}
+      <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(rgba(139,92,246,0.22) 1px, transparent 1px), linear-gradient(90deg, rgba(56,189,248,0.22) 1px, transparent 1px)", backgroundSize: "40px 40px", transform: "perspective(500px) rotateX(60deg) scale(1.8)", transformOrigin: "bottom", animation: "moveGrid 2s linear infinite", opacity: 0.45, pointerEvents: "none" }} />
+
+      {/* 3. FLOATING GLOW DOTS */}
+      <div style={{ position: "absolute", top: "20%", left: "20%", width: 6, height: 6, background: "#38bdf8", borderRadius: "50%", boxShadow: "0 0 15px #38bdf8", animation: "float 3s infinite" }} />
+      <div style={{ position: "absolute", top: "60%", right: "15%", width: 5, height: 5, background: "#a78bfa", borderRadius: "50%", boxShadow: "0 0 15px #a78bfa", animation: "float 4s infinite" }} />
+
+      {/* 4. FACE LEVEL 1 - BREATHE + BLINK OVERLAY ON TOP OF FACE AREA */}
+      {/* This na the face zone - e dey breathe, e go blink */}
+      <div style={{ position: "absolute", top: "31%", left: "50%", transform: "translateX(-50%)", width: "62%", height: "32%", zIndex: 2, pointerEvents: "none", animation: "breathe 4s ease-in-out infinite" }}>
+        {/* Blink - black bar wey go flash like eyelid */}
+        <div style={{ position: "absolute", top: "22%", left: "15%", right: "15%", height: 2, background: "rgba(0,0,0,0.0)", animation: "blink 4.5s infinite" }} />
+        {/* Mouth move when EVA dey talk */}
+        {speaking && <div style={{ position: "absolute", bottom: "18%", left: "50%", transform: "translateX(-50%)", width: 28, height: 6, background: "rgba(255,150,150,0.6)", borderRadius: "50%", animation: "mouth 0.3s infinite" }} />}
+      </div>
+
       {/* TOP */}
-      <div style={{ width: "100%", maxWidth: 420, display: "flex", justifyContent: "space-between" }}>
+      <div style={{ width: "100%", maxWidth: 420, display: "flex", justifyContent: "space-between", position: "relative", zIndex: 3, color: "white" }}>
         <span>🟣 EVA</span>
-        <span style={{ background: "rgba(124,58,237,0.3)", padding: "4px 12px", borderRadius: 20, fontSize: 12, border: "1px solid rgba(255,255,255,0.2)" }}>Discover</span>
+        <span style={{ background: "rgba(124,58,237,0.4)", padding: "4px 12px", borderRadius: 20, fontSize: 12 }}>Discover</span>
       </div>
 
-      {/* 3 DROPLETS - ALL VERY VERY TRANSPARENT */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 10, marginTop: 20, width: "100%", maxWidth: 420 }}>
+      {/* CLICKABLE ZONES - INVISIBLE BUT WORKING */}
+      {/* LEFT - SCAN */}
+      <button onClick={() => alert("Scan open!")} style={{ position: "absolute", top: "34%", left: "9%", width: 75, height: 110, zIndex: 4, background: "transparent", border: "none", cursor: "pointer" }} />
+      {/* RIGHT - CHAT */}
+      <button onClick={() => alert("Chat open!")} style={{ position: "absolute", top: "50%", right: "9%", width: 75, height: 110, zIndex: 4, background: "transparent", border: "none", cursor: "pointer" }} />
+      {/* CENTER - EVA FACE - TAP TO TALK */}
+      <button onClick={() => { setSpeaking(!speaking); setMood("happy"); }} style={{ position: "absolute", top: "28%", left: "50%", transform: "translateX(-50%)", width: 250, height: 340, zIndex: 3, background: "transparent", border: "none", cursor: "pointer" }} />
 
-        {/* LEFT SMALL DROPLET - TRANSPARENT */}
-        <div style={{
-          width: 70, height: 110,
-          clipPath: "path('M35 0 C 50 30, 65 55, 65 75 C 65 95, 50 110, 35 110 C 20 110, 5 95, 5 75 C 5 55, 20 30, 35 0 Z')",
-          background: "rgba(255,255,255,0.02)",
-          border: "1px solid rgba(56,189,248,0.25)",
-          boxShadow: "0 0 15px rgba(56,189,248,0.1) inset",
-          backdropFilter: "blur(1px)",
-          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, opacity: 0.7
-        }}>
-          💬
-        </div>
+      <div style={{ flex: 1 }} />
 
-        {/* CENTER BIG DROPLET - TRANSPARENT AS FUCK */}
-        <div style={{ position: "relative", width: 230, height: 330 }}>
-          <div style={{
-            position: "absolute", inset: 0,
-            clipPath: "path('M115 0 C 145 70, 200 150, 200 220 C 200 285, 165 330, 115 330 C 65 330, 30 285, 30 220 C 30 150, 85 70, 115 0 Z')",
-            background: "rgba(255,255,255,0.02)", // see through well well
-            border: "1px solid rgba(56,189,248,0.35)",
-            boxShadow: "0 0 20px rgba(56,189,248,0.08) inset",
-            backdropFilter: "blur(1px)",
-            overflow: "hidden",
-          }}>
-            {/* 3D GRID - VERY FAINT */}
-            <div style={{ position: "absolute", bottom: 0, width: "100%", height: "45%", backgroundImage: "linear-gradient(rgba(56,189,248,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(56,189,248,0.08) 1px, transparent 1px)", backgroundSize: "20px 20px", transform: "perspective(200px) rotateX(60deg)", opacity: 0.5 }} />
-            
-            {/* SCANNING LINE - SOFT */}
-            <div style={{ position: "absolute", left: 0, right: 0, height: 1, background: "rgba(56,189,248,0.6)", boxShadow: "0 0 8px rgba(56,189,248,0.4)", animation: "scan 2.5s infinite" }} />
-
-            {/* SYMBOLS INSIDE - SMALL, SPREAD */}
-            <div style={{ position: "absolute", top: "28%", left: "50%", transform: "translateX(-50%)", textAlign: "center", width: "100%" }}>
-              <div style={{ fontSize: 22, opacity: 0.8 }}>🔍</div>
-              <div style={{ fontSize: 10, color: "#7dd3fc", letterSpacing: 2, marginTop: 4 }}>EVA</div>
-              <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 12, fontSize: 13, opacity: 0.7 }}>
-                <span>💬</span><span>🎙️</span><span>🌍</span><span>❤️</span>
-              </div>
-              {/* SMALL FAINT BLUE GLOW - NO SOLID BALL */}
-              <div style={{ width: 28, height: 28, borderRadius: "50%", margin: "14px auto", background: "radial-gradient(circle, rgba(14,165,233,0.5) 0%, rgba(14,165,233,0) 70%)", filter: "blur(1px)" }} />
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT SMALL DROPLET - TRANSPARENT */}
-        <div style={{
-          width: 70, height: 110,
-          clipPath: "path('M35 0 C 50 30, 65 55, 65 75 C 65 95, 50 110, 35 110 C 20 110, 5 95, 5 75 C 5 55, 20 30, 35 0 Z')",
-          background: "rgba(255,255,255,0.02)",
-          border: "1px solid rgba(56,189,248,0.25)",
-          boxShadow: "0 0 15px rgba(56,189,248,0.1) inset",
-          backdropFilter: "blur(1px)",
-          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, opacity: 0.7
-        }}>
-          🎙️
-        </div>
+      {/* ASK EVA BAR */}
+      <div style={{ width: "100%", maxWidth: 420, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.2)", backdropFilter: "blur(10px)", padding: "12px 16px", borderRadius: 30, display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative", zIndex: 5, color: "white" }}>
+        <span>Ask EVA...</span>
+        <span onClick={() => setSpeaking(!speaking)} style={{ cursor: "pointer" }}>🎙️ ➕</span>
       </div>
 
-      {/* ASK EVA BAR - TRANSPARENT TOO */}
-      <div style={{ width: "100%", maxWidth: 420, marginTop: 20, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)", padding: 12, borderRadius: 30, textAlign: "center", color: "#94a3b8" }}>
-        Ask EVA...
-      </div>
-
-      <style>{`@keyframes scan { 0%{top:10%} 50%{top:80%} 100%{top:10%} }`}</style>
+      <style>{`
+        @keyframes moveGrid { 0%{background-position: 0 0} 100%{background-position: 0 40px} }
+        @keyframes float { 0%,100%{transform: translateY(0)} 50%{transform: translateY(-15px)} }
+        @keyframes breathe { 0%,100%{transform: translateX(-50%) scale(1)} 50%{transform: translateX(-50%) scale(1.015)} }
+        @keyframes blink { 0%,92%,100%{opacity:0} 94%{opacity:1} 96%{opacity:0} }
+        @keyframes mouth { 0%,100%{transform: translateX(-50%) scaleY(1)} 50%{transform: translateX(-50%) scaleY(1.8)} }
+      `}</style>
     </div>
   );
-}
+                                                         }
