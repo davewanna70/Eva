@@ -156,4 +156,4 @@ export default function EVA() {
       <style>{`@keyframes breathe { 0%,100%{ transform: scale(1);} 50%{ transform: scale(1.08);} }`}</style>
     </div>
   );
-}
+      }
