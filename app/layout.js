@@ -1,3 +1,5 @@
+import './globals.css'
+
 export const metadata = {
   title: "EVA",
   description: "EVA - Your Sister Companion",
