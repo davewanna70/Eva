@@ -65,3 +65,22 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .input-area input { flex: 1; padding: 11px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.14); color: white; outline: none; }
 .input-btn { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.3); color: white; width: 38px; height: 38px; border-radius: 999px; font-size: 18px; cursor: pointer; }
 .send-btn { background: #8b5cf6; border: none; width: 42px; height: 42px; border-radius: 999px; font-size: 18px; cursor: pointer; }
+
+/* INSIDE CHAT FIX - NEW */
+.inside-header { display: flex; align-items: center; gap: 10px; padding: 12px 12px; background: rgba(255,255,255,0.08); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.12); position: sticky; top: 0; z-index: 20; }
+.inside-header .droplet-real.small { width: 40px; height: 40px; }
+.header-text { flex: 1; display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.header-text b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header-text span { font-size: 11px; color: #bbb; }
+.header-icons { display: flex; gap: 6px; }
+.icon-btn { width: 36px; height: 36px; border-radius: 999px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.3); color: white; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.inside-menu { position: absolute; top: 60px; right: 12px; background: rgba(0,0,0,0.9); border: 1px solid rgba(255,255,255,0.25); border-radius: 14px; display: flex; flex-direction: column; padding: 6px; width: 190px; z-index: 30; backdrop-filter: blur(10px); }
+.inside-menu button { background: none; border: none; color: white; padding: 12px 14px; text-align: left; font-size: 14px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.inside-menu button:last-child { border-bottom: none; }
+.live-box { width: 180px; border-radius: 14px; overflow: hidden; position: relative; }
+.live-box img { width: 100%; height: 180px; object-fit: cover; display: block; }
+.live-box span { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 999px; font-size: 12px; }
+.voice-msg { display: flex; align-items: center; gap: 8px; width: 160px; }
+.voice-bar { flex: 1; height: 4px; background: rgba(255,255,255,0.4); border-radius: 999px; }
+.attach-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; background: rgba(255,255,255,0.08); }
+.attach-menu button { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 12px; border-radius: 12px; text-align: left; }
