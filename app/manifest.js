@@ -12,14 +12,14 @@ export default function manifest() {
     theme_color: '#000000',
     icons: [
       {
-        src: '/IMG-20261104-WA3311.jpg',
+        src: '/icon-192.png',
         sizes: '192x192',
-        type: 'image/jpeg',
+        type: 'image/png',
       },
       {
-        src: '/IMG-20261104-WA3311.jpg',
+        src: '/icon-512.png',
         sizes: '512x512',
-        type: 'image/jpeg',
+        type: 'image/png',
         purpose: 'any maskable',
       },
     ],
