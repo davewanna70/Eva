@@ -1,8 +1,8 @@
 export default function manifest() {
   return {
-    name: 'EVA Sister Core',
+    name: 'EVA',
     short_name: 'EVA',
-    description: 'My AI Sister EVA',
+    description: 'EVA',
     id: '/',
     start_url: '/',
     scope: '/',
