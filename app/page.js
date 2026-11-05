@@ -1,10 +1,12 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function EVA() {
   const [text, setText] = useState("");
   const [reply, setReply] = useState("");
   const [showMenu, setShowMenu] = useState(false);
+  const router = useRouter();
 
   const askEVA = () => {
     if (!text) return;
@@ -14,6 +16,10 @@ export default function EVA() {
 
   const openDiscover = () => {
     setReply("✨ Discover: Try ask me - 'Give me a calm routine', 'Help me plan my day', or 'Scan my mood'");
+  };
+
+  const openChat = () => {
+    router.push("/chat");
   };
 
   const menuClick = (item) => {
@@ -64,10 +70,13 @@ export default function EVA() {
           <button onClick={askEVA} style={{ background: "#8b5cf6", border: "none", color: "white", padding: "10px 18px", borderRadius: 999, fontWeight: "bold" }}>Ask →</button>
         </div>
 
-        {/* DISCOVER - BEFORE VERSION */}
-        <div style={{ display: "flex", maxWidth: 520, margin: "10px auto 0" }}>
+        {/* DISCOVER + CHAT - DISCOVER LEFT, CHAT RIGHT */}
+        <div style={{ display: "flex", maxWidth: 520, margin: "10px auto 0", justifyContent: "space-between", alignItems: "center" }}>
           <button onClick={openDiscover} style={{ background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", padding: "9px 16px", borderRadius: 999, fontSize: 13, display: "flex", alignItems: "center", gap: 6, backdropFilter: "blur(10px)" }}>
             ✨ Discover
+          </button>
+          <button onClick={openChat} style={{ background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", padding: "9px 16px", borderRadius: 999, fontSize: 13, display: "flex", alignItems: "center", gap: 6, backdropFilter: "blur(10px)" }}>
+            💬 Chat
           </button>
         </div>
 
@@ -75,4 +84,4 @@ export default function EVA() {
 
     </div>
   );
-        }
+}
