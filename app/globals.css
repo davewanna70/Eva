@@ -25,7 +25,7 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .unread { background: #8b5cf6; color: white; font-size: 12px; font-weight: bold; padding: 3px 8px; border-radius: 999px; }
 
 /* DROPLET - REAL LIKE FIRST PAGE */
-.droplet-real { width: 54px; height: 54px; border-radius: 50% 50% 50% 8px; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 2px solid #a78bfa; background: #030014; box-shadow: 0 0 18px rgba(167,139,250,0.45); }
+.droplet-real { width: 54px; height: 54px; border-radius: 50% 50% 50% 8px; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 2px solid #a78bfa; background: #030014; box-shadow: 0 0 18px rgba(167,139,250,0.45); position: relative; }
 .droplet-real img { width: 100%; height: 100%; object-fit: cover; }
 .check-ring { border-color: #25d366; box-shadow: 0 0 18px rgba(37,211,102,0.4); }
 .my-droplet { background: rgba(255,255,255,0.14); backdrop-filter: blur(10px); font-size: 24px; color: white; }
@@ -84,3 +84,29 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .voice-bar { flex: 1; height: 4px; background: rgba(255,255,255,0.4); border-radius: 999px; }
 .attach-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; background: rgba(255,255,255,0.08); }
 .attach-menu button { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 12px; border-radius: 12px; text-align: left; }
+
+/* STEP 3 - PROFILE SHEET + FULL LIVE */
+.profile-sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; justify-content: center; z-index: 60; }
+.profile-sheet { background: #1a1a2e; width: 100%; max-width: 420px; border-radius: 22px 22px 0 0; padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 12px; }
+.profile-big { position: relative; width: 100%; height: 300px; border-radius: 18px; overflow: hidden; cursor: pointer; border: 2px solid #a78bfa; }
+.profile-big img { width: 100%; height: 100%; object-fit: cover; }
+.live-pill { position: absolute; top: 10px; left: 10px; background: #ff2d55; color: white; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: bold; }
+.tap-full { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 999px; font-size: 12px; }
+.profile-name { display: flex; flex-direction: column; align-items: center; line-height: 1.3; }
+.profile-name b { font-size: 18px; }
+.profile-name span { font-size: 12px; color: #bbb; }
+.profile-3btn { display: flex; justify-content: space-around; }
+.profile-3btn button { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: white; width: 70px; height: 60px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 20px; cursor: pointer; }
+.profile-3btn button span { font-size: 11px; }
+.profile-close { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 11px; border-radius: 12px; cursor: pointer; }
+.live-dot { position: absolute; bottom: 2px; right: 2px; background: #ff2d55; color: white; font-size: 9px; padding: 2px 5px; border-radius: 999px; font-weight: bold; }
+.full-view { position: fixed; inset: 0; background: black; z-index: 100; display: flex; flex-direction: column; }
+.full-view img { width: 100%; flex: 1; object-fit: cover; }
+.full-top { display: flex; gap: 10px; align-items: center; padding: 12px; background: rgba(0,0,0,0.5); }
+.full-top button { width: 36px; height: 36px; border-radius: 999px; background: rgba(255,255,255,0.2); border: none; color: white; font-size: 16px; cursor: pointer; }
+.full-top span { margin-left: auto; font-size: 12px; color: #bbb; }
+.full-bottom { text-align: center; padding: 14px; font-size: 13px; color: #ccc; background: rgba(0,0,0,0.5); }
+.live-box-full { width: 100%; max-width: 320px; border-radius: 14px; overflow: hidden; position: relative; cursor: pointer; }
+.live-box-full img { width: 100%; height: 280px; object-fit: cover; display: block; }
+.live-box-full span { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.65); padding: 5px 10px; border-radius: 999px; font-size: 12px; }
+.msg-row .bubble { width: auto; max-width: 85%; }
