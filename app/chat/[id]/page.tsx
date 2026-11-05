@@ -9,6 +9,11 @@ export default function ChatInside() {
   const [showMenu, setShowMenu] = useState(false)
   const [showAttach, setShowAttach] = useState(false)
 
+  // STEP 3 - PROFILE + FULL LIVE
+  const [showProfile, setShowProfile] = useState(false)
+  const [fullLive, setFullLive] = useState(false)
+  const [fullImg, setFullImg] = useState('')
+
   const EVA_BG = '/eva-bg.jpg'
   const names = { '1': 'Ada', '2': 'EVA Group - Lagos', '3': 'Tunde' }
   const name = names[params.id] || 'Ada'
@@ -26,13 +31,14 @@ export default function ChatInside() {
     setText('')
   }
 
+  const openFull = (img) => { setFullImg(img); setFullLive(true) }
+
   return (
     <div className="chat-inside">
-      {/* HEADER - FIXED, NO MORE OVERLAP */}
       <div className="inside-header">
         <button className="icon-btn" onClick={() => router.push('/chat')}>←</button>
-        <div className="droplet-real small"><img src={EVA_BG} alt="" /></div>
-        <div className="header-text">
+        <div className="droplet-real small" onClick={() => setShowProfile(true)}><img src={EVA_BG} alt="" /></div>
+        <div className="header-text" onClick={() => setShowProfile(true)}>
           <b>{name}</b>
           <span>Online • Last seen today</span>
         </div>
@@ -60,9 +66,9 @@ export default function ChatInside() {
           <div key={m.id} className={m.from === 'me' ? 'msg-row me' : 'msg-row'}>
             <div className="bubble">
               {m.type === 'live' ? (
-                <div className="live-box">
+                <div className="live-box-full" onClick={() => openFull(m.img)}>
                   <img src={m.img} alt="" />
-                  <span>{m.text}</span>
+                  <span>● {m.text} — Tap to watch full</span>
                 </div>
               ) : m.type === 'voice' ? (
                 <div className="voice-msg"><span>▶️</span><div className="voice-bar" /><span>{m.text}</span></div>
@@ -91,6 +97,39 @@ export default function ChatInside() {
         <button className="input-btn">📎</button>
         <button className="send-btn" onClick={send}>➤</button>
       </div>
+
+      {/* PROFILE HALF SHEET INSIDE CHAT TOO */}
+      {showProfile && !fullLive && (
+        <div className="profile-sheet-bg" onClick={() => setShowProfile(false)}>
+          <div className="profile-sheet" onClick={e => e.stopPropagation()}>
+            <div className="profile-big" onClick={() => openFull(EVA_BG)}>
+              <img src={EVA_BG} alt="" />
+              <span className="live-pill">● Live • 7s — Tap to watch full</span>
+              <span className="tap-full">Tap to view full</span>
+            </div>
+            <div className="profile-name"><b>{name}</b><span>Online • Last seen today</span></div>
+            <div className="profile-3btn">
+              <button onClick={() => setShowProfile(false)}>💬<span>Message</span></button>
+              <button>📞<span>Call</span></button>
+              <button>📹<span>Video</span></button>
+            </div>
+            <button className="profile-close" onClick={() => setShowProfile(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* FULL SCREEN LIVE / PROFILE */}
+      {fullLive && (
+        <div className="full-view" onClick={() => { setFullLive(false); }}>
+          <div className="full-top">
+            <button onClick={() => setFullLive(false)}>✕</button>
+            <b>{name}</b>
+            <span>Live • 7s</span>
+          </div>
+          <img src={fullImg} alt="" />
+          <div className="full-bottom">● Live sticker dey play — Tap anywhere to close</div>
+        </div>
+      )}
     </div>
   )
 }
