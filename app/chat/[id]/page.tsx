@@ -2,6 +2,10 @@
 import { useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 
+const PhoneIcon = () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg>)
+const VideoIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="3" /></svg>)
+const ChatIcon = () => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>)
+
 export default function ChatInside() {
   const router = useRouter()
   const params = useParams()
@@ -28,9 +32,10 @@ export default function ChatInside() {
     setText('')
   }
   const openFull = (img) => { setFullImg(img); setFullLive(true) }
+  const closeAll = () => { setShowMenu(false); setShowAttach(false) }
   return (
-    <div className="chat-inside">
-      <div className="inside-header">
+    <div className="chat-inside" onClick={closeAll}>
+      <div className="inside-header" onClick={e => e.stopPropagation()}>
         <button className="icon-btn" onClick={() => router.push('/chat')}>←</button>
         <div className="droplet-real small" onClick={() => setShowProfile(true)}><img src={EVA_BG} alt="" /></div>
         <div className="header-text" onClick={() => setShowProfile(true)}>
@@ -38,18 +43,21 @@ export default function ChatInside() {
           <span>{lastSeen}</span>
         </div>
         <div className="header-icons">
-          <button className="icon-btn" onClick={(e) => e.stopPropagation()}>📹</button>
-          <button className="icon-btn" onClick={(e) => e.stopPropagation()}>📞</button>
-          <button className="icon-btn" onClick={() => setShowMenu(!showMenu)}>⋮</button>
+          <button className="call-futuristic" onClick={(e) => e.stopPropagation()}><VideoIcon /></button>
+          <button className="call-futuristic" onClick={(e) => e.stopPropagation()}><PhoneIcon /></button>
+          <button className="icon-btn" onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu) }}>⋮</button>
         </div>
         {showMenu && (
-          <div className="inside-menu">
-            <button onClick={() => setShowMenu(false)}>View contact</button>
-            <button onClick={() => setShowMenu(false)}>Media, links, docs</button>
-            <button onClick={() => setShowMenu(false)}>Search</button>
-            <button onClick={() => setShowMenu(false)}>Mute notifications</button>
-            <button onClick={() => setShowMenu(false)}>Block</button>
-          </div>
+          <>
+            <div className="menu-backdrop" onClick={() => setShowMenu(false)} />
+            <div className="inside-menu" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setShowMenu(false)}>View contact</button>
+              <button onClick={() => setShowMenu(false)}>Media, links, docs</button>
+              <button onClick={() => setShowMenu(false)}>Search</button>
+              <button onClick={() => setShowMenu(false)}>Mute notifications</button>
+              <button onClick={() => setShowMenu(false)}>Block</button>
+            </div>
+          </>
         )}
       </div>
       <div className="messages-area">
@@ -73,14 +81,14 @@ export default function ChatInside() {
         ))}
       </div>
       {showAttach && (
-        <div className="attach-menu">
+        <div className="attach-menu" onClick={e => e.stopPropagation()}>
           <button>📷 Camera</button>
           <button>🖼️ Gallery</button>
           <button>📄 Document</button>
           <button>📍 Location</button>
         </div>
       )}
-      <div className="input-area">
+      <div className="input-area" onClick={e => e.stopPropagation()}>
         <button className="input-btn" onClick={() => setShowAttach(!showAttach)}>+</button>
         <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder="Message" />
         <button className="input-btn">😊</button>
@@ -95,9 +103,9 @@ export default function ChatInside() {
               <span className="eva-live-dot" />
             </div>
             <div className="eva-pop-icons">
-              <button onClick={() => setShowProfile(false)}>💬</button>
-              <button>📞</button>
-              <button>📹</button>
+              <button onClick={() => setShowProfile(false)}><ChatIcon /></button>
+              <button><PhoneIcon /></button>
+              <button><VideoIcon /></button>
             </div>
           </div>
         </div>
@@ -114,4 +122,4 @@ export default function ChatInside() {
       )}
     </div>
   )
-}
+          }
