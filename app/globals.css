@@ -1,0 +1,65 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: sans-serif; background: #0a0a0a; color: white; }
+
+.eva-chat-page, .chat-inside { min-height: 100vh; background: #0f0f0f; display: flex; flex-direction: column; padding-bottom: 70px; }
+.top-bar, .chat-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #1a1a1a; position: sticky; top: 0; z-index: 10; }
+.top-bar h1 { font-size: 22px; letter-spacing: 2px; }
+.top-icons, .header-name { display: flex; gap: 8px; align-items: center; }
+.top-icons button, .chat-header button { background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 6px; }
+.search-bar { padding: 10px 14px; }
+.search-bar input { width: 100%; padding: 10px 14px; border-radius: 20px; border: none; background: #222; color: white; outline: none; }
+
+.chat-list, .check-page, .calls-page { flex: 1; }
+.chat-row { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid #222; cursor: pointer; }
+.chat-info { flex: 1; }
+.chat-top, .chat-bottom { display: flex; justify-content: space-between; align-items: center; }
+.chat-bottom span:first-child { color: #aaa; font-size: 13px; }
+.unread { background: #00d4ff; color: black; font-size: 12px; font-weight: bold; padding: 2px 7px; border-radius: 50%; }
+
+.droplet-profile-small { width: 52px; height: 52px; border-radius: 50% 50% 50% 8px; overflow: hidden; background: #333; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 2px solid #00d4ff; }
+.droplet-profile-small img, .droplet-profile-small video { width: 100%; height: 100%; object-fit: cover; }
+.droplet-profile-tiny { width: 38px; height: 38px; border-radius: 50% 50% 50% 8px; overflow: hidden; border: 1.5px solid #00d4ff; }
+.droplet-profile-tiny video { width: 100%; height: 100%; object-fit: cover; }
+.droplet-profile-big { width: 120px; height: 120px; border-radius: 50% 50% 50% 12px; overflow: hidden; border: 3px solid #00d4ff; margin: 0 auto 12px; }
+.droplet-profile-big img, .droplet-profile-big video { width: 100%; height: 100%; object-fit: cover; }
+.check-ring { border-color: #25d366; }
+.my-droplet { background: #222; font-size: 24px; color: #00d4ff; }
+.my-check { display: flex; gap: 12px; align-items: center; padding: 12px 14px; }
+.label { padding: 10px 14px; color: #888; font-size: 13px; }
+
+.bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-around; background: #1a1a1a; padding: 8px 0 12px; border-top: 1px solid #333; z-index: 20; }
+.bottom-nav button { background: none; border: none; color: #888; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 20px; cursor: pointer; }
+.bottom-nav button span { font-size: 11px; }
+.bottom-nav button.active { color: #00d4ff; }
+.fab { position: fixed; bottom: 80px; right: 16px; width: 54px; height: 54px; border-radius: 50%; background: #00d4ff; border: none; font-size: 22px; cursor: pointer; }
+
+.messages-area { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.date-pill, .encrypt-note { text-align: center; font-size: 12px; color: #888; background: #1e1e1e; padding: 5px 10px; border-radius: 12px; margin: 0 auto; }
+.msg-row { display: flex; }
+.msg-row.me { justify-content: flex-end; }
+.bubble { max-width: 80%; padding: 8px 10px; border-radius: 12px; background: #222; }
+.msg-row.me .bubble { background: #005c4b; }
+.bubble p { font-size: 15px; }
+.sticker-img { width: 140px; border-radius: 10px; }
+.live-in-chat video { width: 150px; height: 150px; object-fit: cover; border-radius: 14px; }
+.msg-meta { display: flex; gap: 5px; justify-content: flex-end; font-size: 11px; color: #aaa; margin-top: 4px; }
+.voice-msg { display: flex; gap: 8px; align-items: center; }
+.voice-bar { width: 80px; height: 4px; background: #00d4ff; border-radius: 4px; }
+
+.input-area { display: flex; gap: 8px; align-items: center; padding: 10px; background: #1a1a1a; position: sticky; bottom: 0; }
+.input-area input { flex: 1; padding: 10px 14px; border-radius: 20px; border: none; background: #222; color: white; outline: none; }
+.input-btn { background: #222; border: none; color: white; width: 38px; height: 38px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+.send-btn { background: #00d4ff; border: none; width: 42px; height: 42px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+.attach-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; background: #1a1a1a; }
+.attach-menu button { background: #222; border: none; color: white; padding: 12px; border-radius: 10px; text-align: left; }
+
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
+.modal-card { background: #1e1e1e; width: 100%; max-width: 420px; border-radius: 20px 20px 0 0; padding: 20px; display: flex; flex-direction: column; gap: 10px; text-align: center; }
+.modal-card button, .modal-card .normal-btn { background: #222; border: none; color: white; padding: 12px; border-radius: 10px; cursor: pointer; }
+.three-dot-menu { position: absolute; top: 50px; right: 14px; background: #222; border-radius: 10px; display: flex; flex-direction: column; padding: 6px; z-index: 30; }
+.three-dot-menu button, .header-menu button { background: none; border: none; color: white; padding: 10px 14px; text-align: left; cursor: pointer; }
+.header-menu { position: absolute; top: 50px; right: 10px; background: #222; border-radius: 10px; padding: 6px; display: flex; flex-direction: column; z-index: 30; }
+.profile-actions { display: flex; justify-content: center; gap: 10px; }
+.glass-btn { width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; }
+.glass-btn span { font-size: 10px; }
+.call-btn { background: #222; border: none; color: white; width: 38px; height: 38px; border-radius: 50%; cursor: pointer; }
