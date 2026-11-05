@@ -8,35 +8,26 @@ export default function ChatInside() {
   const [text, setText] = useState('')
   const [showMenu, setShowMenu] = useState(false)
   const [showAttach, setShowAttach] = useState(false)
-
-  // STEP 3.1 - CLEAN POP + FULL LIVE
   const [showProfile, setShowProfile] = useState(false)
   const [fullLive, setFullLive] = useState(false)
   const [fullImg, setFullImg] = useState('')
-
   const EVA_BG = '/eva-bg.jpg'
   const names = { '1': 'Ada', '2': 'EVA Group - Lagos', '3': 'Tunde' }
   const name = names[params.id] || 'Ada'
-
-  // ACCURATE LAST SEEN PER PERSON - SMALL, NO HARDCODE FOR ALL
   const lastSeens = { '1': '● Online', '2': 'Tunde, Ada • Online', '3': 'Last seen 2 mins ago' }
   const lastSeen = lastSeens[params.id] || '● Online'
-
   const [msgs, setMsgs] = useState([
     { id: 1, from: 'other', text: 'You don see my new live sticker?', time: '2:12 PM' },
     { id: 2, from: 'me', text: 'Yes o, e too fine, e dey repeat 😍', time: '2:13 PM' },
     { id: 3, from: 'other', type: 'live', time: '2:15 PM', img: EVA_BG },
     { id: 4, from: 'me', type: 'voice', text: '0:07', time: '2:16 PM' },
   ])
-
   const send = () => {
     if (!text.trim()) return
     setMsgs([...msgs, { id: Date.now(), from: 'me', text, time: 'Now' }])
     setText('')
   }
-
   const openFull = (img) => { setFullImg(img); setFullLive(true) }
-
   return (
     <div className="chat-inside">
       <div className="inside-header">
@@ -61,14 +52,66 @@ export default function ChatInside() {
           </div>
         )}
       </div>
-
       <div className="messages-area">
         <div className="date-pill">Today</div>
         <div className="encrypt-note">🔒 Messages are end-to-end encrypted</div>
-
         {msgs.map(m => (
           <div key={m.id} className={m.from === 'me' ? 'msg-row me' : 'msg-row'}>
             <div className="bubble">
               {m.type === 'live' ? (
                 <div className="live-box-full" onClick={() => openFull(m.img)}>
-                  <img src={m
+                  <img src={m.img} alt="" />
+                </div>
+              ) : m.type === 'voice' ? (
+                <div className="voice-msg"><span>▶️</span><div className="voice-bar" /><span>{m.text}</span></div>
+              ) : (
+                <p>{m.text}</p>
+              )}
+              <div className="msg-meta"><span>{m.time}</span><span>✓✓</span></div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {showAttach && (
+        <div className="attach-menu">
+          <button>📷 Camera</button>
+          <button>🖼️ Gallery</button>
+          <button>📄 Document</button>
+          <button>📍 Location</button>
+        </div>
+      )}
+      <div className="input-area">
+        <button className="input-btn" onClick={() => setShowAttach(!showAttach)}>+</button>
+        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder="Message" />
+        <button className="input-btn">😊</button>
+        <button className="input-btn">📎</button>
+        <button className="send-btn" onClick={send}>➤</button>
+      </div>
+      {showProfile && !fullLive && (
+        <div className="eva-pop-bg" onClick={() => setShowProfile(false)}>
+          <div className="eva-pop" onClick={e => e.stopPropagation()}>
+            <div className="eva-pop-img" onClick={() => openFull(EVA_BG)}>
+              <img src={EVA_BG} alt="" />
+              <span className="eva-live-dot" />
+            </div>
+            <div className="eva-pop-icons">
+              <button onClick={() => setShowProfile(false)}>💬</button>
+              <button>📞</button>
+              <button>📹</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {fullLive && (
+        <div className="eva-full" onClick={() => setFullLive(false)}>
+          <div className="eva-full-top">
+            <button onClick={() => setFullLive(false)}>✕</button>
+            <b>{name}</b>
+            <span>● Live</span>
+          </div>
+          <img src={fullImg} alt="" />
+        </div>
+      )}
+    </div>
+  )
+}
