@@ -11,30 +11,30 @@ export default function EvaChat() {
   const [search, setSearch] = useState('')
   const [showNewChat, setShowNewChat] = useState(false)
 
-  // STEP 3 - PROFILE SHEET + FULL VIEW
+  // STEP 3.1 - CLEAN POP + FULL VIEW
   const [profile, setProfile] = useState(null)
   const [fullProfile, setFullProfile] = useState(false)
 
   const EVA_BG = '/eva-bg.jpg'
 
   const allChats = [
-    { id: 1, name: 'Ada', last: 'I don see your live sticker', time: '2:15 PM', unread: 2, photo: EVA_BG, live: true },
-    { id: 2, name: 'EVA Group - Lagos', last: 'Tunde: Who dey come?', time: '1:40 PM', unread: 5, photo: EVA_BG, live: false },
-    { id: 3, name: 'Tunde', last: 'Send me that 7s sticker', time: '11:20 AM', unread: 0, photo: EVA_BG, live: true },
+    { id: 1, name: 'Ada', last: 'I don see your live sticker', time: '2:15 PM', unread: 2, photo: EVA_BG, live: true, lastSeen: '● Online' },
+    { id: 2, name: 'EVA Group - Lagos', last: 'Tunde: Who dey come?', time: '1:40 PM', unread: 5, photo: EVA_BG, live: false, lastSeen: 'Last seen 5 mins ago' },
+    { id: 3, name: 'Tunde', last: 'Send me that 7s sticker', time: '11:20 AM', unread: 0, photo: EVA_BG, live: true, lastSeen: 'Last seen 2 mins ago' },
   ]
 
   const chats = allChats.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
 
   const checks = [
-    { id: 1, name: 'Ada', time: '12 mins ago', views: 24, photo: EVA_BG, live: true },
-    { id: 2, name: 'Tunde', time: '1 hr ago', views: 12, photo: EVA_BG, live: false },
+    { id: 1, name: 'Ada', time: '12 mins ago', views: 24, photo: EVA_BG, live: true, lastSeen: '● Online' },
+    { id: 2, name: 'Tunde', time: '1 hr ago', views: 12, photo: EVA_BG, live: false, lastSeen: 'Last seen 2 mins ago' },
   ]
 
   const openSettings = () => { setShowMenu(false); setShowSettings(true) }
   const openNotifs = () => { setShowMenu(false); setShowNotifications(true) }
 
   const openProfile = (person, e) => {
-    e.stopPropagation()
+    if (e) e.stopPropagation()
     setProfile(person)
     setFullProfile(false)
   }
@@ -92,8 +92,8 @@ export default function EvaChat() {
           </div>
           <p className="label">Recent Checks</p>
           {checks.map(c => (
-            <div key={c.id} className="chat-row" onClick={() => openProfile(c, { stopPropagation:()=>{} })}>
-              <div className="droplet-real check-ring"><img src={c.photo} alt="" /></div>
+            <div key={c.id} className="chat-row" onClick={(e) => openProfile(c, e)}>
+              <div className="droplet-real check-ring" onClick={(e) => openProfile(c, e)}><img src={c.photo} alt="" /></div>
               <div style={{ flex: 1 }}><b>{c.name}</b><p>{c.time} • {c.views} views</p></div>
               <span>👁️ {c.views}</span>
             </div>
@@ -103,11 +103,11 @@ export default function EvaChat() {
 
       {tab === 'calls' && (
         <div className="calls-page">
-          <div className="chat-row">
+          <div className="chat-row" onClick={() => router.push(`/chat/1`)}>
             <div className="droplet-real" onClick={(e) => openProfile(allChats[0], e)}><img src={EVA_BG} alt="" /></div>
-            <div style={{ flex: 1 }}><b>Ada</b><p>Video call • 2 mins ago</p></div>
-            <button className="call-btn">📹</button>
-            <button className="call-btn">📞</button>
+            <div style={{ flex: 1 }} onClick={(e) => openProfile(allChats[0], e)}><b>Ada</b><p>Video call • 2 mins ago</p></div>
+            <button className="call-btn" onClick={(e) => e.stopPropagation()}>📹</button>
+            <button className="call-btn" onClick={(e) => e.stopPropagation()}>📞</button>
           </div>
         </div>
       )}
@@ -118,80 +118,7 @@ export default function EvaChat() {
         <button className={tab === 'calls' ? 'active' : ''} onClick={() => setTab('calls')}>📞<span>Calls</span></button>
       </div>
 
-      <button className="fab-glass" onClick={() => setShowNewChat(true)}>💬</button>
+      {!profile && <button className="fab-glass" onClick={() => setShowNewChat(true)}>💬</button>}
 
-      {/* STEP 3 - PROFILE HALF SHEET LIKE WHATSAPP */}
+      {/* CLEAN POP - WHATSAPP SIZE, NO TEXT, NO DUPLICATE NAME */}
       {profile && !fullProfile && (
-        <div className="profile-sheet-bg" onClick={() => setProfile(null)}>
-          <div className="profile-sheet" onClick={e => e.stopPropagation()}>
-            <div className="profile-big" onClick={() => setFullProfile(true)}>
-              <img src={profile.photo} alt="" />
-              {profile.live && <span className="live-pill">● Live • 7s — Tap to watch full</span>}
-              <span className="tap-full">Tap to view full</span>
-            </div>
-            <div className="profile-name"><b>{profile.name}</b><span>Online • Last seen today</span></div>
-            <div className="profile-3btn">
-              <button onClick={() => router.push(`/chat/${profile.id}`)}>💬<span>Message</span></button>
-              <button>📞<span>Call</span></button>
-              <button>📹<span>Video</span></button>
-            </div>
-            <button className="profile-close" onClick={() => setProfile(null)}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 3 - FULL SCREEN PROFILE / LIVE */}
-      {profile && fullProfile && (
-        <div className="full-view" onClick={() => setFullProfile(false)}>
-          <div className="full-top">
-            <button onClick={() => setFullProfile(false)}>✕</button>
-            <b>{profile.name}</b>
-            <span>{profile.live ? 'Live • 7s' : 'Profile'}</span>
-          </div>
-          <img src={profile.photo} alt="" />
-          <div className="full-bottom">{profile.live ? '● Live sticker dey play' : 'Tap anywhere to close'}</div>
-        </div>
-      )}
-
-      {showNewChat && (
-        <div className="modal" onClick={() => setShowNewChat(false)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <h3>New Chat</h3>
-            <p style={{color:'#bbb', fontSize:13}}>Choose who you wan chat with</p>
-            {allChats.map(c => (
-              <button key={c.id} onClick={() => router.push(`/chat/${c.id}`)} style={{display:'flex', gap:10, alignItems:'center', textAlign:'left'}}>
-                <img src={c.photo} style={{width:36, height:36, borderRadius:'50% 50% 50% 8px', objectFit:'cover', border:'1.5px solid #a78bfa'}} /> {c.name}
-              </button>
-            ))}
-            <button onClick={() => setShowNewChat(false)}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {showSettings && (
-        <div className="modal" onClick={() => setShowSettings(false)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <h3>Settings</h3>
-            <button>Account • Privacy, Security</button>
-            <button>Chats • Theme, Wallpaper, Backup</button>
-            <button>Notifications • Sound, Vibrate</button>
-            <button>Storage and Data</button>
-            <button>Help • About EVA</button>
-            <button onClick={() => setShowSettings(false)}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {showNotifications && (
-        <div className="modal" onClick={() => setShowNotifications(false)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <h3>Notifications</h3>
-            <p>Ada sent you 2 messages</p>
-            <p>EVA Group - Lagos: 5 new messages</p>
-            <button onClick={() => setShowNotifications(false)}>Close</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
