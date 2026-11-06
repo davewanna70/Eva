@@ -2,31 +2,34 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 
-type Chat = { id: string; name: string; avatar: string; video: string; live?: boolean }
+type Chat = { id: string; name: string; avatar: string; video: string; image?: string; live?: boolean }
 
 const baseChats: Chat[] = [
-  { id: "ada", name: "Ada", avatar: "A", video: "/ada.mp4", live: true },
-  { id: "group", name: "EVA Group - Lagos", avatar: "G", video: "/group.mp4" },
-  { id: "tunde", name: "Tunde", avatar: "T", video: "/tunde.mp4", live: true },
+  { id: "ada", name: "Ada", avatar: "A", video: "/ada.mp4", image: "/ada.jpg", live: true },
+  { id: "group", name: "EVA Group - Lagos", avatar: "G", video: "/group.mp4", image: "/group.jpg" },
+  { id: "tunde", name: "Tunde", avatar: "T", video: "/tunde.mp4", image: "/tunde.jpg", live: true },
   { id: "1", name: "Test Chat 1", avatar: "", video: "/test1.mp4" },
   { id: "2", name: "Test Chat 2", avatar: "", video: "/test2.mp4" },
   { id: "3", name: "Test Chat 3", avatar: "", video: "/test3.mp4" },
 ]
 
-// --- HARD DROPLET - ONE SINGLE GLASS, NO SQUARE ---
+// --- HARD DROPLET - ONE SINGLE GLASS, NO SQUARE, NO BLACK BACKGROUND ---
 const DROPLET_CLIP = "path('M 31 0 C 48 28 62 52 62 66 C 62 78 48 86 31 86 C 14 86 0 78 0 66 C 0 52 14 28 31 0 Z')"
 
 function Droplet({ chat, size = "small" }: { chat: Chat; size?: "small" | "large" }) {
   const isLarge = size === "large"
   const w = isLarge ? 150 : 62
   const h = isLarge ? 208 : 86
-  const hasVideo = !!chat.video
-  // First letter - only for empty glass, stays inside top tip of same droplet
+  const [videoFailed, setVideoFailed] = useState(false)
+  const [imgFailed, setImgFailed] = useState(false)
+  const hasVideo = !!chat.video && !videoFailed
+  const hasImage = !!chat.image && !imgFailed && !hasVideo
+  const showEmptyGlass = !hasVideo && !hasImage
   const firstLetter = (chat.avatar || chat.name.charAt(0) || "").toUpperCase()
 
   return (
-    <div style={{ width: w, height: h, position: "relative", flexShrink: 0, filter: "drop-shadow(0 6px 14px rgba(0,0,0,0.45))" }}>
-      {/* GLASS BODY - video full inside, or empty glass */}
+    <div style={{ width: w, height: h, position: "relative", flexShrink: 0, filter: "drop-shadow(0 6px 14px rgba(0,0,0,0.35))" }}>
+      {/* GLASS BODY - transparent, light glass behind video so e no black */}
       <div
         style={{
           width: "100%",
@@ -34,10 +37,8 @@ function Droplet({ chat, size = "small" }: { chat: Chat; size?: "small" | "large
           overflow: "hidden",
           clipPath: DROPLET_CLIP,
           WebkitClipPath: DROPLET_CLIP,
-          background: hasVideo
-            ? "#0a0a1a"
-            : "linear-gradient(160deg, rgba(255,255,255,0.35), rgba(180,220,255,0.12) 40%, rgba(255,255,255,0.08))",
-          backdropFilter: "blur(6px)",
+          // LIGHT glass, not black - this na the fix for your screenshot
+          background: "linear-gradient(160deg, rgba(255,255,255,0.65), rgba(200,230,255,0.35) 40%, rgba(255,255,255,0.25))",
           position: "relative",
         }}
       >
@@ -48,12 +49,22 @@ function Droplet({ chat, size = "small" }: { chat: Chat; size?: "small" | "large
             muted
             loop
             playsInline
+            onError={() => setVideoFailed(true)}
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", background: "transparent" }}
+          />
+        ) : null}
+
+        {hasImage ? (
+          <img
+            src={chat.image}
+            alt={chat.name}
+            onError={() => setImgFailed(true)}
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
         ) : null}
 
-        {/* FIRST LETTER - inside same droplet, for top tip, only when no video */}
-        {!hasVideo && (
+        {/* EMPTY GLASS - first letter inside SAME droplet, for top tip */}
+        {showEmptyGlass && (
           <div
             style={{
               position: "absolute",
@@ -73,7 +84,7 @@ function Droplet({ chat, size = "small" }: { chat: Chat; size?: "small" | "large
         )}
       </div>
 
-      {/* GLASS SHINE - on top of video, still same droplet, no square */}
+      {/* GLASS SHINE - SOFTER, no white block, still same droplet */}
       <div
         style={{
           position: "absolute",
@@ -82,11 +93,10 @@ function Droplet({ chat, size = "small" }: { chat: Chat; size?: "small" | "large
           clipPath: DROPLET_CLIP,
           WebkitClipPath: DROPLET_CLIP,
           background:
-            "linear-gradient(115deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.25) 18%, transparent 35%, transparent 70%, rgba(255,255,255,0.35) 88%, rgba(255,255,255,0.8) 100%)",
-          boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.6)",
+            "linear-gradient(115deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.12) 20%, transparent 40%, transparent 75%, rgba(255,255,255,0.18) 90%)",
         }}
       />
-      {/* THIN GLASS RIM */}
+      {/* THIN GLASS RIM - light, no dark border */}
       <div
         style={{
           position: "absolute",
@@ -94,7 +104,7 @@ function Droplet({ chat, size = "small" }: { chat: Chat; size?: "small" | "large
           pointerEvents: "none",
           clipPath: DROPLET_CLIP,
           WebkitClipPath: DROPLET_CLIP,
-          border: "1px solid rgba(255,255,255,0.35)",
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.45)",
         }}
       />
     </div>
