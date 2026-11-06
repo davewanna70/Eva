@@ -107,7 +107,7 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .eva-send { background: #8b5cf6; border: none; color: white; width: 42px; height: 42px; border-radius: 50%; cursor: pointer; }
 .eva-live-btn { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: white; padding: 8px 10px; border-radius: 999px; font-size: 12px; cursor: pointer; }
 
-/* TRANSPARENT DROPLET - FINAL, ONLY ONE DROPLET RULE */
+/* EXACTLY LIKE TOP EVA ON RED SQUARE - CLEAR TRANSPARENT DROPLET, NO FILL */
 .droplet-real, .eva-droplet, .droplet-profile-tiny, .eva-pop-img, .my-droplet {
   width: 54px !important;
   height: 68px !important;
@@ -115,8 +115,9 @@ body { font-family: sans-serif; background: #030014; color: white; }
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  background: transparent !important;
   background-color: transparent !important;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 120'%3E%3Cpath d='M50 5 C62 28 90 52 90 78 C90 100 72 115 50 115 C28 115 10 100 10 78 C10 52 38 28 50 5 Z' fill='rgba(255,255,255,0.12)' stroke='rgba(255,255,255,0.75)' stroke-width='2'/%3E%3Cellipse cx='35' cy='72' rx='10' ry='18' fill='rgba(255,255,255,0.35)'/%3E%3C/svg%3E") !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 120'%3E%3Cpath d='M50 4 C62 28 90 52 90 78 C90 100 72 115 50 115 C28 115 10 100 10 78 C10 52 38 28 50 4 Z' fill='none' stroke='rgba(255,255,255,0.95)' stroke-width='2.5'/%3E%3Cellipse cx='34' cy='70' rx='9' ry='17' fill='rgba(255,255,255,0.55)' transform='rotate(-12 34 70)'/%3E%3Cellipse cx='68' cy='92' rx='5' ry='8' fill='rgba(255,255,255,0.25)'/%3E%3C/svg%3E") !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
   background-size: 100% 100% !important;
@@ -131,13 +132,14 @@ body { font-family: sans-serif; background: #030014; color: white; }
   content: none !important;
 }
 .droplet-real img, .eva-droplet img, .droplet-profile-tiny img, .eva-pop-img img {
-  width: 34px !important;
-  height: 34px !important;
+  width: 30px !important;
+  height: 30px !important;
   border-radius: 50% !important;
   object-fit: cover !important;
 }
 .droplet-real > *, .eva-droplet > *, .droplet-profile-tiny > *, .my-droplet > * {
   background: transparent !important;
+  background-color: transparent !important;
   border: none !important;
   box-shadow: none !important;
 }
