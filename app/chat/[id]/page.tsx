@@ -32,10 +32,9 @@ export default function ChatInside() {
     setText('')
   }
   const openFull = (img) => { setFullImg(img); setFullLive(true) }
-  const closeAll = () => { setShowMenu(false); setShowAttach(false) }
   return (
-    <div className="chat-inside" onClick={closeAll}>
-      <div className="inside-header" onClick={e => e.stopPropagation()}>
+    <div className="chat-inside">
+      <div className="inside-header">
         <button className="icon-btn" onClick={() => router.push('/chat')}>←</button>
         <div className="droplet-real small" onClick={() => setShowProfile(true)}><img src={EVA_BG} alt="" /></div>
         <div className="header-text" onClick={() => setShowProfile(true)}>
@@ -47,20 +46,18 @@ export default function ChatInside() {
           <button className="call-futuristic" onClick={(e) => e.stopPropagation()}><PhoneIcon /></button>
           <button className="icon-btn" onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu) }}>⋮</button>
         </div>
-        {showMenu && (
-          <>
-            <div className="menu-backdrop" onClick={() => setShowMenu(false)} />
-            <div className="inside-menu" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setShowMenu(false)}>View contact</button>
-              <button onClick={() => setShowMenu(false)}>Media, links, docs</button>
-              <button onClick={() => setShowMenu(false)}>Search</button>
-              <button onClick={() => setShowMenu(false)}>Mute notifications</button>
-              <button onClick={() => setShowMenu(false)}>Block</button>
-            </div>
-          </>
-        )}
       </div>
-      <div className="messages-area">
+      {showMenu && (<>
+        <div className="menu-backdrop" onClick={() => setShowMenu(false)} />
+        <div className="inside-menu">
+          <button onClick={() => setShowMenu(false)}>View contact</button>
+          <button onClick={() => setShowMenu(false)}>Media, links, docs</button>
+          <button onClick={() => setShowMenu(false)}>Search</button>
+          <button onClick={() => setShowMenu(false)}>Mute notifications</button>
+          <button onClick={() => setShowMenu(false)}>Block</button>
+        </div>
+      </>)}
+      <div className="messages-area" onClick={() => { setShowMenu(false); setShowAttach(false) }}>
         <div className="date-pill">Today</div>
         <div className="encrypt-note">🔒 Messages are end-to-end encrypted</div>
         {msgs.map(m => (
@@ -88,7 +85,7 @@ export default function ChatInside() {
           <button>📍 Location</button>
         </div>
       )}
-      <div className="input-area" onClick={e => e.stopPropagation()}>
+      <div className="input-area">
         <button className="input-btn" onClick={() => setShowAttach(!showAttach)}>+</button>
         <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder="Message" />
         <button className="input-btn">😊</button>
@@ -122,4 +119,4 @@ export default function ChatInside() {
       )}
     </div>
   )
-          }
+            }
