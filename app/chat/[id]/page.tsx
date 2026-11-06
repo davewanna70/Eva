@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { supabase } from "../../../../lib/supabase"
+import { supabase } from "../../../lib/supabase"
 
 export default function ChatPage() {
   const params = useParams()
