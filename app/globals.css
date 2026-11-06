@@ -150,3 +150,17 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .eva-input-row input { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; padding: 11px 14px; color: white; outline: none; }
 .eva-send { background: #8b5cf6; border: none; color: white; width: 42px; height: 42px; border-radius: 50%; cursor: pointer; }
 .eva-live-btn { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: white; padding: 8px 10px; border-radius: 999px; font-size: 12px; cursor: pointer; }
+/* KILL INNER DARK CIRCLE INSIDE LIST DROPLETS */
+.droplet-real > *, .eva-droplet > *, .droplet-profile-tiny > *, .my-droplet > * {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.droplet-real, .eva-droplet {
+  background: rgba(255,255,255,0.08) !important;
+  overflow: visible !important;
+}
+.eva-initial {
+  background: transparent !important;
+  color: white !important;
+}
