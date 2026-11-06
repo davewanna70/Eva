@@ -40,17 +40,17 @@ export default function EvaChat() {
           <button onClick={openSettings} className="top-gear">⚙️</button>
           <button onClick={() => setShowMenu(!showMenu)}>⋮</button>
         </div>
-        {showMenu && (<>
-          <div className="menu-backdrop" onClick={() => setShowMenu(false)} />
-          <div className="three-dot-menu">
-            <button onClick={() => { setShowMenu(false); setShowNewChat(true) }}>New group</button>
-            <button onClick={() => setShowMenu(false)}>New broadcast</button>
-            <button onClick={openSettings}>Settings</button>
-            <button onClick={() => setShowMenu(false)}>Starred messages</button>
-            <button onClick={() => setShowMenu(false)}>Linked devices</button>
-          </div>
-        </>)}
       </div>
+      {showMenu && (<>
+        <div className="menu-backdrop" onClick={() => setShowMenu(false)} />
+        <div className="three-dot-menu">
+          <button onClick={() => { setShowMenu(false); setShowNewChat(true) }}>New group</button>
+          <button onClick={() => setShowMenu(false)}>New broadcast</button>
+          <button onClick={openSettings}>Settings</button>
+          <button onClick={() => setShowMenu(false)}>Starred messages</button>
+          <button onClick={() => setShowMenu(false)}>Linked devices</button>
+        </div>
+      </>)}
       <div className="search-glass">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search or start new chat" />
       </div>
@@ -97,11 +97,11 @@ export default function EvaChat() {
         </div>
       )}
       <div className="bottom-glass">
-        <button className={tab === 'chats' ? 'active' : ''} onClick={() => setTab('chats')}>💬<span>Chats</span></button>
+        <button className={tab === 'chats' ? 'active' : ''} onClick={() => setTab('chats')}><ChatIcon /><span>Chats</span></button>
         <button className={tab === 'check' ? 'active' : ''} onClick={() => setTab('check')}>◎<span>Check</span></button>
-        <button className={tab === 'calls' ? 'active' : ''} onClick={() => setTab('calls')}>📞<span>Calls</span></button>
+        <button className={tab === 'calls' ? 'active' : ''} onClick={() => setTab('calls')}><PhoneIcon /><span>Calls</span></button>
       </div>
-      {!profile && <button className="fab-glass" onClick={() => setShowNewChat(true)}>💬</button>}
+      {!profile && <button className="fab-glass" onClick={() => setShowNewChat(true)}><ChatIcon /></button>}
       {profile && !fullProfile && (
         <div className="eva-pop-bg" onClick={() => setProfile(null)}>
           <div className="eva-pop" onClick={e => e.stopPropagation()}>
@@ -166,4 +166,4 @@ export default function EvaChat() {
       )}
     </div>
   )
-                                                                                 }
+    }
