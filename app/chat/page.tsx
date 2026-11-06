@@ -2,15 +2,15 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 
-type Chat = { id: string; name: string; avatar: string; live?: boolean }
+type Chat = { id: string; name: string; avatar: string; video: string; live?: boolean }
 
 const baseChats: Chat[] = [
-  { id: "ada", name: "Ada", avatar: "A", live: true },
-  { id: "group", name: "EVA Group - Lagos", avatar: "G" },
-  { id: "tunde", name: "Tunde", avatar: "T", live: true },
-  { id: "1", name: "Test Chat 1", avatar: "" },
-  { id: "2", name: "Test Chat 2", avatar: "" },
-  { id: "3", name: "Test Chat 3", avatar: "" },
+  { id: "ada", name: "Ada", avatar: "A", video: "/ada.mp4", live: true },
+  { id: "group", name: "EVA Group - Lagos", avatar: "G", video: "/group.mp4" },
+  { id: "tunde", name: "Tunde", avatar: "T", video: "/tunde.mp4", live: true },
+  { id: "1", name: "Test Chat 1", avatar: "", video: "/test1.mp4" },
+  { id: "2", name: "Test Chat 2", avatar: "", video: "/test2.mp4" },
+  { id: "3", name: "Test Chat 3", avatar: "", video: "/test3.mp4" },
 ]
 
 export default function ChatList() {
@@ -55,9 +55,11 @@ export default function ChatList() {
       <div className="eva-list">
         {baseChats.map((c) => (
           <div key={c.id} className="eva-row">
-            {/* CLICK DROPLET = MINI PROFILE, NO CIRCLE, NO EVA INSIDE */}
+            {/* CLICK DROPLET = MINI PROFILE, BOTTLE SHAPE, VIDEO INSIDE, NO EVA, NO LETTER */}
             <div className="eva-drop-wrap" onClick={() => setProfile(c)}>
-              <div className="eva-droplet small"><span className="eva-initial">{c.avatar}</span></div>
+              <div className="eva-droplet small">
+                <video src={c.video} autoPlay muted loop playsInline />
+              </div>
               {c.live && <div className="eva-live-badge">Live</div>}
             </div>
             {/* CLICK NAME = OPEN CHAT */}
@@ -76,12 +78,14 @@ export default function ChatList() {
         <button className={tab === "calls" ? "active" : ""} onClick={() => { setTab("calls"); setModal("calls") }}>📞<span>Calls</span></button>
       </div>
 
-      {/* MINI PROFILE PREVIEW */}
+      {/* MINI PROFILE PREVIEW - VIDEO INSIDE BOTTLE TOO */}
       {profile && (
         <div className="eva-modal" onClick={() => setProfile(null)}>
           <div className="eva-card" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "center" }}>
-              <div className="eva-droplet large"><span className="eva-initial">{profile.avatar}</span></div>
+              <div className="eva-droplet large">
+                <video src={profile.video} autoPlay muted loop playsInline />
+              </div>
             </div>
             <h3>{profile.name}</h3>
             <p>Glass droplet profile • No EVA inside • Live Memo ready</p>
