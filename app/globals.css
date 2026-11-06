@@ -80,50 +80,6 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .eva-full-top span { margin-left: auto; font-size: 11px; color: #bbb; }
 .live-box-full { width: 100%; max-width: 300px; border-radius: 14px; overflow: hidden; position: relative; cursor: pointer; }
 .live-box-full img { width: 100%; height: 260px; object-fit: cover; display: block; }
-
-/* TRANSPARENT DROPLET - ONE SVG, NO PSEUDO TRICK, NO ROTATE */
-.droplet-real, .eva-droplet, .droplet-profile-tiny, .eva-pop-img, .my-droplet {
-  width: 54px !important;
-  height: 68px !important;
-  flex-shrink: 0 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  background-color: rgba(255,255,255,0.06) !important;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 120'%3E%3Cpath d='M50 5 C62 28 90 52 90 78 C90 100 72 115 50 115 C28 115 10 100 10 78 C10 52 38 28 50 5 Z' fill='rgba(255,255,255,0.10)' stroke='rgba(255,255,255,0.75)' stroke-width='2'/%3E%3Cellipse cx='35' cy='72' rx='10' ry='18' fill='rgba(255,255,255,0.35)'/%3E%3C/svg%3E") !important;
-  background-repeat: no-repeat !important;
-  background-position: center !important;
-  background-size: 100% 100% !important;
-  border: none !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  overflow: visible !important;
-  position: relative !important;
-}
-.droplet-real::before, .droplet-real::after, .eva-droplet::before, .eva-droplet::after, .droplet-profile-tiny::before, .droplet-profile-tiny::after, .eva-pop-img::before, .eva-pop-img::after {
-  display: none !important;
-  content: none !important;
-}
-.droplet-real img, .eva-droplet img, .droplet-profile-tiny img, .eva-pop-img img {
-  width: 34px !important;
-  height: 34px !important;
-  border-radius: 50% !important;
-  object-fit: cover !important;
-}
-.eva-initial {
-  font-weight: 800 !important;
-  font-size: 19px !important;
-  color: white !important;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.6) !important;
-}
-.droplet-real.small { width: 40px !important; height: 50px !important; }
-.droplet-profile-tiny { width: 38px !important; height: 48px !important; }
-.eva-droplet.mini { width: 34px !important; height: 43px !important; }
-.eva-droplet.small { width: 52px !important; height: 65px !important; }
-.eva-droplet.large { width: 90px !important; height: 112px !important; }
-.eva-pop-img { width: 90px !important; height: 112px !important; }
-.eva-drop-wrap { position: relative !important; cursor: pointer !important; }
-.eva-live-badge { position: absolute !important; left: -2px !important; bottom: 4px !important; background: #ef4444 !important; color: white !important; font-size: 9px !important; padding: 2px 6px !important; border-radius: 999px !important; z-index: 5 !important; font-weight: 700 !important; }
 .eva-app { max-width: 480px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; background: #030014; color: white; position: relative; overflow: hidden; }
 .eva-top { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; }
 .eva-logo { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 22px; }
@@ -150,17 +106,53 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .eva-input-row input { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; padding: 11px 14px; color: white; outline: none; }
 .eva-send { background: #8b5cf6; border: none; color: white; width: 42px; height: 42px; border-radius: 50%; cursor: pointer; }
 .eva-live-btn { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: white; padding: 8px 10px; border-radius: 999px; font-size: 12px; cursor: pointer; }
-/* KILL INNER DARK CIRCLE INSIDE LIST DROPLETS */
+
+/* TRANSPARENT DROPLET - FINAL, ONLY ONE DROPLET RULE */
+.droplet-real, .eva-droplet, .droplet-profile-tiny, .eva-pop-img, .my-droplet {
+  width: 54px !important;
+  height: 68px !important;
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: transparent !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 120'%3E%3Cpath d='M50 5 C62 28 90 52 90 78 C90 100 72 115 50 115 C28 115 10 100 10 78 C10 52 38 28 50 5 Z' fill='rgba(255,255,255,0.12)' stroke='rgba(255,255,255,0.75)' stroke-width='2'/%3E%3Cellipse cx='35' cy='72' rx='10' ry='18' fill='rgba(255,255,255,0.35)'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 100% 100% !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  position: relative !important;
+}
+.droplet-real::before, .droplet-real::after, .eva-droplet::before, .eva-droplet::after, .droplet-profile-tiny::before, .droplet-profile-tiny::after, .eva-pop-img::before, .eva-pop-img::after {
+  display: none !important;
+  content: none !important;
+}
+.droplet-real img, .eva-droplet img, .droplet-profile-tiny img, .eva-pop-img img {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
+}
 .droplet-real > *, .eva-droplet > *, .droplet-profile-tiny > *, .my-droplet > * {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
 }
-.droplet-real, .eva-droplet {
-  background: rgba(255,255,255,0.08) !important;
-  overflow: visible !important;
-}
 .eva-initial {
-  background: transparent !important;
+  font-weight: 800 !important;
+  font-size: 19px !important;
   color: white !important;
+  background: transparent !important;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6) !important;
 }
+.droplet-real.small { width: 40px !important; height: 50px !important; }
+.droplet-profile-tiny { width: 38px !important; height: 48px !important; }
+.eva-droplet.mini { width: 34px !important; height: 43px !important; }
+.eva-droplet.small { width: 52px !important; height: 65px !important; }
+.eva-droplet.large { width: 90px !important; height: 112px !important; }
+.eva-pop-img { width: 90px !important; height: 112px !important; }
+.eva-drop-wrap { position: relative !important; cursor: pointer !important; }
+.eva-live-badge { position: absolute !important; left: -2px !important; bottom: 4px !important; background: #ef4444 !important; color: white !important; font-size: 9px !important; padding: 2px 6px !important; border-radius: 999px !important; z-index: 5 !important; font-weight: 700 !important; }
