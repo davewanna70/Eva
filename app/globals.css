@@ -19,7 +19,6 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .chat-bottom span:first-child { color: #bbb; font-size: 13px; }
 .unread { background: #8b5cf6; color: white; font-size: 12px; font-weight: bold; padding: 3px 8px; border-radius: 999px; }
 .check-ring { border-color: #25d366; box-shadow: 0 0 18px rgba(37,211,102,0.4); }
-.my-droplet { background: rgba(255,255,255,0.14); backdrop-filter: blur(10px); font-size: 24px; color: white; }
 .my-check { display: flex; gap: 12px; align-items: center; padding: 14px 16px; }
 .label { padding: 10px 16px; color: #aaa; font-size: 13px; }
 .bottom-glass { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-around; background: rgba(255,255,255,0.14); backdrop-filter: blur(12px); border-top: 1px solid rgba(255,255,255,0.30); padding: 10px 0 14px; z-index: 20; }
@@ -82,80 +81,49 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .live-box-full { width: 100%; max-width: 300px; border-radius: 14px; overflow: hidden; position: relative; cursor: pointer; }
 .live-box-full img { width: 100%; height: 260px; object-fit: cover; display: block; }
 
-/* EVA TRANSPARENT DROPLET - POINT TOP, SEE-THROUGH */
-.droplet-real, .eva-droplet, .droplet-profile-tiny, .eva-pop-img {
-  width: 54px;
-  height: 64px;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  position: relative;
-  flex-shrink: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  overflow: visible;
+/* TRANSPARENT DROPLET - ONE SVG, NO PSEUDO TRICK, NO ROTATE */
+.droplet-real, .eva-droplet, .droplet-profile-tiny, .eva-pop-img, .my-droplet {
+  width: 54px !important;
+  height: 68px !important;
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: rgba(255,255,255,0.06) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 120'%3E%3Cpath d='M50 5 C62 28 90 52 90 78 C90 100 72 115 50 115 C28 115 10 100 10 78 C10 52 38 28 50 5 Z' fill='rgba(255,255,255,0.10)' stroke='rgba(255,255,255,0.75)' stroke-width='2'/%3E%3Cellipse cx='35' cy='72' rx='10' ry='18' fill='rgba(255,255,255,0.35)'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 100% 100% !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  position: relative !important;
 }
-.droplet-real::before, .eva-droplet::before, .droplet-profile-tiny::before, .eva-pop-img::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: 22px;
-  height: 22px;
-  transform: translateX(-50%) rotate(45deg);
-  background: rgba(255,255,255,0.08);
-  border-top: 1px solid rgba(255,255,255,0.5);
-  border-left: 1px solid rgba(255,255,255,0.5);
-  backdrop-filter: blur(4px);
-  z-index: 1;
-}
-.droplet-real::after, .eva-droplet::after, .droplet-profile-tiny::after, .eva-pop-img::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.02) 40%, rgba(255,255,255,0.12));
-  border: 1px solid rgba(255,255,255,0.4);
-  backdrop-filter: blur(4px);
-  box-shadow: inset 3px 4px 8px rgba(255,255,255,0.35);
-  z-index: 2;
+.droplet-real::before, .droplet-real::after, .eva-droplet::before, .eva-droplet::after, .droplet-profile-tiny::before, .droplet-profile-tiny::after, .eva-pop-img::before, .eva-pop-img::after {
+  display: none !important;
+  content: none !important;
 }
 .droplet-real img, .eva-droplet img, .droplet-profile-tiny img, .eva-pop-img img {
-  position: relative;
-  z-index: 3;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  object-fit: cover;
-  margin-bottom: 6px;
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
 }
 .eva-initial {
-  position: relative;
-  z-index: 3;
-  font-weight: 800;
-  font-size: 20px;
-  color: white;
-  margin-bottom: 14px;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  font-weight: 800 !important;
+  font-size: 19px !important;
+  color: white !important;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6) !important;
 }
-.droplet-real.small { width: 40px; height: 48px; }
-.droplet-real.small::after { width: 40px; height: 40px; }
-.droplet-profile-tiny { width: 38px; height: 46px; }
-.droplet-profile-tiny::after { width: 38px; height: 38px; }
-.eva-pop-img { width: 90px; height: 104px; }
-.eva-pop-img::after { width: 90px; height: 90px; }
-.eva-droplet.mini { width: 34px; height: 42px; }
-.eva-droplet.mini::after { width: 34px; height: 34px; }
-.eva-droplet.small { width: 52px; height: 62px; }
-.eva-droplet.small::after { width: 52px; height: 52px; }
-.eva-droplet.large { width: 90px; height: 104px; }
-.eva-droplet.large::after { width: 90px; height: 90px; }
-.eva-drop-wrap { position: relative; cursor: pointer; }
-.eva-live-badge { position: absolute; left: -2px; bottom: 4px; background: #ef4444; color: white; font-size: 9px; padding: 2px 6px; border-radius: 999px; z-index: 3; font-weight: 700; }
+.droplet-real.small { width: 40px !important; height: 50px !important; }
+.droplet-profile-tiny { width: 38px !important; height: 48px !important; }
+.eva-droplet.mini { width: 34px !important; height: 43px !important; }
+.eva-droplet.small { width: 52px !important; height: 65px !important; }
+.eva-droplet.large { width: 90px !important; height: 112px !important; }
+.eva-pop-img { width: 90px !important; height: 112px !important; }
+.eva-drop-wrap { position: relative !important; cursor: pointer !important; }
+.eva-live-badge { position: absolute !important; left: -2px !important; bottom: 4px !important; background: #ef4444 !important; color: white !important; font-size: 9px !important; padding: 2px 6px !important; border-radius: 999px !important; z-index: 5 !important; font-weight: 700 !important; }
 .eva-app { max-width: 480px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; background: #030014; color: white; position: relative; overflow: hidden; }
 .eva-top { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; }
 .eva-logo { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 22px; }
@@ -182,50 +150,3 @@ body { font-family: sans-serif; background: #030014; color: white; }
 .eva-input-row input { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; padding: 11px 14px; color: white; outline: none; }
 .eva-send { background: #8b5cf6; border: none; color: white; width: 42px; height: 42px; border-radius: 50%; cursor: pointer; }
 .eva-live-btn { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: white; padding: 8px 10px; border-radius: 999px; font-size: 12px; cursor: pointer; }
-
-/* MAKE ALL LIST DROPLETS COPY THE TOP EVA ONE - CLEAR GLASS */
-.chat-row .droplet-real, .chat-row .eva-droplet, .eva-row .droplet-real, .eva-row .eva-droplet {
-  width: 52px !important;
-  height: 62px !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  overflow: visible !important;
-  position: relative !important;
-  display: flex !important;
-  align-items: flex-end !important;
-  justify-content: center !important;
-}
-.chat-row .droplet-real::before, .eva-row .eva-droplet::before {
-  content: "" !important;
-  position: absolute !important;
-  top: 0 !important;
-  left: 50% !important;
-  width: 20px !important;
-  height: 20px !important;
-  transform: translateX(-50%) rotate(45deg) !important;
-  background: rgba(255,255,255,0.10) !important;
-  border-top: 1px solid rgba(255,255,255,0.6) !important;
-  border-left: 1px solid rgba(255,255,255,0.6) !important;
-  z-index: 1 !important;
-}
-.chat-row .droplet-real::after, .eva-row .eva-droplet::after {
-  content: "" !important;
-  position: absolute !important;
-  bottom: 0 !important;
-  left: 0 !important;
-  width: 52px !important;
-  height: 52px !important;
-  border-radius: 50% !important;
-  background: linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.02) 40%, rgba(255,255,255,0.14)) !important;
-  border: 1px solid rgba(255,255,255,0.5) !important;
-  box-shadow: inset 3px 4px 8px rgba(255,255,255,0.4) !important;
-  z-index: 2 !important;
-}
-.chat-row .eva-initial, .eva-row .eva-initial {
-  position: relative !important;
-  z-index: 3 !important;
-  margin-bottom: 13px !important;
-  font-size: 19px !important;
-  color: white !important;
-          }
