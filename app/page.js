@@ -7,9 +7,11 @@ export default function EVA() {
   const [messages, setMessages] = useState([]);
   const [showMenu, setShowMenu] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [lastTopic, setLastTopic] = useState("");
+  const [lastQuestion, setLastQuestion] = useState("");
   const router = useRouter();
 
-  // --- NEW: WORLD TIME ZONES - THIS IS THE FIX ---
+  // --- WORLD TIME ZONES ---
   const TIME_ZONES = {
     "nigeria": "Africa/Lagos", "lagos": "Africa/Lagos", "abuja": "Africa/Lagos", "benin": "Africa/Lagos", "benin city": "Africa/Lagos",
     "ghana": "Africa/Accra", "accra": "Africa/Accra",
@@ -19,7 +21,7 @@ export default function EVA() {
     "madrid": "Europe/Madrid", "spain": "Europe/Madrid",
     "rome": "Europe/Rome", "italy": "Europe/Rome",
     "amsterdam": "Europe/Amsterdam", "netherlands": "Europe/Amsterdam",
-    "new york": "America/New_York", "newyork": "America/New_York", "usa": "America/New_York", "america": "America/New_York", "us": "America/New_York",
+    "new york": "America/New_York", "newyork": "America/New_York", "usa": "America/New_York", "america": "America/New_York",
     "los angeles": "America/Los_Angeles", "california": "America/Los_Angeles", "texas": "America/Chicago", "chicago": "America/Chicago",
     "toronto": "America/Toronto", "canada": "America/Toronto",
     "mexico": "America/Mexico_City", "brazil": "America/Sao_Paulo", "sao paulo": "America/Sao_Paulo",
@@ -50,12 +52,71 @@ export default function EVA() {
     return null;
   };
 
+  // --- FIX: USE WIKIPEDIA SEARCH, NOT DIRECT LINK ---
+  const searchWikipedia = async (query) => {
+    try {
+      // Fix common names
+      const fixes = {
+        "ronaldo": "Cristiano Ronaldo",
+        "cristiano ronaldo": "Cristiano Ronaldo",
+        "christiano ronaldo": "Cristiano Ronaldo",
+        "messi": "Lionel Messi",
+        "wizkid": "Wizkid",
+        "davido": "Davido",
+        "burna boy": "Burna Boy",
+        "tinubu": "Bola Tinubu",
+        "peter obi": "Peter Obi",
+      };
+      const fixed = fixes[query.toLowerCase()] || query;
+
+      // 1. Search first to find correct page
+      const searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(fixed)}&format=json&origin=*`);
+      const searchData = await searchRes.json();
+      const firstTitle = searchData?.query?.search?.[0]?.title;
+      if (!firstTitle) return null;
+
+      // 2. Get summary of that correct page
+      const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(firstTitle)}`);
+      const data = await res.json();
+      if (data.extract) {
+        const short = data.extract.split(". ").slice(0, 3).join(". ") + ".";
+        return { title: firstTitle, text: short };
+      }
+      return null;
+    } catch (e) { return null; }
+  };
+
   const getEVAReply = async (userText) => {
     const lower = userText.toLowerCase().trim();
     const pidginWords = ["dey", "wey", "na", "abi", "abeg", "wahala", "how far", "na you"];
     const userUsedPidgin = pidginWords.some((w) => lower.includes(w));
 
-    // --- FIXED TIME LOGIC - NOW WORKS FOR ALL COUNTRIES ---
+    // --- FIX: YES / NO MEMORY ---
+    if (lower === "yes" || lower === "yeah" || lower === "yes please" || lower === "sure" || lower === "ok") {
+      if (lastTopic) {
+        const more = await searchWikipedia(lastTopic);
+        if (more) return `Okay! More about ${more.title}: ${more.text} Want me to tell you something else about ${more.title}?`;
+        return `Okay! What do you want to know about ${lastTopic}? You can ask: Who is ${lastTopic}? What is ${lastTopic} known for?`;
+      }
+      if (lastQuestion.includes("follower")) return "For follower count, open TikTok and search the name. The number changes every minute so I cannot give you live number. Do you want me to tell you who the person is instead? Just type: Who is Wizkid";
+      return "Yes to what? Tell me what you want me to do. You can say: Tell me a joke, Plan my day, Who is Ronaldo?";
+    }
+    if (lower === "no" || lower === "nope") return "Okay, no problem. What else do you want me to help you with?";
+
+    // --- FIX: GREETINGS - HEY, HI, HEY EVA ---
+    if (lower === "hi" || lower === "hey" || lower === "hey eva" || lower === "hi eva" || lower === "hello eva" || lower === "yo" || lower === "good morning" || lower === "good evening") {
+      return "Hey! I am here. How are you doing? What do you want us to do today? You can ask me time, who a person is, or help me plan my day.";
+    }
+    if (lower.includes("hello") || lower.includes("how are you") || lower.includes("how far")) {
+      return userUsedPidgin ? "Hello my person! I dey fine o. How your side? Wetin you want make we do today?" : "Hello! I am doing well, thank you for asking. How are you doing today? What would you like us to work on?";
+    }
+
+    // --- FIX: CAN YOU CODE ---
+    if (lower.includes("can u code") || lower.includes("can you code") || lower.includes("code")) {
+      return "Yes, I can help you with code! What do you want me to code? For example: A login page, a calculator, or fix your EVA code. Tell me what you want to build.";
+    }
+
+    // --- TIME ---
     if (lower.includes("time")) {
       const placeTime = getTimeForPlace(lower);
       if (placeTime) return placeTime;
@@ -68,38 +129,32 @@ export default function EVA() {
       return `Today is ${date}.`;
     }
 
-    // --- INTERNET ACCESS ---
     if (lower.includes("internet") || lower.includes("full access")) {
-      return "Yes, I now have internet access for general knowledge through Wikipedia. I can search for who a person is, what something is, and explain it. I do not have live access to TikTok or Instagram follower counts because those numbers change every minute. For that, you will need to check TikTok directly. What do you want me to search for?";
+      return "Yes, I now have internet access for general knowledge through Wikipedia. I can search for who a person is, what something is, and explain it. I do not have live access to TikTok follower counts because those numbers change every minute. What do you want me to search for?";
     }
     if (lower.includes("follower") && (lower.includes("tiktok") || lower.includes("instagram") || lower.includes("youtube"))) {
-      return "I cannot see live follower counts because they change every minute and TikTok does not allow me to check it directly. If you open TikTok and search the person's name, you will see the exact number now. Do you want me to tell you who that person is instead?";
+      setLastQuestion("follower");
+      return "I cannot see live follower counts because they change every minute and TikTok does not allow me to check it directly. If you open TikTok and search the person's name, you will see the exact number now. Do you want me to tell you who that person is instead? Just type Yes.";
     }
 
-    // --- WIKIPEDIA SEARCH - WHO IS / WHAT IS / TELL ME ABOUT ---
+    // --- WIKIPEDIA - WHO IS / WHAT IS / TELL ME ABOUT ---
     let topic = "";
     if (lower.startsWith("who is ")) topic = userText.slice(7);
     else if (lower.startsWith("who is")) topic = userText.slice(6);
     else if (lower.startsWith("what is ")) topic = userText.slice(8);
     else if (lower.startsWith("tell me about ")) topic = userText.slice(14);
     else if (lower.startsWith("tell me about")) topic = userText.slice(13);
+    // Also handle "Who is wizkid" without checking start exactly, and "Who is Cristiano ronaldo"
+    if (!topic && lower.includes("who is")) topic = userText.toLowerCase().split("who is")[1];
 
     if (topic) {
-      try {
-        const cleanTopic = topic.replace(/[?]/g, "").trim();
-        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanTopic)}`);
-        const data = await res.json();
-        if (data.extract) {
-          const short = data.extract.split(". ").slice(0, 2).join(". ") + ".";
-          return short + ` Want me to tell you more about ${cleanTopic}?`;
-        }
-        return `I searched but I could not find ${cleanTopic}. Can you spell the full name for me? For example: Cristiano Ronaldo, Wizkid.`;
-      } catch (e) {
-        return "I tried to search the internet but my connection failed. Please check your internet and try again.";
-      }
+      const cleanTopic = topic.replace(/[?]/g, "").trim();
+      setLastTopic(cleanTopic);
+      const result = await searchWikipedia(cleanTopic);
+      if (result) return `${result.text} Want me to tell you more about ${result.title}? Just type Yes.`;
+      return `I searched but I could not find ${cleanTopic}. Can you spell the full name for me? For example: Cristiano Ronaldo, Wizkid.`;
     }
 
-    // --- OTHER SMART ANSWERS ---
     const mathMatch = lower.match(/(\d+)\s*([\+\-\*x\/])\s*(\d+)/);
     if (mathMatch) {
       const a = Number(mathMatch[1]); const op = mathMatch[2]; const b = Number(mathMatch[3]);
@@ -110,20 +165,15 @@ export default function EVA() {
       if (op === "/") result = b !== 0 ? (a / b).toFixed(2) : "cannot divide by zero";
       return `The answer is ${result}.`;
     }
-    if (lower.includes("hello") || lower.includes("how are you") || lower.includes("how far")) {
-      return userUsedPidgin ? "Hello my person! I dey fine o. How your side? Wetin you want make we do today?" : "Hello! I am doing well, thank you for asking. How are you doing today? What would you like us to work on?";
-    }
-    if (lower.includes("who are you")) {
-      return "I am EVA, your personal assistant in this app. I can help you chat, plan, and find things. What do you need?";
-    }
+    if (lower.includes("who are you")) return "I am EVA, your personal assistant in this app. I can help you chat, plan, and find things. What do you need?";
     if (lower.includes("thank")) return "You are welcome. I am always here whenever you need me.";
     if (lower.includes("calm routine") || lower.includes("routine")) return "Here is a calm routine for you: 1. Drink water. 2. Take 5 slow breaths. 3. Write down 3 things you want to do today. 4. Start with the easiest one. Would you like one for morning or evening?";
     if (lower.includes("plan my day") || lower.includes("plan")) return "Let us plan your day. What are the 3 most important things you need to do today? Tell me and I will arrange them for you.";
     if (lower.includes("mood") || lower.includes("scan")) return "How are you feeling right now? Tell me if you feel tired, stressed, happy, or sad, and I will suggest what can help you.";
-    if (lower.includes("joke")) return "Why did the phone go to school? Because it wanted to be smarter! Want another one?";
+    if (lower.includes("joke")) return "Why did the phone go to school? Because it wanted to be smarter! Want another one? Type Yes.";
     if (lower.includes("bye") || lower.includes("goodbye")) return "Goodbye! Take care. I will be here whenever you need me.";
 
-    return "I understand. Try ask me: Who is Ronaldo? What is the time in London now? What is the time in Dubai now? What is today?";
+    return "I hear you. Tell me more so I can help you well. You can try: Hey, Who is Cristiano Ronaldo?, What is the time in London now?, Can you code?";
   };
 
   const askEVA = async () => {
@@ -141,12 +191,8 @@ export default function EVA() {
     setIsThinking(false);
   };
 
-  const addEVAMessage = (msg) => {
-    setMessages((prev) => [...prev, { from: "eva", text: msg }]);
-  };
-  const openDiscover = () => {
-    addEVAMessage("✨ Discover: Try ask me - 'Who is Ronaldo?', 'What is the time in London now?', 'Give me a calm routine', 'Help me plan my day'");
-  };
+  const addEVAMessage = (msg) => { setMessages((prev) => [...prev, { from: "eva", text: msg }]); };
+  const openDiscover = () => { addEVAMessage("✨ Discover: Try ask me - 'Who is Cristiano Ronaldo?', 'What is the time in London now?', 'Give me a calm routine', 'Help me plan my day'"); };
   const openChat = () => { router.push("/chat"); };
   const menuClick = (item) => {
     setShowMenu(false);
@@ -198,4 +244,4 @@ export default function EVA() {
       </div>
     </div>
   );
-}
+  }
