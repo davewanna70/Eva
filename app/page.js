@@ -4,18 +4,79 @@ import { useRouter } from "next/navigation";
 
 export default function EVA() {
   const [text, setText] = useState("");
-  const [reply, setReply] = useState("");
+  const [messages, setMessages] = useState([]);
   const [showMenu, setShowMenu] = useState(false);
   const router = useRouter();
 
+  const getEVAReply = (userText) => {
+    const lower = userText.toLowerCase();
+
+    // Check if user started Pidgin first
+    const pidginWords = ["dey", "wey", "na", "abi", "abeg", "wahala", "how far", "na you"];
+    const userUsedPidgin = pidginWords.some((w) => lower.includes(w));
+
+    if (userUsedPidgin) {
+      if (lower.includes("hello") || lower.includes("how are you") || lower.includes("how far")) {
+        return "Hello my person! I dey fine o. How your side? Wetin you want make we do today?";
+      }
+      if (lower.includes("who are you")) {
+        return "I be EVA, your assistant for this app. I fit help you chat, plan, and find things. Wetin you need?";
+      }
+      if (lower.includes("thank")) {
+        return "You welcome o! Anytime you need me, I dey here.";
+      }
+      if (lower.includes("calm routine") || lower.includes("routine")) {
+        return "For a calm routine: 1. Drink water. 2. Take 5 slow breaths. 3. Write 3 things you want to do today. 4. Do the easiest one first. Do you want me to make one for your morning or evening?";
+      }
+      if (lower.includes("plan my day") || lower.includes("plan")) {
+        return "Okay, let us plan your day. Tell me: What are the 3 most important things you need to do today? I will arrange them for you.";
+      }
+      if (lower.includes("mood") || lower.includes("scan")) {
+        return "How you dey feel now? Tell me if you dey tired, stressed, happy, or sad, and I go suggest wetin fit help you.";
+      }
+      return "I hear you. Tell me small more make I fit help you well. You want make I explain am, plan am, or find am for you?";
+    }
+
+    // Default: Pure English for EVA
+    if (lower.includes("hello") || lower.includes("how are you")) {
+      return "Hello! I am doing well, thank you for asking. How are you doing today? What would you like us to work on?";
+    }
+    if (lower.includes("who are you")) {
+      return "I am EVA, your personal assistant in this app. I can help you chat, plan, and find things. What do you need?";
+    }
+    if (lower.includes("thank")) {
+      return "You are welcome. I am always here whenever you need me.";
+    }
+    if (lower.includes("calm routine") || lower.includes("routine")) {
+      return "Here is a calm routine for you: 1. Drink water. 2. Take 5 slow breaths. 3. Write down 3 things you want to do today. 4. Start with the easiest one. Would you like one for morning or evening?";
+    }
+    if (lower.includes("plan my day") || lower.includes("plan")) {
+      return "Let us plan your day. What are the 3 most important things you need to do today? Tell me and I will arrange them for you.";
+    }
+    if (lower.includes("mood") || lower.includes("scan")) {
+      return "How are you feeling right now? Tell me if you feel tired, stressed, happy, or sad, and I will suggest what can help you.";
+    }
+    return "I understand. Could you tell me a little more so I can help you properly? Would you like me to explain it, plan it, or find it for you?";
+  };
+
   const askEVA = () => {
-    if (!text) return;
-    setReply("EVA dey hear you: '" + text + "' — I'm here. Tell me more.");
+    if (!text.trim()) return;
+    const userText = text.trim();
+    const reply = getEVAReply(userText);
+    setMessages((prev) => [
+      ...prev,
+      { from: "you", text: userText },
+      { from: "eva", text: reply },
+    ]);
     setText("");
   };
 
+  const addEVAMessage = (msg) => {
+    setMessages((prev) => [...prev, { from: "eva", text: msg }]);
+  };
+
   const openDiscover = () => {
-    setReply("✨ Discover: Try ask me - 'Give me a calm routine', 'Help me plan my day', or 'Scan my mood'");
+    addEVAMessage("✨ Discover: Try ask me - 'Give me a calm routine', 'Help me plan my day', or 'Scan my mood'");
   };
 
   const openChat = () => {
@@ -24,9 +85,9 @@ export default function EVA() {
 
   const menuClick = (item) => {
     setShowMenu(false);
-    if (item === "History") setReply("[STRIPPED 3 bytes] history: Your past chats go show here. For now, your last question na the one you just ask.");
-    if (item === "Settings") setReply("⚙️ Settings: Here you go fit change theme, voice, and how EVA go talk to you.");
-    if (item === "More") setReply("⋯ More: About EVA, Help, Share EVA, and Clear chat go dey here.");
+    if (item === "History") addEVAMessage("🕒 History: Your past chats will show here. For now, this is your current conversation.");
+    if (item === "Settings") addEVAMessage("⚙️ Settings: Here you can change theme, voice, and how EVA talks to you.");
+    if (item === "More") addEVAMessage("⋯ More: About EVA, Help, Share EVA, and Clear chat will be here.");
   };
 
   return (
@@ -56,9 +117,18 @@ export default function EVA() {
         </div>
       </div>
 
-      {/* MIDDLE - ONLY REPLY */}
-      <div style={{ position: "relative", flex: 1, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "0 20px" }} onClick={() => setShowMenu(false)}>
-        {reply && <div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, width: "100%", maxWidth: 420 }}>{reply}</div>}
+      {/* MIDDLE - ALL MESSAGES, NOT ONLY ONE REPLY */}
+      <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", padding: "0 20px 10px" }} onClick={() => setShowMenu(false)}>
+        {messages.length === 0 && (
+          <div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, width: "100%", maxWidth: 420, margin: "0 auto", textAlign: "center" }}>
+            Hello, I am EVA. Ask me anything.
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} style={{ alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 14px", borderRadius: 16, maxWidth: "85%", fontSize: 14, lineHeight: 1.5 }}>
+            {m.text}
+          </div>
+        ))}
       </div>
 
       {/* BOTTOM - AS E BE BEFORE, GREY GLASS + PURPLE BUTTON */}
@@ -84,4 +154,4 @@ export default function EVA() {
 
     </div>
   );
-}
+                        }
