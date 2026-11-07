@@ -6,44 +6,103 @@ export default function EVA() {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState([]);
   const [showMenu, setShowMenu] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const router = useRouter();
 
-  const getEVAReply = (userText) => {
-    const lower = userText.toLowerCase().trim();
+  // --- NEW: WORLD TIME ZONES - THIS IS THE FIX ---
+  const TIME_ZONES = {
+    "nigeria": "Africa/Lagos", "lagos": "Africa/Lagos", "abuja": "Africa/Lagos", "benin": "Africa/Lagos", "benin city": "Africa/Lagos",
+    "ghana": "Africa/Accra", "accra": "Africa/Accra",
+    "london": "Europe/London", "uk": "Europe/London", "england": "Europe/London", "britain": "Europe/London",
+    "paris": "Europe/Paris", "france": "Europe/Paris",
+    "berlin": "Europe/Berlin", "germany": "Europe/Berlin",
+    "madrid": "Europe/Madrid", "spain": "Europe/Madrid",
+    "rome": "Europe/Rome", "italy": "Europe/Rome",
+    "amsterdam": "Europe/Amsterdam", "netherlands": "Europe/Amsterdam",
+    "new york": "America/New_York", "newyork": "America/New_York", "usa": "America/New_York", "america": "America/New_York", "us": "America/New_York",
+    "los angeles": "America/Los_Angeles", "california": "America/Los_Angeles", "texas": "America/Chicago", "chicago": "America/Chicago",
+    "toronto": "America/Toronto", "canada": "America/Toronto",
+    "mexico": "America/Mexico_City", "brazil": "America/Sao_Paulo", "sao paulo": "America/Sao_Paulo",
+    "dubai": "Asia/Dubai", "uae": "Asia/Dubai", "saudi": "Asia/Riyadh", "riyadh": "Asia/Riyadh",
+    "india": "Asia/Kolkata", "delhi": "Asia/Kolkata", "mumbai": "Asia/Kolkata",
+    "china": "Asia/Shanghai", "beijing": "Asia/Shanghai", "shanghai": "Asia/Shanghai",
+    "japan": "Asia/Tokyo", "tokyo": "Asia/Tokyo",
+    "korea": "Asia/Seoul", "seoul": "Asia/Seoul",
+    "singapore": "Asia/Singapore", "thailand": "Asia/Bangkok", "bangkok": "Asia/Bangkok",
+    "australia": "Australia/Sydney", "sydney": "Australia/Sydney",
+    "south africa": "Africa/Johannesburg", "johannesburg": "Africa/Johannesburg", "cape town": "Africa/Johannesburg",
+    "egypt": "Africa/Cairo", "cairo": "Africa/Cairo",
+    "kenya": "Africa/Nairobi", "nairobi": "Africa/Nairobi",
+    "ethiopia": "Africa/Addis_Ababa",
+    "cameroon": "Africa/Douala", "togo": "Africa/Lome", "ivory coast": "Africa/Abidjan",
+  };
 
-    // Check if user started Pidgin first - EVA only uses Pidgin then
+  const getTimeForPlace = (lowerText) => {
+    for (const place in TIME_ZONES) {
+      if (lowerText.includes(place)) {
+        const tz = TIME_ZONES[place];
+        const time = new Date().toLocaleTimeString("en-NG", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
+        const date = new Date().toLocaleDateString("en-NG", { timeZone: tz, weekday: "long", day: "numeric", month: "long" });
+        const niceName = place.charAt(0).toUpperCase() + place.slice(1);
+        return `The current time in ${niceName} is ${time} (${date}).`;
+      }
+    }
+    return null;
+  };
+
+  const getEVAReply = async (userText) => {
+    const lower = userText.toLowerCase().trim();
     const pidginWords = ["dey", "wey", "na", "abi", "abeg", "wahala", "how far", "na you"];
     const userUsedPidgin = pidginWords.some((w) => lower.includes(w));
 
-    // --- 1. TIME IN NIGERIA ---
-    if (lower.includes("time") && (lower.includes("nigeria") || lower.includes("lagos") || lower.includes("abuja") || lower.includes("benin"))) {
-      const time = new Date().toLocaleTimeString("en-NG", { timeZone: "Africa/Lagos", hour: "2-digit", minute: "2-digit" });
-      return userUsedPidgin ? `For Nigeria now, time na ${time}.` : `The current time in Nigeria is ${time}.`;
-    }
-
-    // --- 2. TIME NOW ---
+    // --- FIXED TIME LOGIC - NOW WORKS FOR ALL COUNTRIES ---
     if (lower.includes("time")) {
+      const placeTime = getTimeForPlace(lower);
+      if (placeTime) return placeTime;
       const time = new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
-      return `The time now is ${time}.`;
+      return `The time now is ${time}. If you want another country, ask like: What is the time in London now? What is the time in Dubai now?`;
     }
 
-    // --- 3. DATE / DAY / TODAY ---
     if (lower.includes("date") || lower.includes("today") || lower.includes("what day")) {
       const date = new Date().toLocaleDateString("en-NG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
       return `Today is ${date}.`;
     }
 
-    // --- 4. FULL ACCESS / WHAT CAN YOU DO ---
-    if (lower.includes("full access") || lower.includes("what can you do") || lower.includes("can you do")) {
-      return "Yes, I can help you inside this app. I can answer questions, tell you the time and date, help you plan your day, give you a calm routine, check your mood, and help you chat. I do not have access to your phone outside this app. What would you like me to do for you?";
+    // --- INTERNET ACCESS ---
+    if (lower.includes("internet") || lower.includes("full access")) {
+      return "Yes, I now have internet access for general knowledge through Wikipedia. I can search for who a person is, what something is, and explain it. I do not have live access to TikTok or Instagram follower counts because those numbers change every minute. For that, you will need to check TikTok directly. What do you want me to search for?";
+    }
+    if (lower.includes("follower") && (lower.includes("tiktok") || lower.includes("instagram") || lower.includes("youtube"))) {
+      return "I cannot see live follower counts because they change every minute and TikTok does not allow me to check it directly. If you open TikTok and search the person's name, you will see the exact number now. Do you want me to tell you who that person is instead?";
     }
 
-    // --- 5. SIMPLE CALCULATOR - e.g. "what is 5 + 5" ---
+    // --- WIKIPEDIA SEARCH - WHO IS / WHAT IS / TELL ME ABOUT ---
+    let topic = "";
+    if (lower.startsWith("who is ")) topic = userText.slice(7);
+    else if (lower.startsWith("who is")) topic = userText.slice(6);
+    else if (lower.startsWith("what is ")) topic = userText.slice(8);
+    else if (lower.startsWith("tell me about ")) topic = userText.slice(14);
+    else if (lower.startsWith("tell me about")) topic = userText.slice(13);
+
+    if (topic) {
+      try {
+        const cleanTopic = topic.replace(/[?]/g, "").trim();
+        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanTopic)}`);
+        const data = await res.json();
+        if (data.extract) {
+          const short = data.extract.split(". ").slice(0, 2).join(". ") + ".";
+          return short + ` Want me to tell you more about ${cleanTopic}?`;
+        }
+        return `I searched but I could not find ${cleanTopic}. Can you spell the full name for me? For example: Cristiano Ronaldo, Wizkid.`;
+      } catch (e) {
+        return "I tried to search the internet but my connection failed. Please check your internet and try again.";
+      }
+    }
+
+    // --- OTHER SMART ANSWERS ---
     const mathMatch = lower.match(/(\d+)\s*([\+\-\*x\/])\s*(\d+)/);
     if (mathMatch) {
-      const a = Number(mathMatch[1]);
-      const op = mathMatch[2];
-      const b = Number(mathMatch[3]);
+      const a = Number(mathMatch[1]); const op = mathMatch[2]; const b = Number(mathMatch[3]);
       let result = 0;
       if (op === "+") result = a + b;
       if (op === "-") result = a - b;
@@ -51,81 +110,44 @@ export default function EVA() {
       if (op === "/") result = b !== 0 ? (a / b).toFixed(2) : "cannot divide by zero";
       return `The answer is ${result}.`;
     }
-
-    // --- 6. GREETING ---
-    if (lower.includes("hello") || lower.includes("how are you") || lower.includes("how are you doing") || lower.includes("how far")) {
-      return userUsedPidgin
-        ? "Hello my person! I dey fine o. How your side? Wetin you want make we do today?"
-        : "Hello! I am doing well, thank you for asking. How are you doing today? What would you like us to work on?";
+    if (lower.includes("hello") || lower.includes("how are you") || lower.includes("how far")) {
+      return userUsedPidgin ? "Hello my person! I dey fine o. How your side? Wetin you want make we do today?" : "Hello! I am doing well, thank you for asking. How are you doing today? What would you like us to work on?";
     }
-
     if (lower.includes("who are you")) {
-      return userUsedPidgin
-        ? "I be EVA, your assistant for this app. I fit help you chat, plan, and find things. Wetin you need?"
-        : "I am EVA, your personal assistant in this app. I can help you chat, plan, and find things. What do you need?";
+      return "I am EVA, your personal assistant in this app. I can help you chat, plan, and find things. What do you need?";
     }
+    if (lower.includes("thank")) return "You are welcome. I am always here whenever you need me.";
+    if (lower.includes("calm routine") || lower.includes("routine")) return "Here is a calm routine for you: 1. Drink water. 2. Take 5 slow breaths. 3. Write down 3 things you want to do today. 4. Start with the easiest one. Would you like one for morning or evening?";
+    if (lower.includes("plan my day") || lower.includes("plan")) return "Let us plan your day. What are the 3 most important things you need to do today? Tell me and I will arrange them for you.";
+    if (lower.includes("mood") || lower.includes("scan")) return "How are you feeling right now? Tell me if you feel tired, stressed, happy, or sad, and I will suggest what can help you.";
+    if (lower.includes("joke")) return "Why did the phone go to school? Because it wanted to be smarter! Want another one?";
+    if (lower.includes("bye") || lower.includes("goodbye")) return "Goodbye! Take care. I will be here whenever you need me.";
 
-    if (lower.includes("thank")) {
-      return userUsedPidgin ? "You welcome o! Anytime you need me, I dey here." : "You are welcome. I am always here whenever you need me.";
-    }
-
-    if (lower.includes("calm routine") || lower.includes("routine")) {
-      return userUsedPidgin
-        ? "For a calm routine: 1. Drink water. 2. Take 5 slow breaths. 3. Write 3 things you want to do today. 4. Do the easiest one first. Do you want me to make one for your morning or evening?"
-        : "Here is a calm routine for you: 1. Drink water. 2. Take 5 slow breaths. 3. Write down 3 things you want to do today. 4. Start with the easiest one. Would you like one for morning or evening?";
-    }
-
-    if (lower.includes("plan my day") || lower.includes("plan")) {
-      return userUsedPidgin
-        ? "Okay, let us plan your day. Tell me: What are the 3 most important things you need to do today? I will arrange them for you."
-        : "Let us plan your day. What are the 3 most important things you need to do today? Tell me and I will arrange them for you.";
-    }
-
-    if (lower.includes("mood") || lower.includes("scan")) {
-      return userUsedPidgin
-        ? "How you dey feel now? Tell me if you dey tired, stressed, happy, or sad, and I go suggest wetin fit help you."
-        : "How are you feeling right now? Tell me if you feel tired, stressed, happy, or sad, and I will suggest what can help you.";
-    }
-
-    if (lower.includes("joke")) {
-      return "Why did the phone go to school? Because it wanted to be smarter! Want another one?";
-    }
-
-    if (lower.includes("bye") || lower.includes("goodbye")) {
-      return "Goodbye! Take care. I will be here whenever you need me.";
-    }
-
-    if (lower.includes("love you") || lower.includes("i love")) {
-      return "That is so kind of you. I am always here for you.";
-    }
-
-    return "I understand. Could you tell me a little more so I can help you properly? You can also ask me: What is the time in Nigeria now? What is today? What can you do? Tell me a joke.";
+    return "I understand. Try ask me: Who is Ronaldo? What is the time in London now? What is the time in Dubai now? What is today?";
   };
 
-  const askEVA = () => {
-    if (!text.trim()) return;
+  const askEVA = async () => {
+    if (!text.trim() || isThinking) return;
     const userText = text.trim();
-    const reply = getEVAReply(userText);
-    setMessages((prev) => [
-      ...prev,
-      { from: "you", text: userText },
-      { from: "eva", text: reply },
-    ]);
     setText("");
+    setMessages((prev) => [...prev, { from: "you", text: userText }]);
+    setIsThinking(true);
+    setMessages((prev) => [...prev, { from: "eva", text: "EVA is thinking..." }]);
+    const reply = await getEVAReply(userText);
+    setMessages((prev) => {
+      const withoutThinking = prev.slice(0, -1);
+      return [...withoutThinking, { from: "eva", text: reply }];
+    });
+    setIsThinking(false);
   };
 
   const addEVAMessage = (msg) => {
     setMessages((prev) => [...prev, { from: "eva", text: msg }]);
   };
-
   const openDiscover = () => {
-    addEVAMessage("✨ Discover: Try ask me - 'Give me a calm routine', 'Help me plan my day', or 'Scan my mood'");
+    addEVAMessage("✨ Discover: Try ask me - 'Who is Ronaldo?', 'What is the time in London now?', 'Give me a calm routine', 'Help me plan my day'");
   };
-
-  const openChat = () => {
-    router.push("/chat");
-  };
-
+  const openChat = () => { router.push("/chat"); };
   const menuClick = (item) => {
     setShowMenu(false);
     if (item === "History") addEVAMessage("🕒 History: Your past chats will show here. For now, this is your current conversation.");
@@ -135,21 +157,14 @@ export default function EVA() {
 
   return (
     <div style={{ height: "100dvh", background: "#030014", color: "white", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "sans-serif", position: "relative" }}>
-
-      {/* BACKGROUND - CLEAN, NO ZOOM */}
       <img src="/eva-bg.jpg" alt="EVA" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-
-      {/* TOP - LOGO LEFT, 3 DOTS RIGHT */}
       <div style={{ position: "relative", display: "flex", padding: "16px 18px", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img src="/IMG-20261104-WA3311.jpg" style={{ width: 38, height: 38, borderRadius: 999, objectFit: "cover", border: "2px solid #a78bfa" }} />
           <b style={{ fontSize: 20, letterSpacing: 2 }}>EVA</b>
         </div>
-
-        {/* 3 DOTS - VISIBLE LIKE DISCOVER */}
         <div style={{ position: "relative" }}>
           <button onClick={() => setShowMenu(!showMenu)} style={{ width: 42, height: 42, borderRadius: 999, background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", fontSize: 22, fontWeight: "bold", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>⋮</button>
-
           {showMenu && (
             <div style={{ position: "absolute", top: 50, right: 0, width: 170, background: "rgba(0,0,0,0.85)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 14, overflow: "hidden", backdropFilter: "blur(10px)", zIndex: 50 }}>
               <button onClick={() => menuClick("History")} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "white", padding: "13px 16px", fontSize: 14, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>🕒 History</button>
@@ -159,8 +174,6 @@ export default function EVA() {
           )}
         </div>
       </div>
-
-      {/* MIDDLE - ALL MESSAGES, NOT ONLY ONE REPLY */}
       <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", padding: "0 20px 10px" }} onClick={() => setShowMenu(false)}>
         {messages.length === 0 && (
           <div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, width: "100%", maxWidth: 420, margin: "0 auto", textAlign: "center" }}>
@@ -173,28 +186,16 @@ export default function EVA() {
           </div>
         ))}
       </div>
-
-      {/* BOTTOM - AS E BE BEFORE, GREY GLASS + PURPLE BUTTON */}
       <div style={{ position: "relative", padding: "12px 16px 18px", background: "linear-gradient(to top, rgba(0,0,0,0.55), transparent)" }}>
-        
-        {/* ASK BAR - BEFORE VERSION */}
         <div style={{ display: "flex", gap: 10, maxWidth: 520, margin: "0 auto", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", padding: 8, borderRadius: 999, backdropFilter: "blur(10px)" }}>
           <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && askEVA()} placeholder="Ask EVA..." autoComplete="off" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "white", padding: "0 12px", fontSize: 15 }} />
           <button onClick={askEVA} style={{ background: "#8b5cf6", border: "none", color: "white", padding: "10px 18px", borderRadius: 999, fontWeight: "bold" }}>Ask →</button>
         </div>
-
-        {/* DISCOVER + CHAT - DISCOVER LEFT, CHAT RIGHT */}
         <div style={{ display: "flex", maxWidth: 520, margin: "10px auto 0", justifyContent: "space-between", alignItems: "center" }}>
-          <button onClick={openDiscover} style={{ background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", padding: "9px 16px", borderRadius: 999, fontSize: 13, display: "flex", alignItems: "center", gap: 6, backdropFilter: "blur(10px)" }}>
-            ✨ Discover
-          </button>
-          <button onClick={openChat} style={{ background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", padding: "9px 16px", borderRadius: 999, fontSize: 13, display: "flex", alignItems: "center", gap: 6, backdropFilter: "blur(10px)" }}>
-            💬 Chat
-          </button>
+          <button onClick={openDiscover} style={{ background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", padding: "9px 16px", borderRadius: 999, fontSize: 13, display: "flex", alignItems: "center", gap: 6, backdropFilter: "blur(10px)" }}>✨ Discover</button>
+          <button onClick={openChat} style={{ background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", padding: "9px 16px", borderRadius: 999, fontSize: 13, display: "flex", alignItems: "center", gap: 6, backdropFilter: "blur(10px)" }}>💬 Chat</button>
         </div>
-
       </div>
-
     </div>
   );
-              }
+}
