@@ -9,54 +9,97 @@ export default function EVA() {
   const router = useRouter();
 
   const getEVAReply = (userText) => {
-    const lower = userText.toLowerCase();
+    const lower = userText.toLowerCase().trim();
 
-    // Check if user started Pidgin first
+    // Check if user started Pidgin first - EVA only uses Pidgin then
     const pidginWords = ["dey", "wey", "na", "abi", "abeg", "wahala", "how far", "na you"];
     const userUsedPidgin = pidginWords.some((w) => lower.includes(w));
 
-    if (userUsedPidgin) {
-      if (lower.includes("hello") || lower.includes("how are you") || lower.includes("how far")) {
-        return "Hello my person! I dey fine o. How your side? Wetin you want make we do today?";
-      }
-      if (lower.includes("who are you")) {
-        return "I be EVA, your assistant for this app. I fit help you chat, plan, and find things. Wetin you need?";
-      }
-      if (lower.includes("thank")) {
-        return "You welcome o! Anytime you need me, I dey here.";
-      }
-      if (lower.includes("calm routine") || lower.includes("routine")) {
-        return "For a calm routine: 1. Drink water. 2. Take 5 slow breaths. 3. Write 3 things you want to do today. 4. Do the easiest one first. Do you want me to make one for your morning or evening?";
-      }
-      if (lower.includes("plan my day") || lower.includes("plan")) {
-        return "Okay, let us plan your day. Tell me: What are the 3 most important things you need to do today? I will arrange them for you.";
-      }
-      if (lower.includes("mood") || lower.includes("scan")) {
-        return "How you dey feel now? Tell me if you dey tired, stressed, happy, or sad, and I go suggest wetin fit help you.";
-      }
-      return "I hear you. Tell me small more make I fit help you well. You want make I explain am, plan am, or find am for you?";
+    // --- 1. TIME IN NIGERIA ---
+    if (lower.includes("time") && (lower.includes("nigeria") || lower.includes("lagos") || lower.includes("abuja") || lower.includes("benin"))) {
+      const time = new Date().toLocaleTimeString("en-NG", { timeZone: "Africa/Lagos", hour: "2-digit", minute: "2-digit" });
+      return userUsedPidgin ? `For Nigeria now, time na ${time}.` : `The current time in Nigeria is ${time}.`;
     }
 
-    // Default: Pure English for EVA
-    if (lower.includes("hello") || lower.includes("how are you")) {
-      return "Hello! I am doing well, thank you for asking. How are you doing today? What would you like us to work on?";
+    // --- 2. TIME NOW ---
+    if (lower.includes("time")) {
+      const time = new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
+      return `The time now is ${time}.`;
     }
+
+    // --- 3. DATE / DAY / TODAY ---
+    if (lower.includes("date") || lower.includes("today") || lower.includes("what day")) {
+      const date = new Date().toLocaleDateString("en-NG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+      return `Today is ${date}.`;
+    }
+
+    // --- 4. FULL ACCESS / WHAT CAN YOU DO ---
+    if (lower.includes("full access") || lower.includes("what can you do") || lower.includes("can you do")) {
+      return "Yes, I can help you inside this app. I can answer questions, tell you the time and date, help you plan your day, give you a calm routine, check your mood, and help you chat. I do not have access to your phone outside this app. What would you like me to do for you?";
+    }
+
+    // --- 5. SIMPLE CALCULATOR - e.g. "what is 5 + 5" ---
+    const mathMatch = lower.match(/(\d+)\s*([\+\-\*x\/])\s*(\d+)/);
+    if (mathMatch) {
+      const a = Number(mathMatch[1]);
+      const op = mathMatch[2];
+      const b = Number(mathMatch[3]);
+      let result = 0;
+      if (op === "+") result = a + b;
+      if (op === "-") result = a - b;
+      if (op === "*" || op === "x") result = a * b;
+      if (op === "/") result = b !== 0 ? (a / b).toFixed(2) : "cannot divide by zero";
+      return `The answer is ${result}.`;
+    }
+
+    // --- 6. GREETING ---
+    if (lower.includes("hello") || lower.includes("how are you") || lower.includes("how are you doing") || lower.includes("how far")) {
+      return userUsedPidgin
+        ? "Hello my person! I dey fine o. How your side? Wetin you want make we do today?"
+        : "Hello! I am doing well, thank you for asking. How are you doing today? What would you like us to work on?";
+    }
+
     if (lower.includes("who are you")) {
-      return "I am EVA, your personal assistant in this app. I can help you chat, plan, and find things. What do you need?";
+      return userUsedPidgin
+        ? "I be EVA, your assistant for this app. I fit help you chat, plan, and find things. Wetin you need?"
+        : "I am EVA, your personal assistant in this app. I can help you chat, plan, and find things. What do you need?";
     }
+
     if (lower.includes("thank")) {
-      return "You are welcome. I am always here whenever you need me.";
+      return userUsedPidgin ? "You welcome o! Anytime you need me, I dey here." : "You are welcome. I am always here whenever you need me.";
     }
+
     if (lower.includes("calm routine") || lower.includes("routine")) {
-      return "Here is a calm routine for you: 1. Drink water. 2. Take 5 slow breaths. 3. Write down 3 things you want to do today. 4. Start with the easiest one. Would you like one for morning or evening?";
+      return userUsedPidgin
+        ? "For a calm routine: 1. Drink water. 2. Take 5 slow breaths. 3. Write 3 things you want to do today. 4. Do the easiest one first. Do you want me to make one for your morning or evening?"
+        : "Here is a calm routine for you: 1. Drink water. 2. Take 5 slow breaths. 3. Write down 3 things you want to do today. 4. Start with the easiest one. Would you like one for morning or evening?";
     }
+
     if (lower.includes("plan my day") || lower.includes("plan")) {
-      return "Let us plan your day. What are the 3 most important things you need to do today? Tell me and I will arrange them for you.";
+      return userUsedPidgin
+        ? "Okay, let us plan your day. Tell me: What are the 3 most important things you need to do today? I will arrange them for you."
+        : "Let us plan your day. What are the 3 most important things you need to do today? Tell me and I will arrange them for you.";
     }
+
     if (lower.includes("mood") || lower.includes("scan")) {
-      return "How are you feeling right now? Tell me if you feel tired, stressed, happy, or sad, and I will suggest what can help you.";
+      return userUsedPidgin
+        ? "How you dey feel now? Tell me if you dey tired, stressed, happy, or sad, and I go suggest wetin fit help you."
+        : "How are you feeling right now? Tell me if you feel tired, stressed, happy, or sad, and I will suggest what can help you.";
     }
-    return "I understand. Could you tell me a little more so I can help you properly? Would you like me to explain it, plan it, or find it for you?";
+
+    if (lower.includes("joke")) {
+      return "Why did the phone go to school? Because it wanted to be smarter! Want another one?";
+    }
+
+    if (lower.includes("bye") || lower.includes("goodbye")) {
+      return "Goodbye! Take care. I will be here whenever you need me.";
+    }
+
+    if (lower.includes("love you") || lower.includes("i love")) {
+      return "That is so kind of you. I am always here for you.";
+    }
+
+    return "I understand. Could you tell me a little more so I can help you properly? You can also ask me: What is the time in Nigeria now? What is today? What can you do? Tell me a joke.";
   };
 
   const askEVA = () => {
@@ -154,4 +197,4 @@ export default function EVA() {
 
     </div>
   );
-                        }
+              }
