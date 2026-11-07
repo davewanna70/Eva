@@ -6,136 +6,122 @@ export async function POST(req) {
     const message = body.message || ""
     const history = body.history || []
     const userProfile = body.userProfile || {}
+    if (!message.trim()) return NextResponse.json({ reply: "I dey here Boss, wetin you want?" })
 
-    if (!message.trim()) {
-      return NextResponse.json({ reply: "I dey here Boss, wetin you want?" })
-    }
-
-    // --- 1. FULL INTERNET SEARCH - TAVILY - FIXED FOR FOLLOWERS ---
-    let webContext = ""
     const q = message.toLowerCase()
 
-    // Map name -> TikTok handle. Add more as you like.
-    const HANDLE_MAP = {
-      "purple": "purplespeedy",
-      "speedy": "purplespeedy",
-      "wizkid": "wizkidayo",
-      "davido": "davido",
-      "burna": "burnaboy",
-      "drake": "champagnepapi",
-      "ronaldo": "cristiano",
-      "messi": "leomessi",
-      "crispdal": "crispdal",
-      "don jazzy": "donjazzy",
-      "peller": "peller089",
-      "jarvis": "realjadrolita",
-      "asake": "asakemusic",
-      "rema": "heisrema",
-      "temi": "temiotedola",
-      "ayra": "ayrastarr"
+    // --- KNOWN PEOPLE: Only for confusing handles ---
+    const PEOPLE = {
+      "purple": { tiktok: "purplespeedy", instagram: "official_purplespeedy_", name: "Purple Speedy" },
+      "speedy": { tiktok: "purplespeedy", instagram: "official_purplespeedy_", name: "Purple Speedy" },
+      "peller": { tiktok: "realpeller", instagram: "peller089", name: "Peller" },
+      "jarvis": { tiktok: "realjadrolita", instagram: "realjadrolita", name: "Jarvis" },
+      "wizkid": { tiktok: "wizkidayo", instagram: "wizkidayo", name: "Wizkid" },
+      "davido": { tiktok: "davido", instagram: "davido", name: "Davido" },
+      "burna": { tiktok: "burnaboy", instagram: "burnaboy", name: "Burna Boy" },
+      "drake": { tiktok: "", instagram: "champagnepapi", name: "Drake" },
     }
 
-    let handle = ""
-    // If user type @handle directly, use am
+    let person = null, personKey = "", personName = ""
+    for (const key in PEOPLE) {
+      if (q.includes(key)) { person = PEOPLE[key]; personKey = key; personName = PEOPLE[key].name; break }
+    }
+
+    // If user type @handle, use am directly
     const atMatch = message.match(/@([a-zA-Z0-9._]+)/)
-    if (atMatch) handle = atMatch[1].toLowerCase()
-    if (!handle) {
-      for (const key in HANDLE_MAP) {
-        if (q.includes(key)) { handle = HANDLE_MAP[key]; break }
-      }
-    }
+    const typedHandle = atMatch ? atMatch[1].toLowerCase() : ""
 
-    const isFollowerQ = q.includes("follower") || q.includes("followers") || q.includes("how many")
-    const isTikTokQ = q.includes("tiktok") || q.includes("tik tok")
+    // If name no dey for list, try guess the name from question: "How many followers does [NAME] has..."
+    if (!person && !typedHandle) {
+      const m = message.match(/followers does (.+?) (has|have|on|on tiktok|on instagram)/i) || message.match(/does (.+?) have/i) || message.match(/how many followers does (.+?)\?/i)
+      if (m && m[1]) personName = m[1].trim()
+    }
+    if (!personName && person) personName = person.name
+
+    const isFollowerQ = q.includes("follower")
     const isInstaQ = q.includes("instagram") || q.includes("insta")
+    const isTikTokQ = q.includes("tiktok") || q.includes("tik tok")
+    const isBothQ = q.includes("and") && isInstaQ && isTikTokQ
 
-    // --- 1A. FOLLOWERS: Try to EXTRACT real profile first ---
-    if (isFollowerQ && handle) {
-      const platform = isInstaQ ? "instagram" : "tiktok"
-      const profileUrl = platform === "instagram"
-        ? "https://www.instagram.com/" + handle + "/"
-        : "https://www.tiktok.com/@" + handle
+    const tavilyKey = process.env.TAVILY_API_KEY
+    const tavilySearch = async (query) => {
       try {
-        const extractRes = await fetch("https://api.tavily.com/extract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            api_key: process.env.TAVILY_API_KEY,
-            urls: [profileUrl],
-            query: "followers likes",
-            extract_depth: "advanced"
-          }),
-        })
-        const extractData = await extractRes.json()
-        const extractText = JSON.stringify(extractData).slice(0, 4000)
-        if (extractText && (extractText.toLowerCase().includes("follower") || extractText.match(/[0-9]+\.[0-9]+m/i))) {
-          webContext = "LIVE PROFILE EXTRACT for @" + handle + " on " + platform + " (" + profileUrl + "): " + extractText + " . RULE: Use the Followers number from THIS extract as exact. Ignore old news articles."
-        }
-      } catch (e) { console.log("Extract fail:", e) }
+        const r = await fetch("https://api.tavily.com/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: tavilyKey, query, search_depth: "advanced", max_results: 5, include_answer: false, time_range: "week" }) })
+        const d = await r.json(); return d.results || []
+      } catch (e) { return [] }
+    }
+    const tavilyExtract = async (url) => {
+      try {
+        const r = await fetch("https://api.tavily.com/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: tavilyKey, urls: [url], query: "followers likes", extract_depth: "advanced" }) })
+        const d = await r.json(); return JSON.stringify(d).slice(0, 4000)
+      } catch (e) { return "" }
     }
 
-    // --- 1B. NORMAL SEARCH - No more old answer, only fresh TikTok/IG result ---
-    if (!webContext) {
-      const needWeb =
-        q.includes("who") || q.includes("what") || q.includes("when") ||
-        q.includes("how many") || q.includes("follower") || q.includes("score") ||
-        q.includes("live") || q.includes("today") || q.includes("now") ||
-        q.includes("president") || q.includes("news") || q.includes("price") ||
-        q.includes("time") || q.includes("tiktok") || q.includes("instagram") ||
-        q.includes("youtube") || q.includes("ronaldo") || q.includes("messi") ||
-        q.includes("wizkid") || q.includes("davido") || q.includes("burna") ||
-        q.includes("transfer") || q.includes("weather") || q.includes("crypto") ||
-        q.includes("?")
+    let webContext = ""
+    if (tavilyKey && isFollowerQ) {
+      let platforms = []
+      if (isBothQ) platforms = ["tiktok", "instagram"]
+      else if (isInstaQ) platforms = ["instagram"]
+      else platforms = ["tiktok"]
 
-      if (needWeb) {
-        try {
-          const tavilyKey = process.env.TAVILY_API_KEY
-          if (tavilyKey) {
-            // For followers, force search to TikTok/IG site only
-            let searchQuery = message
-            if (isFollowerQ && handle) {
-              if (isInstaQ) searchQuery = "site:instagram.com " + handle + " followers"
-              else searchQuery = "site:tiktok.com @" + handle + " TikTok followers"
-            }
-            const searchRes = await fetch("https://api.tavily.com/search", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                api_key: tavilyKey,
-                query: searchQuery,
-                search_depth: "advanced",
-                max_results: 5,
-                include_answer: false,
-                time_range: "week"
-              }),
-            })
-            const searchData = await searchRes.json()
-            if (searchData.results && searchData.results.length > 0) {
-              // Prefer TikTok.com / Instagram.com result first, ignore old blogs
-              let sorted = searchData.results
-              const official = searchData.results.find((r) => r.url && (r.url.includes("tiktok.com/@") || r.url.includes("instagram.com/")))
-              if (official) sorted = [official, ...searchData.results.filter((r) => r !== official)]
-              const resultsText = sorted.slice(0, 3).map((r) => r.title + ": " + r.content.slice(0, 600) + " (Source: " + r.url + ")").join("\n\n")
-              webContext = "\n[LIVE WEB RESULTS - " + new Date().toDateString() + "]\n" + resultsText + "\nRULE: For followers, use ONLY the TikTok.com / Instagram.com result. Ignore old news blogs with old numbers like 13m, 11m, 7m. If no official profile result shows exact number, say so honestly, no guess."
-            }
+      let contexts = []
+      for (const plat of platforms) {
+        let handle = ""
+        let displayName = personName || "This person"
+
+        // 1. Known person -> use coded handle
+        if (person) handle = plat === "instagram" ? person.instagram : person.tiktok
+        else if (typedHandle) handle = typedHandle
+
+        // 2. UNKNOWN person -> DYNAMIC: Search to discover @handle first
+        if (!handle && personName) {
+          const discover = await tavilySearch(personName + " " + plat + " @ handle followers")
+          // Find @handle inside result url or content
+          for (const res of discover) {
+            const urlHandle = res.url ? res.url.match(/@([a-zA-Z0-9._]+)/) || res.url.match(/instagram\.com\/([a-zA-Z0-9._]+)/) : null
+            if (urlHandle) { handle = urlHandle[1].toLowerCase(); break }
+            const contentHandle = res.content ? res.content.match(/@([a-zA-Z0-9._]+)/) : null
+            if (contentHandle) { handle = contentHandle[1].toLowerCase(); break }
           }
-        } catch (e) { console.log("Tavily skip:", e) }
+          // If still no handle, use the search results as context directly
+          if (!handle && discover[0]) contexts.push("RECENT SEARCH for " + displayName + " " + plat + ": " + discover[0].title + ": " + discover[0].content.slice(0, 800) + " Source: " + discover[0].url)
+        }
+
+        if (!handle) {
+          if (personKey === "drake" && plat === "tiktok") contexts.push("DRAKE TIKTOK: Drake has NO official verified TikTok. @champagnepapi is Instagram only. Do NOT invent TikTok number.")
+          continue
+        }
+
+        const profileUrl = plat === "instagram" ? "https://www.instagram.com/" + handle + "/" : "https://www.tiktok.com/@" + handle
+        const extractText = await tavilyExtract(profileUrl)
+        if (extractText && extractText.toLowerCase().includes("follower")) {
+          contexts.push("LIVE " + plat.toUpperCase() + " PROFILE EXTRACT for @" + handle + " (" + displayName + "): " + extractText)
+        } else {
+          const results = await tavilySearch("site:" + (plat === "instagram" ? "instagram.com" : "tiktok.com") + " @" + handle + " " + displayName + " followers")
+          const official = results.find((r) => r.url && r.url.toLowerCase().includes(handle.toLowerCase())) || results[0]
+          if (official) contexts.push("LIVE " + plat.toUpperCase() + " SEARCH for @" + handle + ": " + official.title + ": " + official.content.slice(0, 800) + " Source: " + official.url)
+          const news = await tavilySearch(displayName + " " + plat + " followers million")
+          if (news[0]) contexts.push("RECENT NEWS for " + displayName + " " + plat + ": " + news[0].title + ": " + news[0].content.slice(0, 600) + " Source: " + news[0].url)
+        }
       }
+      webContext = contexts.join("\n\n")
+    } else if (tavilyKey) {
+      const results = await tavilySearch(message)
+      if (results.length > 0) webContext = results.slice(0, 3).map((r) => r.title + ": " + r.content.slice(0, 600) + " (Source: " + r.url + ")").join("\n\n")
     }
 
-    // --- 2. EVA PERSONALITY ---
     const systemPrompt =
       "You are EVA. Dave's younger sister. 22, smart, warm, playful, from Owerri.\n" +
       "Memories: Name=" + (userProfile.name || "Dave") + ", Prefs=" + JSON.stringify(userProfile.prefs || {}) + ", BestFood=" + (userProfile.bestFood || "") + ", WantToBuy=" + (userProfile.wantToBuy || "") + "\n" +
       "HOW TO TALK:\n" +
       "- Mix English + small pidgin, call user Boss sometimes\n" +
-      "- CONCISE: 2-4 lines max. No long essay, unless user says tell me more / more details\n" +
-      "- Never say As an AI or I can't browse - you HAVE webContext from Tavily\n" +
-      "- For what can you remember about me? list from Memories, no Wikipedia\n" +
-      "- For followers: Use LIVE PROFILE EXTRACT or TikTok.com result ONLY. Do NOT use old blog numbers.\n" +
-      "- Special case: Drake has NO official verified TikTok account. His @champagnepapi is Instagram. If user asks Drake TikTok followers, say he no get official TikTok, na fake accounts dey. No invent number.\n" +
-      "- If web results no get exact follower number, say I check internet now, e no show exact number, check TikTok directly - no invent number.\n" +
-      "- For current gist, scores, news, use LIVE WEB RESULTS ONLY. Don't guess old 2024 numbers.\n" +
+      "- NORMAL gist: 2-4 lines.\n" +
+      "- FOR FOLLOWERS / RECENT NEWS: Answer IN DETAIL like a smart friend. 5-8 lines. Format: Name + @handle + exact followers, Likes/Following if you see am, Recent milestone / what happened recently, Small context why e matter. Do NOT just give number and stop.\n" +
+      "- Never say As an AI or I can't browse - you HAVE webContext\n" +
+      "- For followers: Use LIVE PROFILE EXTRACT or TikTok.com/Instagram.com result ONLY. Do NOT use old blog numbers.\n" +
+      "- CRITICAL: @peller089 is INSTAGRAM for Peller. @realpeller is TIKTOK for Peller. Never mix them.\n" +
+      "- Drake has NO official verified TikTok. His @champagnepapi is Instagram. No invent number.\n" +
+      "- If web results no get exact number, use RECENT NEWS number and say as of recent news. If still nothing, say check app directly - no invent.\n" +
       "- For time: Use real date: " + new Date().toString() + "\n\n" +
       "WebContext: " + webContext
 
@@ -145,41 +131,27 @@ export async function POST(req) {
       { role: "user", content: message }
     ]
 
-    // --- 3. GROQ PRIMARY ---
-    let reply = null
-    let lastError = ""
+    let reply = null, lastError = ""
     try {
       const groqKey = process.env.GROQ_API_KEY
       if (groqKey) {
-        const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: { Authorization: "Bearer " + groqKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "openai/gpt-oss-20b", messages: finalMessages, temperature: 0.7, max_tokens: 500 }),
-        })
+        const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { Authorization: "Bearer " + groqKey, "Content-Type": "application/json" }, body: JSON.stringify({ model: "openai/gpt-oss-20b", messages: finalMessages, temperature: 0.7, max_tokens: 700 }) })
         const groqData = await groqRes.json()
-        if (groqData.choices && groqData.choices[0] && groqData.choices[0].message && groqData.choices[0].message.content) {
-          reply = groqData.choices[0].message.content
-        } else if (groqData.error) {
-          lastError = "Groq: " + groqData.error.message
-        }
-      }
+        if (groqData.choices && groqData.choices[0] && groqData.choices[0].message && groqData.choices[0].message.content) reply = groqData.choices[0].message.content
+        else if (groqData.error) lastError = "Groq: " + groqData.error.message
+        else lastError = "Groq empty"
+      } else lastError = "No GROQ key"
     } catch (e) { lastError = "Groq catch: " + e.message }
 
-    // --- 4. CEREBRAS BACKUP ---
     if (!reply) {
       try {
         const cereKey = process.env.CEREBRAS_API_KEY
         if (cereKey) {
-          const cereRes = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-            method: "POST",
-            headers: { Authorization: "Bearer " + cereKey, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "llama-3.3-70b", messages: finalMessages, temperature: 0.7, max_tokens: 500 }),
-          })
+          const cereRes = await fetch("https://api.cerebras.ai/v1/chat/completions", { method: "POST", headers: { Authorization: "Bearer " + cereKey, "Content-Type": "application/json" }, body: JSON.stringify({ model: "llama-3.3-70b", messages: finalMessages, temperature: 0.7, max_tokens: 700 }) })
           const cereData = await cereRes.json()
-          if (cereData.choices && cereData.choices[0] && cereData.choices[0].message && cereData.choices[0].message.content) {
-            reply = cereData.choices[0].message.content
-          }
-        }
+          if (cereData.choices && cereData.choices[0] && cereData.choices[0].message && cereData.choices[0].message.content) reply = cereData.choices[0].message.content
+          else lastError += " | Cerebras empty"
+        } else lastError += " | No Cerebras key"
       } catch (e) { lastError += " | Cerebras: " + e.message }
     }
 
@@ -188,4 +160,4 @@ export async function POST(req) {
   } catch (err) {
     return NextResponse.json({ reply: "Eva jam small Boss, make we try again." }, { status: 200 })
   }
-}
+      }
