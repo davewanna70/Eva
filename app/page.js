@@ -1,6 +1,17 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+// ONE ID FOREVER - no more Guest / chat_id 2,3
+const CHAT_ID = 1;
+const USER_NAME_KEY = "eva_dave_name";
+const USER_STATE_KEY = "eva_dave_state";
 
 export default function EVA() {
   const [text, setText] = useState("");
@@ -9,7 +20,46 @@ export default function EVA() {
   const [isThinking, setIsThinking] = useState(false);
   const [lastTopic, setLastTopic] = useState("");
   const [lastQuestion, setLastQuestion] = useState("");
+  const [myName, setMyName] = useState("");
+  const [myState, setMyState] = useState("");
   const router = useRouter();
+
+  // --- LOAD MEMORY ON OPEN ---
+  useEffect(() => {
+    const savedName = localStorage.getItem(USER_NAME_KEY);
+    const savedState = localStorage.getItem(USER_STATE_KEY);
+    if (savedName) setMyName(savedName);
+    if (savedState) setMyState(savedState);
+
+    const load = async () => {
+      try {
+        const { data } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("chat_id", CHAT_ID)
+          .order("created_at", { ascending: true })
+          .limit(60);
+        if (data && data.length > 0) {
+          setMessages(data.map((m) => ({ from: m.sender === "you" ? "you" : "eva", text: m.text })));
+          if (!savedName) {
+            const nameMsg = data.find((m) => m.sender === "you" && m.text.toLowerCase().includes("my name is"));
+            if (nameMsg) {
+              const n = nameMsg.text.split(/my name is/i)[1].trim().split(" ")[0].replace(/[^a-zA-Z]/g, "");
+              setMyName(n);
+              localStorage.setItem(USER_NAME_KEY, n);
+            }
+          }
+        }
+      } catch (e) {}
+    };
+    load();
+  }, []);
+
+  const saveToSupabase = async (sender, msgText) => {
+    try {
+      await supabase.from("messages").insert([{ chat_id: CHAT_ID, sender, text: msgText }]);
+    } catch (e) {}
+  };
 
   // --- WORLD TIME ZONES ---
   const TIME_ZONES = {
@@ -52,10 +102,8 @@ export default function EVA() {
     return null;
   };
 
-  // --- FIX: USE WIKIPEDIA SEARCH, NOT DIRECT LINK ---
   const searchWikipedia = async (query) => {
     try {
-      // Fix common names
       const fixes = {
         "ronaldo": "Cristiano Ronaldo",
         "cristiano ronaldo": "Cristiano Ronaldo",
@@ -68,14 +116,10 @@ export default function EVA() {
         "peter obi": "Peter Obi",
       };
       const fixed = fixes[query.toLowerCase()] || query;
-
-      // 1. Search first to find correct page
       const searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(fixed)}&format=json&origin=*`);
       const searchData = await searchRes.json();
       const firstTitle = searchData?.query?.search?.[0]?.title;
       if (!firstTitle) return null;
-
-      // 2. Get summary of that correct page
       const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(firstTitle)}`);
       const data = await res.json();
       if (data.extract) {
@@ -91,7 +135,44 @@ export default function EVA() {
     const pidginWords = ["dey", "wey", "na", "abi", "abeg", "wahala", "how far", "na you"];
     const userUsedPidgin = pidginWords.some((w) => lower.includes(w));
 
-    // --- FIX: YES / NO MEMORY ---
+    // --- MEMORY: SAVE NAME ---
+    if (lower.includes("my name is") || lower.includes("my name na") || lower.includes("i'm david") || lower.includes("i am david")) {
+      let name = "";
+      if (lower.includes("my name is")) name = userText.split(/my name is/i)[1].trim().split(" ")[0];
+      else if (lower.includes("my name na")) name = userText.split(/my name na/i)[1].trim().split(" ")[0];
+      else name = "David";
+      name = name.replace(/[^a-zA-Z]/g, "");
+      if (name) {
+        const cap = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+        setMyName(cap);
+        localStorage.setItem(USER_NAME_KEY, cap);
+        if (lower.includes("from")) {
+          const st = lower.split("from")[1].trim().split(" ")[0] + " " + (lower.split("from")[1].trim().split(" ")[1] || "");
+          setMyState(st);
+          localStorage.setItem(USER_STATE_KEY, st);
+          return `Okay ${cap}, I don save am. You be developer from ${st}. I go remember you now.`;
+        }
+        return `Okay ${cap}, I don save your name. I go remember you now.`;
+      }
+    }
+    if (lower.includes("i'm from") || lower.includes("i am from") || lower.includes("from imo")) {
+      const st = lower.includes("imo") ? "imo state" : lower.split("from")[1].trim();
+      setMyState(st);
+      localStorage.setItem(USER_STATE_KEY, st);
+      return `Okay, I don save am. You dey from ${st}.`;
+    }
+
+    // --- MEMORY: ASK MY NAME / WHAT DO YOU REMEMBER ---
+    if (lower === "what is my name" || lower === "what is my name?" || lower.includes("what's my name") || lower.includes("whats my name")) {
+      if (myName) return `Your name na ${myName}${myState ? `, you be developer from ${myState}` : ""}. I remember you.`;
+      return `You never tell me your name yet. Tell me: My name is ...`;
+    }
+    if (lower.includes("what do you remember") || lower.includes("what do u remember") || lower.includes("do you remember me")) {
+      if (myName) return `Yes, I remember you. Your name na ${myName}${myState ? `, you be from ${myState}` : ""}. You be developer. Wetin you want make we do today?`;
+      return `I no remember anything about you yet. Tell me your name first: My name is ...`;
+    }
+
+    // --- YES / NO ---
     if (lower === "yes" || lower === "yeah" || lower === "yes please" || lower === "sure" || lower === "ok") {
       if (lastTopic) {
         const more = await searchWikipedia(lastTopic);
@@ -103,20 +184,19 @@ export default function EVA() {
     }
     if (lower === "no" || lower === "nope") return "Okay, no problem. What else do you want me to help you with?";
 
-    // --- FIX: GREETINGS - HEY, HI, HEY EVA ---
+    // --- GREETINGS ---
     if (lower === "hi" || lower === "hey" || lower === "hey eva" || lower === "hi eva" || lower === "hello eva" || lower === "yo" || lower === "good morning" || lower === "good evening") {
-      return "Hey! I am here. How are you doing? What do you want us to do today? You can ask me time, who a person is, or help me plan my day.";
+      return myName ? `Hey ${myName}! I am here. How are you doing? Wetin you want make we do today?` : "Hey! I am here. How are you doing? What do you want us to do today? You can ask me time, who a person is, or help me plan my day.";
     }
     if (lower.includes("hello") || lower.includes("how are you") || lower.includes("how far")) {
+      if (myName) return `Hello ${myName}! I dey fine o. How your side? Wetin you want make we do today?`;
       return userUsedPidgin ? "Hello my person! I dey fine o. How your side? Wetin you want make we do today?" : "Hello! I am doing well, thank you for asking. How are you doing today? What would you like us to work on?";
     }
 
-    // --- FIX: CAN YOU CODE ---
     if (lower.includes("can u code") || lower.includes("can you code") || lower.includes("code")) {
       return "Yes, I can help you with code! What do you want me to code? For example: A login page, a calculator, or fix your EVA code. Tell me what you want to build.";
     }
 
-    // --- TIME ---
     if (lower.includes("time")) {
       const placeTime = getTimeForPlace(lower);
       if (placeTime) return placeTime;
@@ -137,14 +217,13 @@ export default function EVA() {
       return "I cannot see live follower counts because they change every minute and TikTok does not allow me to check it directly. If you open TikTok and search the person's name, you will see the exact number now. Do you want me to tell you who that person is instead? Just type Yes.";
     }
 
-    // --- WIKIPEDIA - WHO IS / WHAT IS / TELL ME ABOUT ---
+    // --- WIKIPEDIA ---
     let topic = "";
     if (lower.startsWith("who is ")) topic = userText.slice(7);
     else if (lower.startsWith("who is")) topic = userText.slice(6);
-    else if (lower.startsWith("what is ")) topic = userText.slice(8);
+    else if (lower.startsWith("what is ") && !lower.includes("my name")) topic = userText.slice(8);
     else if (lower.startsWith("tell me about ")) topic = userText.slice(14);
     else if (lower.startsWith("tell me about")) topic = userText.slice(13);
-    // Also handle "Who is wizkid" without checking start exactly, and "Who is Cristiano ronaldo"
     if (!topic && lower.includes("who is")) topic = userText.toLowerCase().split("who is")[1];
 
     if (topic) {
@@ -181,6 +260,7 @@ export default function EVA() {
     const userText = text.trim();
     setText("");
     setMessages((prev) => [...prev, { from: "you", text: userText }]);
+    await saveToSupabase("you", userText);
     setIsThinking(true);
     setMessages((prev) => [...prev, { from: "eva", text: "EVA is thinking..." }]);
     const reply = await getEVAReply(userText);
@@ -188,12 +268,13 @@ export default function EVA() {
       const withoutThinking = prev.slice(0, -1);
       return [...withoutThinking, { from: "eva", text: reply }];
     });
+    await saveToSupabase("eva", reply);
     setIsThinking(false);
   };
 
   const addEVAMessage = (msg) => { setMessages((prev) => [...prev, { from: "eva", text: msg }]); };
   const openDiscover = () => { addEVAMessage("✨ Discover: Try ask me - 'Who is Cristiano Ronaldo?', 'What is the time in London now?', 'Give me a calm routine', 'Help me plan my day'"); };
-  const openChat = () => { router.push("/chat"); };
+  const openChat = () => { /* Stay here so history no clear */ };
   const menuClick = (item) => {
     setShowMenu(false);
     if (item === "History") addEVAMessage("🕒 History: Your past chats will show here. For now, this is your current conversation.");
@@ -244,4 +325,4 @@ export default function EVA() {
       </div>
     </div>
   );
-  }
+    }
