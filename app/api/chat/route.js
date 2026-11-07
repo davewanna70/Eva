@@ -1,86 +1,115 @@
-// @ts-nocheck
-export async function POST(req) {
+import { NextRequest, NextResponse } from "next/server"
+
+export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const message = body.message || "";
-    const history = body.history || [];
-    const userId = body.userId || "boss_default";
-    const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-    const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-    const groqKey = process.env.GROQ_API_KEY;
+    const body = await req.json()
+    const message: string = body.message || ""
+    const history: any[] = body.history || []
+    const userProfile = body.userProfile || {}
 
-    async function redisGet(key) {
-      if (!redisUrl || !redisToken) return null;
+    if (!message.trim()) {
+      return NextResponse.json({ reply: "I dey here Boss, wetin you want?" })
+    }
+
+    // --- 1. FULL INTERNET SEARCH - TAVILY - FOR EVERYTHING CURRENT ---
+    // No more only "ronaldo" or "score". If question need fresh fact, search.
+    let webContext = ""
+    const q = message.toLowerCase()
+    const needWeb =
+      q.includes("who") || q.includes("what") || q.includes("when") ||
+      q.includes("how many") || q.includes("followers") || q.includes("score") ||
+      q.includes("live") || q.includes("today") || q.includes("now") ||
+      q.includes("president") || q.includes("news") || q.includes("price") ||
+      q.includes("time") || q.includes("tiktok") || q.includes("instagram") ||
+      q.includes("youtube") || q.includes("ronaldo") || q.includes("messi") ||
+      q.includes("wizkid") || q.includes("davido") || q.includes("burna") ||
+      q.includes("transfer") || q.includes("weather") || q.includes("crypto") ||
+      q.includes("?")
+
+    if (needWeb) {
       try {
-        const r = await fetch(redisUrl + "/pipeline", {
-          method: "POST", headers: { Authorization: "Bearer " + redisToken, "Content-Type": "application/json" },
-          body: JSON.stringify([["GET", key]])
-        });
-        const j = await r.json();
-        if (!j[0]?.result) return null;
-        return JSON.parse(j[0].result);
-      } catch { return null; }
+        const tavilyKey = process.env.TAVILY_API_KEY
+        if (tavilyKey) {
+          const searchRes = await fetch("https://api.tavily.com/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              api_key: tavilyKey,
+              query: message,
+              search_depth: "advanced",
+              max_results: 5,
+              include_answer: true,
+              time_range: "month"
+            }),
+          })
+          const searchData = await searchRes.json()
+          if (searchData.results?.length > 0) {
+            const resultsText = searchData.results.map((r: any) => `${r.title}: ${r.content.slice(0, 500)} (Source: ${r.url})`).join("\n\n")
+            webContext = `\n[LIVE WEB RESULTS - ${new Date().toDateString()}]\n${resultsText}\nSummary: ${searchData.answer || ""}\nUse this for current info. If follower count dey inside, quote the exact number you see. If no exact number dey, say so honestly, no guess.`
+          }
+        }
+      } catch (e) { console.log("Tavily skip:", e) }
     }
-    async function redisSet(key, value) {
-      if (!redisUrl || !redisToken) return;
+
+    // --- 2. EVA PERSONALITY ---
+    const systemPrompt = `
+You are EVA. Dave's younger sister. 22, smart, warm, playful, from Owerri.
+Memories: Name=${userProfile.name || "Dave"}, Location=${userProfile.location || "Owerri"}, FavFood=${userProfile.favFood || ""}, BestFood=${userProfile.bestFood || ""}, WantToBuy=${userProfile.wantToBuy || ""}, Prefs=${JSON.stringify(userProfile.prefs || {})}
+
+HOW TO TALK:
+- Mix English + small pidgin, call user "Boss" sometimes
+- CONCISE: 2-4 lines max. No long essay, unless user says "tell me more" / "more details"
+- Never say "As an AI" or "I can't browse" - you HAVE webContext from Tavily
+- For "what can you remember about me?" list from Memories, no Wikipedia
+- For current gist, followers, scores, news, use LIVE WEB RESULTS ONLY. Don't guess old 2024 numbers.
+- If web results no get exact follower number, say "I check internet now, e no show exact number, check TikTok directly" - no invent number.
+- For time: Use real date: ${new Date().toString()}
+
+WebContext: ${webContext}
+`
+
+    const finalMessages = [
+      { role: "system", content: systemPrompt },
+      ...history.slice(-10).map((m: any) => ({ role: m.role, content: m.content })),
+      { role: "user", content: message }
+    ]
+
+    // --- 3. GROQ PRIMARY ---
+    let reply: string | null = null
+    let lastError = ""
+    try {
+      const groqKey = process.env.GROQ_API_KEY
+      if (groqKey) {
+        const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${groqKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "openai/gpt-oss-20b", messages: finalMessages, temperature: 0.7, max_tokens: 500 }),
+        })
+        const groqData = await groqRes.json()
+        if (groqData.choices?.[0]?.message?.content) reply = groqData.choices[0].message.content
+        else if (groqData.error) lastError = `Groq: ${groqData.error.message}`
+      }
+    } catch (e: any) { lastError = `Groq catch: ${e.message}` }
+
+    // --- 4. CEREBRAS BACKUP ---
+    if (!reply) {
       try {
-        await fetch(redisUrl + "/pipeline", {
-          method: "POST", headers: { Authorization: "Bearer " + redisToken, "Content-Type": "application/json" },
-          body: JSON.stringify([["SET", key, JSON.stringify(value)]])
-        });
-      } catch {}
+        const cereKey = process.env.CEREBRAS_API_KEY
+        if (cereKey) {
+          const cereRes = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${cereKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "llama-3.3-70b", messages: finalMessages, temperature: 0.7, max_tokens: 500 }),
+          })
+          const cereData = await cereRes.json()
+          if (cereData.choices?.[0]?.message?.content) reply = cereData.choices[0].message.content
+        }
+      } catch (e: any) { lastError += ` | Cerebras: ${e.message}` }
     }
 
-    const memoryKey = "eva:forever:" + userId;
-    let mem = await redisGet(memoryKey);
-    if (!mem || typeof mem !== "object") mem = { people: {}, current: "David", facts: [] };
-    if (!mem.people) mem.people = {};
-    if (!mem.people["David"]) mem.people["David"] = { name: "David", job: "", location: "" };
-    
-    const lower = message.toLowerCase();
-    let extractedName = "";
-    if (lower.includes("david")) extractedName = "David";
-    const m1 = message.match(/my name is ([A-Za-z]+)/i);
-    if (m1) extractedName = m1[1];
-    const m2 = message.match(/it's me ([A-Za-z]+)/i);
-    if (m2) extractedName = m2[1];
-
-    if (extractedName) {
-      extractedName = extractedName.charAt(0).toUpperCase() + extractedName.slice(1).toLowerCase();
-      if (!mem.people[extractedName]) mem.people[extractedName] = { name: extractedName, job: "", location: "" };
-      mem.current = extractedName;
-    }
-
-    let current = mem.current || "David";
-    if (!mem.people[current]) mem.people[current] = { name: current, job: "", location: "" };
-    const person = mem.people[current];
-
-    if (lower.includes("developer") || lower.includes("dev") || lower.includes("coding")) person.job = "developer";
-    if (lower.includes("pilot")) person.job = "pilot";
-    if (lower.includes("nurse")) person.job = "nurse";
-    if (lower.includes("imo")) person.location = "Imo State";
-    if (lower.includes("lagos")) person.location = "Lagos";
-    if (lower.includes("abuja")) person.location = "Abuja";
-
-    person.lastSeen = new Date().toISOString();
-    mem.facts = mem.facts || [];
-    mem.facts.push(message.slice(0,200));
-    await redisSet(memoryKey, mem);
-
-    const allPeopleText = Object.values(mem.people).map(p => `${p.name}: job=${p.job || 'unknown'}, location=${p.location || 'unknown'}`).join(" | ");
-    const systemPrompt = `You are EVA. PERMANENT memory. DATABASE: ${allPeopleText}. CURRENT USER IS ${current}. HIS DATA: Name=${person.name}, Job=${person.job}, Location=${person.location}. RULE: When asked what you know about me, MUST say Name, Job, Location. For David MUST say developer from Imo State if in DATABASE. Never say only name. Remember unlimited people: ${allPeopleText}`;
-
-    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + groqKey },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-20b",
-        messages: [{ role: "system", content: systemPrompt }, ...history.slice(-8), { role: "user", content: message }],
-        temperature: 0.2
-      })
-    });
-    const data = await groqRes.json();
-    return Response.json({ reply: data.choices?.[0]?.message?.content || "Error" });
-  } catch (e) {
-    return Response.json({ reply: "Crash: " + e.message });
+    if (!reply) return NextResponse.json({ reply: `Eva jam small Boss, try again. (${lastError})` })
+    return NextResponse.json({ reply: reply.trim() })
+  } catch (err: any) {
+    return NextResponse.json({ reply: "Eva jam small Boss, make we try again." }, { status: 200 })
   }
 }
