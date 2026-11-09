@@ -29,7 +29,6 @@ const EMOJI_CATS = {
   ],
 };
 
-// Clean ** stars so EVA show clean like WhatsApp, not **Full name**
 const cleanText = (t) => (t || "").replace(/\*\*/g, "").replace(/^\s*-\s*/gm, "• ");
 
 export default function EVA() {
@@ -47,17 +46,49 @@ export default function EVA() {
 
   const scrollRef = useRef(null); const bottomRef = useRef(null); const textareaRef = useRef(null);
   const lastUserMsgRef = useRef(null);
+  const keyboardOpenRef = useRef(false);
 
-  // WHATSAPP RULE: NO auto-scroll on messages change. We NEVER scroll while typing.
-  // If we scroll on every typing tick, question go push up and disappear. So we remove that useEffect completely.
-
+  // FIX 1 + 2: Load from localStorage ONLY. Supabase must NEVER overwrite.
   useEffect(()=>{
     const n = localStorage.getItem("eva_dave_name"); if(n) setMyName(n);
     const p = localStorage.getItem("eva_dave_prefs"); if(p) try{ setPrefs(JSON.parse(p)); }catch(e){}
+    const local = (()=>{ try{ return JSON.parse(localStorage.getItem("eva_messages_cache") || "[]"); }catch(e){ return []; } })();
+    if (local.length > 0) return; // Local na truth. Kill Ronaldo comeback + new messages disappearing.
     const load = async () => {
       const { data } = await supabase.from("messages").select("*").eq("chat_id", CHAT_ID).order("created_at", {ascending:true}).limit(80);
-      if(data && data.length){ const mapped = data.map(m=>({from:m.sender==="you"?"you":"eva", text:m.text})); setMessages(mapped); try{ localStorage.setItem("eva_messages_cache", JSON.stringify(mapped)); }catch(e){} }
+      if(data && data.length){ 
+        const mapped = data.map(m=>({from:m.sender==="you"?"you":"eva", text:m.text})); 
+        const nowLocal = (()=>{ try{ return JSON.parse(localStorage.getItem("eva_messages_cache") || "[]"); }catch(e){ return []; } })();
+        if (nowLocal.length === 0) { setMessages(mapped); try{ localStorage.setItem("eva_messages_cache", JSON.stringify(mapped)); }catch(e){} }
+      }
     }; load();
+  },[]);
+
+  // ===== CORRECTED WHATSAPP RULE: Keyboard OFF = Shift down by keyboard height ONLY, NOT to bottom =====
+  // When keyboard close, viewport grow by diff (e.g. +300px). We scroll down by that diff only.
+  // That reveals exactly wetin keyboard bin cover. If answer long, tail still dey down, you scroll by hand.
+  useEffect(()=>{
+    if (!window.visualViewport) return;
+    let lastH = window.visualViewport.height;
+    const onResize = () => {
+      const newH = window.visualViewport.height;
+      const diff = newH - lastH;
+      if (diff > 100) {
+        // Keyboard closed
+        keyboardOpenRef.current = false;
+        setTimeout(()=>{
+          if (scrollRef.current) {
+            // CORRECTED: scroll by diff only, NOT to scrollHeight
+            scrollRef.current.scrollTop += diff;
+          }
+        }, 120);
+      } else if (diff < -100) {
+        keyboardOpenRef.current = true;
+      }
+      lastH = newH;
+    };
+    window.visualViewport.addEventListener("resize", onResize);
+    return ()=> window.visualViewport.removeEventListener("resize", onResize);
   },[]);
 
   const saveToSupabase = async (sender, msgText) => { try{ await supabase.from("messages").insert([{chat_id:CHAT_ID, sender, text:msgText}]); }catch(e){} };
@@ -65,6 +96,7 @@ export default function EVA() {
     if(!window.confirm("Clear all chats?")) return;
     setMessages([]); setMyName(""); setPrefs({}); localStorage.removeItem("eva_dave_name"); localStorage.removeItem("eva_dave_prefs"); localStorage.removeItem("eva_messages_cache");
     try{ await supabase.from("messages").delete().eq("chat_id", CHAT_ID); }catch(e){} setShowMenu(false);
+    setTimeout(()=>{ if(scrollRef.current) scrollRef.current.scrollTop = 0; }, 50);
   };
 
   const addEmoji = (emoji) => { setText(prev=>prev+emoji); textareaRef.current?.focus(); };
@@ -78,27 +110,22 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // WHATSAPP: Scroll ONCE to show your question, then LOCK. Never scroll again while answer dey grow.
-  const scrollToQuestionOnce = () => {
-    // Wait small for DOM to paint your question
+  // WHATSAPP: Keyboard ON = Question + 3 lines of answer
+  const scrollToQuestionWith3Lines = () => {
     setTimeout(()=>{
       if (lastUserMsgRef.current && scrollRef.current) {
-        // scrollIntoView with block:start = question go stay for top, answer go dey below am, like WhatsApp
-        // block:"start" + no smooth = no pushing
-        lastUserMsgRef.current.scrollIntoView({behavior:"auto", block:"start"});
-        // Small offset so question no hug top too much
-        scrollRef.current.scrollTop = Math.max(0, scrollRef.current.scrollTop - 10);
+        const qEl = lastUserMsgRef.current;
+        const container = scrollRef.current;
+        const qTop = qEl.offsetTop;
+        container.scrollTop = Math.max(0, qTop - 90);
       }
-    }, 50);
+    }, 60);
   };
 
   const askEVA = async () => {
     if(!text.trim() || isThinking) return;
     const userText = text.trim();
-
-    // KEYBOARD: Focus FIRST synchronously, before any setState, so keyboard no close
     if (textareaRef.current) textareaRef.current.focus();
-
     setText(""); setShowEmoji(false); setEmojiSearch("");
     requestAnimationFrame(()=>{ textareaRef.current?.focus(); });
 
@@ -110,8 +137,8 @@ export default function EVA() {
     setMessages(prev=>{ const next=[...prev,{from:"you",text:userText}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     await saveToSupabase("you", userText);
 
-    // WHATSAPP: Scroll ONCE to question, then LOCK. No more scroll.
-    scrollToQuestionOnce();
+    // Keyboard ON - show question + 3 lines, then LOCK. No auto-scroll while typing.
+    scrollToQuestionWith3Lines();
 
     setIsThinking(true);
     setMessages(prev=>[...prev,{from:"eva",text:"▍"}]);
@@ -127,9 +154,10 @@ export default function EVA() {
           setMessages(prev => {
             const copy = [...prev];
             copy[copy.length-1] = {from:"eva", text: display};
+            try{ localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); }catch(e){}
             return copy;
           });
-          // NO SCROLL HERE - this na the fix. Answer go grow downwards, question go stay.
+          // NO SCROLL HERE
           if(i >= cleaned.length){
             clearInterval(interval);
             setMessages(prev => {
@@ -148,7 +176,6 @@ export default function EVA() {
       const history=[...messages,{from:"you",text:userText}].slice(-10).map(m=>({role:m.from==="you"?"user":"assistant", content:m.text}));
       const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:userText,history,userProfile:{name:myName,prefs,bestFood:prefs.food,wantToBuy:prefs.want_to_buy}})});
       const contentType = res.headers.get("content-type") || "";
-
       if(contentType.includes("application/json")){
         const data=await res.json();
         const reply=data.reply||"I dey here Boss, try again.";
@@ -166,9 +193,9 @@ export default function EVA() {
             setMessages(prev=>{
               const copy=[...prev];
               copy[copy.length-1]={from:"eva",text:display};
+              try{ localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); }catch(e){}
               return copy;
             });
-            // NO SCROLL HERE TOO
           }
         }, 18);
         while(true){
@@ -184,13 +211,19 @@ export default function EVA() {
       setMessages(prev=>{ const w=prev.slice(0,-1); const next=[...w,{from:"eva",text:"Network jam small Boss, try again."}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     }
     setIsThinking(false);
-    // KEYBOARD STAYS - do NOT blur, do NOT scroll
     textareaRef.current?.focus();
   };
 
+  // ===== CORRECTED: Tap messages to hide keyboard = Shift down by ~280px ONLY, NOT to bottom =====
   const hideKeyboardToRead = () => {
     setShowMenu(false);
     if (document.activeElement) document.activeElement.blur();
+    setTimeout(()=>{
+      if (scrollRef.current) {
+        // Reveal wetin keyboard bin cover. If answer long, you still go scroll by hand for remaining.
+        scrollRef.current.scrollTop += 280;
+      }
+    }, 250);
   };
 
   return (
@@ -207,7 +240,6 @@ export default function EVA() {
         </div>
       </div>
 
-      {/* MESSAGES: Tap here / scroll = you wan read, so hide keyboard like WhatsApp. Typing no go auto-scroll again. */}
       <div 
         ref={scrollRef} 
         style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", padding:"0 20px 10px"}}
@@ -216,7 +248,6 @@ export default function EVA() {
         {messages.length===0 && (<div style={{background:"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:14, borderRadius:16, maxWidth:420, margin:"0 auto", textAlign:"center"}}>Hello, I am EVA. Ask me anything.</div>)}
         {messages.map((m,i)=>{
           const isLastUser = m.from==="you" && messages.slice(i+1).every(x=>x.from!=="you");
-          // Attach ref to LAST user question so we fit scroll to am once
           return (<div key={i} ref={isLastUser ? lastUserMsgRef : null} style={{alignSelf:m.from==="you"?"flex-end":"flex-start", background:m.from==="you"?"#8b5cf6":"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:"10px 14px", borderRadius:16, maxWidth:"85%", fontSize:14, lineHeight:1.5, whiteSpace:"pre-line"}}>{cleanText(m.text)}</div>);
         })}
         <div ref={bottomRef} style={{height:1, flexShrink:0}} />
@@ -263,4 +294,4 @@ export default function EVA() {
       </div>
     </div>
   );
-    }
+      }
