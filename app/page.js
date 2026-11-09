@@ -92,6 +92,36 @@ export default function EVA() {
     return () => { clearTimeout(t1); };
   }, [messages.length]);
 
+  // *** ONLY NEW CODE - FIX FOR KEYBOARD CLOSE ONLY ***
+  // When keyboard closes, visualViewport grows by keyboard height.
+  // We scroll down by EXACTLY that height, so we reveal what keyboard was hiding.
+  // We no touch send, no touch 3 lines, no touch anything else.
+  useEffect(() => {
+    if (!window.visualViewport) return;
+    let lastH = window.visualViewport.height;
+    let timer = null;
+    const onResize = () => {
+      const newH = window.visualViewport.height;
+      const diff = newH - lastH;
+      lastH = newH;
+      if (diff > 100) {
+        // Keyboard just closed - wait for animation to finish, then reveal
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (!scrollRef.current) return;
+          const c = scrollRef.current;
+          c.scrollTop = c.scrollTop + diff;
+        }, 300);
+      }
+    };
+    window.visualViewport.addEventListener("resize", onResize);
+    return () => {
+      window.visualViewport.removeEventListener("resize", onResize);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+  // *** END OF ONLY NEW CODE ***
+
   const saveToSupabase = async (sender, msgText) => {
     try { await supabase.from("messages").insert([{ chat_id: CHAT_ID, sender, text: msgText }]); } catch (e) {}
   };
@@ -366,4 +396,4 @@ export default function EVA() {
       </div>
     </div>
   );
-              }
+  }
