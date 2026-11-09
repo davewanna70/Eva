@@ -62,6 +62,7 @@ export default function EVA() {
   const textareaRef = useRef(null);
   const didInitialScroll = useRef(false);
   const smoothAnimRef = useRef(null);
+  const lastUserMsgRef = useRef(null);
 
   useEffect(() => {
     const n = localStorage.getItem("eva_dave_name");
@@ -102,7 +103,7 @@ export default function EVA() {
     return () => { clearTimeout(t1); };
   }, [messages.length]);
 
-  // SMOOTH: Animate scroll like WhatsApp keyboard, no 300ms wait + instant jump
+  // WHATSAPP SMOOTH: Animate scroll by diff only, like keyboard animation. NO scroll to bottom.
   const smoothScrollBy = (diff) => {
     if (!scrollRef.current || !diff) return;
     if (smoothAnimRef.current) cancelAnimationFrame(smoothAnimRef.current);
@@ -110,17 +111,18 @@ export default function EVA() {
     const start = c.scrollTop;
     const target = start + diff;
     const startTime = performance.now();
-    const DURATION = 250; // same as iOS keyboard animation
+    const DURATION = 250;
     const tick = (now) => {
       const p = Math.min(1, (now - startTime) / DURATION);
-      const ease = 1 - Math.pow(1 - p, 3); // easeOutCubic - WhatsApp feel
+      const ease = 1 - Math.pow(1 - p, 3);
       c.scrollTop = start + (target - start) * ease;
       if (p < 1) smoothAnimRef.current = requestAnimationFrame(tick);
     };
     smoothAnimRef.current = requestAnimationFrame(tick);
   };
 
-  // SMOOTH KEYBOARD CLOSE: Follow visualViewport live, no wait, no skip
+  // WHATSAPP KEYBOARD CLOSE: Reveal by EXACT keyboard height, NOT scroll to bottom.
+  // Your question + 3 lines stay, we just uncover wetin keyboard hide below.
   useEffect(() => {
     if (!window.visualViewport) return;
     let lastH = window.visualViewport.height;
@@ -129,7 +131,6 @@ export default function EVA() {
       const diff = newH - lastH;
       lastH = newH;
       if (diff > 30) {
-        // Keyboard closing - animate with it, immediately, no 300ms delay
         smoothScrollBy(diff);
       }
     };
@@ -171,20 +172,20 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  const scrollToBottomNow = () => {
+  // WHATSAPP SEND: Show question + 3 lines, once. Anchor to question, not to bottom.
+  const scrollToQuestionWith3Lines = () => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        if (!scrollRef.current || !lastUserMsgRef.current) return;
+        const c = scrollRef.current;
+        const q = lastUserMsgRef.current;
+        // Put question near top of visible area, with room for 3 lines of EVA answer below it
+        // This is the anchor - after this, we NEVER scroll again while EVA dey type
+        const target = q.offsetTop - 10;
+        // Clamp so we no jump to bottom
+        c.scrollTop = Math.max(0, Math.min(target, c.scrollHeight - c.clientHeight));
       });
     });
-  };
-
-  // If user is already at bottom, follow EVA typing smoothly like WhatsApp
-  const followIfAtBottom = () => {
-    if (!scrollRef.current) return;
-    const c = scrollRef.current;
-    const nearBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 120;
-    if (nearBottom) c.scrollTop = c.scrollHeight;
   };
 
   const askEVA = async () => {
@@ -224,12 +225,10 @@ export default function EVA() {
       return next;
     });
 
-    // TICKS: Fire and forget, then upgrade 1 tick -> 2 ticks when delivered
     saveToSupabase("you", userText).then((ok) => {
-      if (!ok) return; // stay on 1 tick - not delivered
+      if (!ok) return;
       setMessages((prev) => {
         const copy = [...prev];
-        // Find this user message by time + text
         for (let i = copy.length - 1; i >= 0; i--) {
           if (copy[i].from === "you" && copy[i].time === nowTs) { copy[i] = { ...copy[i], status: "delivered" }; break; }
         }
@@ -237,7 +236,9 @@ export default function EVA() {
         return copy;
       });
     });
-    scrollToBottomNow();
+
+    // ONE scroll only, to anchor question + 3 lines. After this, NO scroll while typing.
+    scrollToQuestionWith3Lines();
 
     const typeOut = (fullText) => {
       const cleaned = cleanText(fullText);
@@ -253,8 +254,7 @@ export default function EVA() {
             try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {}
             return copy;
           });
-          // SMOOTH: follow typing if you are at bottom, like WhatsApp
-          requestAnimationFrame(() => followIfAtBottom());
+          // NO followIfAtBottom here - answer dey go DOWN, question dey stay. WhatsApp style.
           if (i >= cleaned.length) {
             clearInterval(interval);
             setMessages((prev) => {
@@ -293,7 +293,7 @@ export default function EVA() {
               try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {}
               return copy;
             });
-            requestAnimationFrame(() => followIfAtBottom());
+            // NO follow here too - let am grow DOWN
           }
         }, 18);
         while (true) {
@@ -350,9 +350,11 @@ export default function EVA() {
           <div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, maxWidth: 420, margin: "0 auto", textAlign: "center" }}>Hello, I am EVA. Ask me anything.</div>
         )}
         {messages.map((m, i) => {
+          const isLastUser = m.from === "you" && messages.slice(i + 1).every((x) => x.from !== "you");
           return (
             <div
               key={i}
+              ref={isLastUser ? lastUserMsgRef : null}
               style={{ alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 14px 6px", borderRadius: 16, maxWidth: "85%", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}
             >
               <div>{cleanText(m.text)}</div>
@@ -441,4 +443,4 @@ export default function EVA() {
       </div>
     </div>
   );
-        }
+      }
