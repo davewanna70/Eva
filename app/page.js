@@ -28,6 +28,7 @@ const EMOJI_CATS = {
     {e:"⚽",k:"football soccer ball"}, {e:"🏀",k:"basketball"}, {e:"🎾",k:"tennis"}, {e:"🎮",k:"game controller"}, {e:"🎲",k:"dice game"}, {e:"🎯",k:"target dart"}, {e:"🎸",k:"guitar music"}, {e:"🎵",k:"music note"}, {e:"🎤",k:"microphone sing"}, {e:"🎧",k:"headphone music"}, {e:"🎬",k:"movie film"}, {e:"💻",k:"laptop computer"}, {e:"📱",k:"phone"}, {e:"💡",k:"idea light"}, {e:"🎁",k:"gift present"}, {e:"🎉",k:"party celebrate"}, {e:"✨",k:"sparkles"}, {e:"❤️",k:"heart love"}, {e:"💔",k:"broken heart"}, {e:"💯",k:"100 perfect"}, {e:"👑",k:"crown king"}, {e:"💎",k:"diamond"}, {e:"🌹",k:"rose flower love"}
   ]
 };
+const EMOJI_CAT_LIST = Object.keys(EMOJI_CATS);
 
 const cleanText = (t) => (t || "").replace(/\*\*/g, "").replace(/^\s*-\s*/gm, "• ");
 const fmtTime = (ts) => {
@@ -65,7 +66,12 @@ export default function EVA() {
   const lastUserMsgRef = useRef(null);
   const outerRef = useRef(null);
 
-  // STABLE LAYOUT: Lock outer height to visualViewport, so keyboard no shake whole page
+  // EMOJI STABLE: Keep scroll position when switching category, no jump to top
+  const emojiGridRef = useRef(null);
+  const emojiScrollPosRef = useRef(0);
+  const emojiTabsRef = useRef(null);
+  const swipeStartXRef = useRef(null);
+
   useEffect(() => {
     if (!window.visualViewport) return;
     const setH = () => {
@@ -123,7 +129,6 @@ export default function EVA() {
     return () => { clearTimeout(t1); };
   }, [messages.length]);
 
-  // WHATSAPP SMOOTH: Animate by diff only, NO scroll to bottom
   const smoothScrollBy = (diff) => {
     if (!scrollRef.current || !diff) return;
     if (smoothAnimRef.current) cancelAnimationFrame(smoothAnimRef.current);
@@ -141,7 +146,6 @@ export default function EVA() {
     smoothAnimRef.current = requestAnimationFrame(tick);
   };
 
-  // WHATSAPP KEYBOARD CLOSE: Reveal by EXACT keyboard height, NOT scroll to bottom
   useEffect(() => {
     if (!window.visualViewport) return;
     let lastH = window.visualViewport.height;
@@ -177,9 +181,55 @@ export default function EVA() {
     didInitialScroll.current = true;
   };
 
+  // EMOJI: Toggle - close keyboard first so keyboard + emoji no fight, no cut
+  const toggleEmoji = () => {
+    if (!showEmoji) {
+      if (document.activeElement) document.activeElement.blur();
+      setShowEmoji(true);
+    } else {
+      setShowEmoji(false);
+      if (textareaRef.current) textareaRef.current.focus();
+    }
+  };
+
+  // EMOJI: Switch category WITHOUT jumping to top - keep bottom position
+  const switchEmojiCat = (cat) => {
+    if (emojiGridRef.current) emojiScrollPosRef.current = emojiGridRef.current.scrollTop;
+    setEmojiTab(cat);
+    setEmojiSearch("");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (emojiGridRef.current) {
+          // Stay for same place - if you dey bottom, stay for bottom, no go top
+          const max = emojiGridRef.current.scrollHeight - emojiGridRef.current.clientHeight;
+          emojiGridRef.current.scrollTop = Math.min(emojiScrollPosRef.current, Math.max(0, max));
+        }
+        // Keep active tab visible for sideways scroll
+        const active = emojiTabsRef.current?.querySelector(`[data-cat="${cat}"]`);
+        if (active) active.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      });
+    });
+  };
+
+  // EMOJI: Swipe sides to change gesture - different from WhatsApp up-down
+  const onEmojiSwipeStart = (e) => {
+    swipeStartXRef.current = e.touches ? e.touches[0].clientX : e.clientX;
+  };
+  const onEmojiSwipeEnd = (e) => {
+    if (swipeStartXRef.current == null) return;
+    const endX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+    const dx = endX - swipeStartXRef.current;
+    swipeStartXRef.current = null;
+    if (Math.abs(dx) < 60) return; // small swipe, ignore - na scroll inside grid
+    if (emojiSearch.trim()) return; // when searching, no swipe
+    const idx = EMOJI_CAT_LIST.indexOf(emojiTab);
+    if (dx < 0 && idx < EMOJI_CAT_LIST.length - 1) switchEmojiCat(EMOJI_CAT_LIST[idx + 1]); // swipe left = next
+    if (dx > 0 && idx > 0) switchEmojiCat(EMOJI_CAT_LIST[idx - 1]); // swipe right = prev
+  };
+
   const addEmoji = (emoji) => {
     setText((prev) => prev + emoji);
-    if (textareaRef.current) textareaRef.current.focus();
+    // Don't close emoji panel, don't focus keyboard - stay for bottom, stable
   };
 
   const getEmojisToShow = () => {
@@ -336,10 +386,8 @@ export default function EVA() {
 
   return (
     <div ref={outerRef} style={{ height: "100dvh", minHeight: "100dvh", maxHeight: "100dvh", background: "#030014", color: "white", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "sans-serif", position: "fixed", inset: 0, top: 0, left: 0, right: 0, bottom: 0, overscrollBehavior: "none" }}>
-      {/* Background fixed - e no go move when keyboard open */}
       <img src="/eva-bg.jpg" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", zIndex: 0 }} />
 
-      {/* HEADER - PINNED LIKE WHATSAPP, NEVER SCROLL, NEVER CUT */}
       <div style={{ position: "relative", zIndex: 30, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", paddingTop: "env(safe-area-inset-top)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
         <div style={{ display: "flex", padding: "12px 18px 12px", alignItems: "center", justifyContent: "space-between", minHeight: 56, boxSizing: "border-box" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -358,7 +406,6 @@ export default function EVA() {
         </div>
       </div>
 
-      {/* CHAT - ONLY THIS ONE DEY SCROLL */}
       <div
         ref={scrollRef}
         style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "auto" }}
@@ -390,28 +437,39 @@ export default function EVA() {
         <div ref={bottomRef} style={{ height: 10, flexShrink: 0 }} />
       </div>
 
+      {/* EMOJI PANEL - PINNED FOR BOTTOM, FIXED HEIGHT, NO SHAKE, NO JUMP TO TOP */}
       {showEmoji && (
-        <div style={{ position: "relative", zIndex: 25, background: "rgba(0,0,0,0.95)", borderTop: "1px solid rgba(255,255,255,0.2)", padding: "10px 10px 6px", flexShrink: 0 }}>
+        <div style={{ position: "relative", zIndex: 25, flexShrink: 0, flexGrow: 0, height: 280, minHeight: 280, maxHeight: 280, background: "rgba(0,0,0,0.95)", borderTop: "1px solid rgba(255,255,255,0.2)", padding: "10px 10px 6px", display: "flex", flexDirection: "column", overflow: "hidden", boxSizing: "border-box" }}>
+          {/* Search - still on top, your style */}
           <input
             value={emojiSearch}
             onChange={(e) => setEmojiSearch(e.target.value)}
             placeholder="🔍 Search emoji... type car, monkey, love"
-            style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 999, color: "white", padding: "9px 14px", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+            style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 999, color: "white", padding: "9px 14px", fontSize: 13, outline: "none", boxSizing: "border-box", flexShrink: 0 }}
           />
-          <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "10px 0 8px", whiteSpace: "nowrap", scrollbarWidth: "none" }}>
-            {Object.keys(EMOJI_CATS).map((cat) => (
+          {/* Gesture tabs - scroll SIDES */}
+          <div ref={emojiTabsRef} style={{ display: "flex", gap: 6, overflowX: "auto", overflowY: "hidden", padding: "10px 0 8px", whiteSpace: "nowrap", scrollbarWidth: "none", flexShrink: 0, scrollBehavior: "smooth" }}>
+            {EMOJI_CAT_LIST.map((cat) => (
               <button
                 key={cat}
+                data-cat={cat}
                 onTouchStart={(e) => e.preventDefault()}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { setEmojiTab(cat); setEmojiSearch(""); }}
+                onClick={() => switchEmojiCat(cat)}
                 style={{ background: emojiTab === cat && !emojiSearch ? "#8b5cf6" : "rgba(255,255,255,0.12)", border: "none", color: "white", padding: "6px 12px", borderRadius: 999, fontSize: 12, flexShrink: 0 }}
               >
                 {cat}
               </button>
             ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4, maxHeight: 190, overflowY: "auto", paddingBottom: 6 }}>
+          {/* Emoji grid - swipe SIDES to change gesture, scroll up/down inside same gesture */}
+          <div
+            ref={emojiGridRef}
+            onTouchStart={onEmojiSwipeStart}
+            onTouchEnd={onEmojiSwipeEnd}
+            onScroll={() => { if (emojiGridRef.current) emojiScrollPosRef.current = emojiGridRef.current.scrollTop; }}
+            style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4, flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingBottom: 6, WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+          >
             {getEmojisToShow().map((item, i) => (
               <button
                 key={i}
@@ -425,15 +483,15 @@ export default function EVA() {
             ))}
           </div>
           {getEmojisToShow().length === 0 && (
-            <div style={{ textAlign: "center", padding: 14, fontSize: 13, color: "#aaa" }}>No emoji for "{emojiSearch}" — try car, monkey, love, dog</div>
+            <div style={{ textAlign: "center", padding: 14, fontSize: 13, color: "#aaa", flexShrink: 0 }}>No emoji for "{emojiSearch}" — try car, monkey, love, dog</div>
           )}
+          <div style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.35)", padding: "2px 0 0", flexShrink: 0 }}>← Swipe sides to change gesture →</div>
         </div>
       )}
 
-      {/* INPUT BAR - PINNED LIKE WHATSAPP, NEVER SCROLL */}
       <div style={{ position: "relative", zIndex: 30, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", padding: "12px 16px 12px", paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
         <div style={{ display: "flex", gap: 6, maxWidth: 520, margin: "0 auto", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", padding: 8, borderRadius: 999, alignItems: "center" }}>
-          <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => setShowEmoji(!showEmoji)} style={{ background: "transparent", border: "none", fontSize: 24, padding: "2px 4px", flexShrink: 0 }}>😊</button>
+          <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={toggleEmoji} style={{ background: showEmoji ? "#8b5cf6" : "transparent", border: "none", fontSize: 24, padding: "2px 4px", flexShrink: 0, borderRadius: 999 }}>😊</button>
           <textarea
             ref={textareaRef}
             value={text}
@@ -462,4 +520,4 @@ export default function EVA() {
       </div>
     </div>
   );
-}
+        }
