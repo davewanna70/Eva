@@ -95,11 +95,27 @@ export default function EVA() {
         <div ref={bottomRef} style={{height:1, flexShrink:0}} />
       </div>
       <div style={{position:"relative", padding:"12px 16px 18px", flexShrink:0}}>
-        <div style={{display:"flex", gap:10, maxWidth:520, margin:"0 auto", background:"rgba(255,255,255,0.14)", border:"1px solid rgba(255,255,255,0.30)", padding:8, borderRadius:999}}>
-          <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&askEVA()} placeholder="Ask EVA..." style={{flex:1, background:"transparent", border:"none", outline:"none", color:"white", padding:"0 12px", fontSize:15}} />
-          <button onClick={askEVA} style={{background:"#8b5cf6", border:"none", color:"white", padding:"10px 18px", borderRadius:999, fontWeight:"bold"}}>Ask →</button>
-        </div>
+        <form autoComplete="off" onSubmit={(e)=>{e.preventDefault(); askEVA();}} style={{display:"flex", gap:10, maxWidth:520, margin:"0 auto", background:"rgba(255,255,255,0.14)", border:"1px solid rgba(255,255,255,0.30)", padding:8, borderRadius:999}}>
+          <input
+            type="text"
+            name="eva-chat-input"
+            id="eva-chat-input"
+            value={text}
+            onChange={e=>setText(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&askEVA()}
+            placeholder="Ask EVA..."
+            autoComplete="new-password"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            inputMode="text"
+            enterKeyHint="send"
+            aria-label="Ask EVA"
+            style={{flex:1, background:"transparent", border:"none", outline:"none", color:"white", padding:"0 12px", fontSize:15}}
+          />
+          <button type="submit" onClick={askEVA} style={{background:"#8b5cf6", border:"none", color:"white", padding:"10px 18px", borderRadius:999, fontWeight:"bold"}}>Ask →</button>
+        </form>
       </div>
     </div>
   );
-        }
+                                               }
