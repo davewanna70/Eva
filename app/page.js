@@ -41,37 +41,20 @@ export default function EVA() {
   const [isThinking, setIsThinking] = useState(false);
   const [myName, setMyName] = useState("");
   const [prefs, setPrefs] = useState({});
-  const [appHeight, setAppHeight] = useState("100dvh");
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
 
   const scrollRef = useRef(null); const bottomRef = useRef(null); const textareaRef = useRef(null);
+  const isAutoScrolling = useRef(false);
 
-  useEffect(() => {
-    const h = window.innerHeight;
-    if (h > 400) setAppHeight(h + "px");
-  }, []);
+  // WHATSAPP STYLE: Auto-scroll but NEVER steal focus / never hide keyboard
+  const scrollToBottomSoft = () => {
+    if (!scrollRef.current) return;
+    isAutoScrolling.current = true;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    setTimeout(()=>{ isAutoScrolling.current = false; }, 150);
+  };
 
-  useEffect(() => {
-    if (!window.visualViewport) return;
-    let raf = 0;
-    const onResize = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const vv = window.visualViewport;
-        const offset = window.innerHeight - vv.height - vv.offsetTop;
-        setKeyboardOffset(offset > 30 ? offset : 0);
-      });
-    };
-    window.visualViewport.addEventListener("resize", onResize);
-    window.visualViewport.addEventListener("scroll", onResize);
-    return () => {
-      window.visualViewport.removeEventListener("resize", onResize);
-      window.visualViewport.removeEventListener("scroll", onResize);
-      cancelAnimationFrame(raf);
-    };
-  }, []);
+  useEffect(()=>{ scrollToBottomSoft(); },[messages, isThinking]);
 
-  useEffect(()=>{ if(bottomRef.current) bottomRef.current.scrollIntoView({behavior:"auto", block:"end"}); },[messages, isThinking]);
   useEffect(()=>{
     const n = localStorage.getItem("eva_dave_name"); if(n) setMyName(n);
     const p = localStorage.getItem("eva_dave_prefs"); if(p) try{ setPrefs(JSON.parse(p)); }catch(e){}
@@ -87,7 +70,12 @@ export default function EVA() {
     setMessages([]); setMyName(""); setPrefs({}); localStorage.removeItem("eva_dave_name"); localStorage.removeItem("eva_dave_prefs"); localStorage.removeItem("eva_messages_cache");
     try{ await supabase.from("messages").delete().eq("chat_id", CHAT_ID); }catch(e){} setShowMenu(false);
   };
-  const addEmoji = (emoji) => { setText(prev=>prev+emoji); setTimeout(()=>textareaRef.current?.focus(), 50); };
+
+  const addEmoji = (emoji) => { 
+    setText(prev=>prev+emoji); 
+    // Keep keyboard: focus back immediately, no blur
+    textareaRef.current?.focus(); 
+  };
 
   const getEmojisToShow = () => {
     if(emojiSearch.trim()){
@@ -98,10 +86,23 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // ===== STREAMING + TYPEWRITER askEVA - Types like Meta AI =====
+  // ===== WHATSAPP KEYBOARD RULE =====
+  // Keyboard STAYS after Ask. It only hides when YOU:
+  // 1. Press phone Back button, OR 2. Tap / scroll messages area to read
   const askEVA = async () => {
     if(!text.trim() || isThinking) return;
-    const userText = text.trim(); setText(""); setShowEmoji(false); setEmojiSearch("");
+    const userText = text.trim();
+
+    // CRITICAL: Focus FIRST, synchronously, before any setState.
+    // If we setState first, React re-render go comot focus and keyboard go close.
+    if (textareaRef.current) textareaRef.current.focus();
+
+    setText(""); 
+    // Do NOT close emoji with a re-render that blurs - just hide panel, keep focus
+    setShowEmoji(false); setEmojiSearch("");
+    // Focus again immediately after clear - keyboard must not close
+    requestAnimationFrame(()=>{ textareaRef.current?.focus(); });
+
     const lower = userText.toLowerCase();
     if(lower.includes("my name is")){ const nm = userText.split(/my name is/i)[1].trim().split(" ")[0].replace(/[^a-zA-Z]/g,""); if(nm){ const cap = nm.charAt(0).toUpperCase()+nm.slice(1).toLowerCase(); setMyName(cap); localStorage.setItem("eva_dave_name", cap);} }
     if(lower.includes("my best food is")){ const v = userText.split(/my best food is/i)[1].trim(); const np = {...prefs, food:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
@@ -125,7 +126,6 @@ export default function EVA() {
             copy[copy.length-1] = {from:"eva", text: display};
             return copy;
           });
-          if(bottomRef.current) bottomRef.current.scrollIntoView({behavior:"auto", block:"end"});
           if(i >= fullText.length){
             clearInterval(interval);
             setMessages(prev => {
@@ -164,7 +164,6 @@ export default function EVA() {
               copy[copy.length-1]={from:"eva",text:display};
               return copy;
             });
-            if(bottomRef.current) bottomRef.current.scrollIntoView({behavior:"auto", block:"end"});
           }
         }, 18);
         while(true){
@@ -180,22 +179,38 @@ export default function EVA() {
       setMessages(prev=>{ const w=prev.slice(0,-1); const next=[...w,{from:"eva",text:"Network jam small Boss, try again."}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     }
     setIsThinking(false);
+    // WHATSAPP: After answer, keyboard STILL stays. Do NOT blur.
+    textareaRef.current?.focus();
+  };
+
+  // WHATSAPP: Tap messages area = you want read, so hide keyboard. Ask button = never hide.
+  const hideKeyboardToRead = () => {
+    setShowMenu(false);
+    // Only hide emoji, keyboard hide na by blur here - this na intentional, like WhatsApp tap to read
+    if (document.activeElement) document.activeElement.blur();
   };
 
   return (
-    <div style={{height:appHeight, minHeight:appHeight, maxHeight:appHeight, background:"#030014", color:"white", display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"sans-serif", position:"fixed", inset:0}}>
+    <div style={{height:"100dvh", minHeight:"100dvh", maxHeight:"100dvh", background:"#030014", color:"white", display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"sans-serif", position:"fixed", inset:0}}>
       <img src="/eva-bg.jpg" style={{position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", pointerEvents:"none"}} />
       <div style={{position:"relative", display:"flex", padding:"16px 18px", alignItems:"center", justifyContent:"space-between", flexShrink:0}}>
         <div style={{display:"flex", alignItems:"center", gap:10}}><img src="/IMG-20261104-WA3311.jpg" style={{width:38, height:38, borderRadius:999, objectFit:"cover", border:"2px solid #a78bfa"}} /><b style={{fontSize:20, letterSpacing:2}}>EVA</b></div>
         <div style={{position:"relative"}}>
-          <button onClick={()=>setShowMenu(!showMenu)} style={{width:42, height:42, borderRadius:999, background:"rgba(255,255,255,0.14)", border:"1px solid rgba(255,255,255,0.30)", color:"white", fontSize:22}}>⋮</button>
+          <button onTouchStart={(e)=>e.preventDefault()} onMouseDown={(e)=>e.preventDefault()} onClick={()=>setShowMenu(!showMenu)} style={{width:42, height:42, borderRadius:999, background:"rgba(255,255,255,0.14)", border:"1px solid rgba(255,255,255,0.30)", color:"white", fontSize:22}}>⋮</button>
           {showMenu && (<div style={{position:"absolute", top:50, right:0, width:170, background:"rgba(0,0,0,0.85)", borderRadius:14, overflow:"hidden", zIndex:50}}>
             <button onClick={clearChat} style={{width:"100%", textAlign:"left", background:"transparent", border:"none", color:"#ff8080", padding:"13px 16px", fontSize:14}}>🗑️ Clear Chat</button>
             <button onClick={()=>setShowMenu(false)} style={{width:"100%", textAlign:"left", background:"transparent", border:"none", color:"white", padding:"13px 16px", fontSize:14}}>✖️ Close</button>
           </div>)}
         </div>
       </div>
-      <div ref={scrollRef} style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", padding:"0 20px 10px", paddingBottom: keyboardOffset ? 10 : 10, scrollBehavior:"auto"}} onClick={()=>{setShowMenu(false); setShowEmoji(false);}}>
+
+      {/* MESSAGES: Tap here or scroll to read = hide keyboard, like WhatsApp */}
+      <div 
+        ref={scrollRef} 
+        style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", padding:"0 20px 10px"}}
+        onTouchStart={()=>{ if(!isAutoScrolling.current){ /* manual touch = user want read, let browser handle scroll, don't force blur on scroll start */ } }}
+        onClick={hideKeyboardToRead}
+      >
         {messages.length===0 && (<div style={{background:"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:14, borderRadius:16, maxWidth:420, margin:"0 auto", textAlign:"center"}}>Hello, I am EVA. Ask me anything.</div>)}
         {messages.map((m,i)=>(<div key={i} style={{alignSelf:m.from==="you"?"flex-end":"flex-start", background:m.from==="you"?"#8b5cf6":"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:"10px 14px", borderRadius:16, maxWidth:"85%", fontSize:14, lineHeight:1.5, whiteSpace:"pre-line"}}>{m.text}</div>))}
         <div ref={bottomRef} style={{height:1, flexShrink:0}} />
@@ -206,26 +221,41 @@ export default function EVA() {
           <input value={emojiSearch} onChange={e=>setEmojiSearch(e.target.value)} placeholder="🔍 Search emoji... type car, monkey, love" style={{width:"100%", background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.2)", borderRadius:999, color:"white", padding:"9px 14px", fontSize:13, outline:"none", boxSizing:"border-box"}} />
           <div style={{display:"flex", gap:6, overflowX:"auto", padding:"10px 0 8px", whiteSpace:"nowrap", scrollbarWidth:"none"}}>
             {Object.keys(EMOJI_CATS).map(cat=>(
-              <button key={cat} onClick={()=>{setEmojiTab(cat); setEmojiSearch("");}} style={{background: emojiTab===cat && !emojiSearch ? "#8b5cf6" : "rgba(255,255,255,0.12)", border:"none", color:"white", padding:"6px 12px", borderRadius:999, fontSize:12, flexShrink:0}}>{cat}</button>
+              <button key={cat} onTouchStart={(e)=>e.preventDefault()} onMouseDown={(e)=>e.preventDefault()} onClick={()=>{setEmojiTab(cat); setEmojiSearch("");}} style={{background: emojiTab===cat && !emojiSearch ? "#8b5cf6" : "rgba(255,255,255,0.12)", border:"none", color:"white", padding:"6px 12px", borderRadius:999, fontSize:12, flexShrink:0}}>{cat}</button>
             ))}
           </div>
           <div style={{display:"grid", gridTemplateColumns:"repeat(8, 1fr)", gap:4, maxHeight:190, overflowY:"auto", paddingBottom:6}}>
             {getEmojisToShow().map((item,i)=>(
-              <button key={i} onClick={()=>addEmoji(item.e)} style={{background:"transparent", border:"none", fontSize:26, padding:6}}>{item.e}</button>
+              <button key={i} onTouchStart={(e)=>e.preventDefault()} onMouseDown={(e)=>e.preventDefault()} onClick={()=>addEmoji(item.e)} style={{background:"transparent", border:"none", fontSize:26, padding:6}}>{item.e}</button>
             ))}
           </div>
           {getEmojisToShow().length===0 && <div style={{textAlign:"center", padding:14, fontSize:13, color:"#aaa"}}>No emoji for "{emojiSearch}" — try car, monkey, love, dog</div>}
         </div>
       )}
 
-      <div style={{position:"relative", padding:"12px 16px 18px", paddingBottom: keyboardOffset ? 12 : 18, flexShrink:0, transform: keyboardOffset ? `translateY(0px)` : "none"}}>
+      <div style={{position:"relative", padding:"12px 16px 18px", flexShrink:0}}>
         <div style={{display:"flex", gap:6, maxWidth:520, margin:"0 auto", background:"rgba(255,255,255,0.14)", border:"1px solid rgba(255,255,255,0.30)", padding:8, borderRadius:999, alignItems:"center"}}>
-          <button onClick={()=>setShowEmoji(!showEmoji)} style={{background:"transparent", border:"none", fontSize:24, padding:"2px 4px", flexShrink:0}}>😊</button>
-          <textarea ref={textareaRef} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); askEVA(); } }} onFocus={()=>setShowEmoji(false)} placeholder="Ask EVA..." rows={1} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" style={{flex:1, background:"transparent", border:"none", outline:"none", color:"white", padding:"10px 6px", fontSize:15, resize:"none", maxHeight:100, fontFamily:"sans-serif"}} />
-          <button onClick={askEVA} style={{background:"#8b5cf6", border:"none", color:"white", padding:"10px 18px", borderRadius:999, fontWeight:"bold", flexShrink:0}}>Ask →</button>
+          <button onTouchStart={(e)=>e.preventDefault()} onMouseDown={(e)=>e.preventDefault()} onClick={()=>setShowEmoji(!showEmoji)} style={{background:"transparent", border:"none", fontSize:24, padding:"2px 4px", flexShrink:0}}>😊</button>
+          <textarea 
+            ref={textareaRef} 
+            value={text} 
+            onChange={e=>setText(e.target.value)} 
+            onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); askEVA(); } }} 
+            placeholder="Ask EVA..." rows={1} 
+            enterKeyHint="send"
+            autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} 
+            data-lpignore="true" data-1p-ignore="true" 
+            style={{flex:1, background:"transparent", border:"none", outline:"none", color:"white", padding:"10px 6px", fontSize:15, resize:"none", maxHeight:100, fontFamily:"sans-serif"}} 
+          />
+          {/* WHATSAPP ASK BUTTON: Touch must NEVER blur input */}
+          <button 
+            onTouchStart={(e)=>e.preventDefault()} 
+            onMouseDown={(e)=>e.preventDefault()} 
+            onClick={askEVA} 
+            style={{background:"#8b5cf6", border:"none", color:"white", padding:"10px 18px", borderRadius:999, fontWeight:"bold", flexShrink:0, touchAction:"manipulation"}}
+          >Ask →</button>
         </div>
       </div>
-      {keyboardOffset > 0 && <div style={{height: keyboardOffset, flexShrink:0, background:"transparent"}} />}
     </div>
   );
-  }
+    }
