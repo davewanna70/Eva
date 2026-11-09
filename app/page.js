@@ -48,6 +48,7 @@ export default function EVA() {
   const lastUserMsgRef = useRef(null);
   const keyboardOpenRef = useRef(false);
   const didInitialScroll = useRef(false);
+  const isTypingRef = useRef(false);
 
   useEffect(()=>{
     const n = localStorage.getItem("eva_dave_name"); if(n) setMyName(n);
@@ -77,20 +78,17 @@ export default function EVA() {
     return ()=>{ clearTimeout(t1); clearTimeout(t2); };
   },[messages.length]);
 
+  // ===== NEAT FIX: Keyboard must NEVER push chat while typing =====
+  // Before: on keyboard close we do scrollTop += diff -> that na the jump.
+  // Now: we only update the flag, we no touch scrollTop at all.
   useEffect(()=>{
     if (!window.visualViewport) return;
     let lastH = window.visualViewport.height;
     const onResize = () => {
       const newH = window.visualViewport.height;
       const diff = newH - lastH;
-      if (diff > 100) {
-        keyboardOpenRef.current = false;
-        setTimeout(()=>{
-          if (scrollRef.current) scrollRef.current.scrollTop += diff;
-        }, 120);
-      } else if (diff < -100) {
-        keyboardOpenRef.current = true;
-      }
+      if (diff > 100) keyboardOpenRef.current = false;
+      else if (diff < -100) keyboardOpenRef.current = true;
       lastH = newH;
     };
     window.visualViewport.addEventListener("resize", onResize);
@@ -117,54 +115,52 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // ===== PHONE-PROOF: 3 FULL LINES FOR ANY PHONE =====
-  // We no use fixed 90 / 135 again. We measure the REAL visible height with visualViewport.
-  // Small phone = viewport small = push question up more. Big phone = push less. Result same: 3 full lines.
+  // ===== PHONE-PROOF + NEAT: Scroll ONCE, then LOCK =====
+  // WhatsApp rule: scroll once when you send, then never scroll again while EVA dey type.
+  // No 350ms, no 700ms second scroll. That second scroll na the jump you see for video.
   const scrollToQuestionWith3Lines = () => {
-    setTimeout(()=>{
-      if (!lastUserMsgRef.current || !scrollRef.current) return;
-      const container = scrollRef.current;
-      const qEl = lastUserMsgRef.current;
-      const qTop = qEl.offsetTop;
-      const qHeight = qEl.offsetHeight;
-
-      // Real visible chat height for THIS phone, with keyboard open
-      // visualViewport.height = wetin screen show now. Minus header (~70) and input bar (~90) = chat area.
-      // If visualViewport no dey, fall back to container.clientHeight.
-      let visibleChatHeight = container.clientHeight;
-      if (window.visualViewport) {
-        const vvH = window.visualViewport.height;
-        // Header + input bar na about 160px total. This work for any phone because vvH na real.
-        visibleChatHeight = Math.max(200, vvH - 160);
-      }
-
-      // We want question + gap + 3 full lines + bubble padding to end 14px above Ask bar
-      const LINE_H = 22; // 14px font * 1.5 lineHeight = 21, plus 1px safety = 22
-      const wantBottom = qTop + qHeight + 10 + (3 * LINE_H) + 30;
-      const target = wantBottom - visibleChatHeight + 14;
-      container.scrollTop = Math.max(0, target);
-    }, 80);
+    if (isTypingRef.current) return; // LOCK: if EVA don start to type, no touch scroll again
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{
+        if (!lastUserMsgRef.current || !scrollRef.current) return;
+        const container = scrollRef.current;
+        const qEl = lastUserMsgRef.current;
+        const qTop = qEl.offsetTop;
+        const qHeight = qEl.offsetHeight;
+        let visibleChatHeight = container.clientHeight;
+        if (window.visualViewport) {
+          const vvH = window.visualViewport.height;
+          visibleChatHeight = Math.max(200, vvH - 160);
+        }
+        const LINE_H = 22;
+        const wantBottom = qTop + qHeight + 10 + (3 * LINE_H) + 30;
+        const target = wantBottom - visibleChatHeight + 14;
+        container.scrollTop = Math.max(0, target);
+      });
+    });
   };
 
   const askEVA = async () => {
     if(!text.trim() || isThinking) return;
     const userText = text.trim();
-    if (textareaRef.current) textareaRef.current.focus();
+    // FIX: Don't blur / refocus in a way that makes keyboard jump. Keep focus stable.
     setText(""); setShowEmoji(false); setEmojiSearch("");
-    requestAnimationFrame(()=>{ textareaRef.current?.focus(); });
 
     const lower = userText.toLowerCase();
     if(lower.includes("my name is")){ const nm = userText.split(/my name is/i)[1].trim().split(" ")[0].replace(/[^a-zA-Z]/g,""); if(nm){ const cap = nm.charAt(0).toUpperCase()+nm.slice(1).toLowerCase(); setMyName(cap); localStorage.setItem("eva_dave_name", cap);} }
     if(lower.includes("my best food is")){ const v = userText.split(/my best food is/i)[1].trim(); const np = {...prefs, food:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
     if(lower.includes("i want to buy")){ const v = userText.split(/i want to buy/i)[1].trim(); const np = {...prefs, want_to_buy:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
 
+    // 1. Add your message FIRST, then scroll ONCE - your message go stay, no disappear
+    isTypingRef.current = false;
     setMessages(prev=>{ const next=[...prev,{from:"you",text:userText}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     await saveToSupabase("you", userText);
     scrollToQuestionWith3Lines();
+
+    // 2. Now LOCK scroll, add EVA placeholder - this will NOT move your message
     setIsThinking(true);
+    isTypingRef.current = true;
     setMessages(prev=>[...prev,{from:"eva",text:"▍"}]);
-    setTimeout(()=>{ scrollToQuestionWith3Lines(); }, 350);
-    setTimeout(()=>{ scrollToQuestionWith3Lines(); }, 700);
 
     const typeOut = (fullText) => {
       const cleaned = cleanText(fullText);
@@ -233,15 +229,15 @@ export default function EVA() {
       setMessages(prev=>{ const w=prev.slice(0,-1); const next=[...w,{from:"eva",text:"Network jam small Boss, try again."}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     }
     setIsThinking(false);
+    isTypingRef.current = false;
     textareaRef.current?.focus();
   };
 
   const hideKeyboardToRead = () => {
     setShowMenu(false);
     if (document.activeElement) document.activeElement.blur();
-    setTimeout(()=>{
-      if (scrollRef.current) scrollRef.current.scrollTop += 280;
-    }, 250);
+    // NEAT: No forced +280 jump again. Let user scroll by hand like WhatsApp.
+    // Before we dey force scrollTop += 280 - that also dey cause jump.
   };
 
   return (
@@ -260,7 +256,7 @@ export default function EVA() {
 
       <div 
         ref={scrollRef} 
-        style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", padding:"0 20px 10px"}}
+        style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", overflowAnchor:"none", padding:"0 20px 10px"}}
         onClick={hideKeyboardToRead}
       >
         {messages.length===0 && (<div style={{background:"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:14, borderRadius:16, maxWidth:420, margin:"0 auto", textAlign:"center"}}>Hello, I am EVA. Ask me anything.</div>)}
@@ -312,4 +308,4 @@ export default function EVA() {
       </div>
     </div>
   );
-                                                                                                                                                                                                               }
+    }
