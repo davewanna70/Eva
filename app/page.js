@@ -66,20 +66,24 @@ export default function EVA() {
   const lastUserMsgRef = useRef(null);
   const outerRef = useRef(null);
 
-  // EMOJI STABLE: Keep scroll position when switching category, no jump to top
   const emojiGridRef = useRef(null);
   const emojiScrollPosRef = useRef(0);
   const emojiTabsRef = useRef(null);
   const swipeStartXRef = useRef(null);
+  const swipeStartYRef = useRef(null);
+  const showEmojiRef = useRef(false);
+  showEmojiRef.current = showEmoji;
 
+  // STABLE OUTER HEIGHT: Lock when emoji open, so keyboard no push panel up
   useEffect(() => {
     if (!window.visualViewport) return;
     const setH = () => {
-      if (outerRef.current) {
-        outerRef.current.style.height = window.visualViewport.height + "px";
-        outerRef.current.style.minHeight = window.visualViewport.height + "px";
-        outerRef.current.style.maxHeight = window.visualViewport.height + "px";
-      }
+      if (!outerRef.current) return;
+      // If emoji open, don't shrink - keep full height, panel stays for bottom
+      if (showEmojiRef.current) return;
+      outerRef.current.style.height = window.visualViewport.height + "px";
+      outerRef.current.style.minHeight = window.visualViewport.height + "px";
+      outerRef.current.style.maxHeight = window.visualViewport.height + "px";
     };
     setH();
     window.visualViewport.addEventListener("resize", setH);
@@ -153,6 +157,7 @@ export default function EVA() {
       const newH = window.visualViewport.height;
       const diff = newH - lastH;
       lastH = newH;
+      if (showEmojiRef.current) return; // emoji open: don't move chat, stay stable
       if (diff > 30) {
         smoothScrollBy(diff);
       }
@@ -181,18 +186,32 @@ export default function EVA() {
     didInitialScroll.current = true;
   };
 
-  // EMOJI: Toggle - close keyboard first so keyboard + emoji no fight, no cut
+  // WHATSAPP: Tap emoji button - if emoji open, close + bring keyboard. If closed, close keyboard + open emoji
   const toggleEmoji = () => {
-    if (!showEmoji) {
+    if (showEmoji) {
+      setShowEmoji(false);
+      setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 60);
+    } else {
       if (document.activeElement) document.activeElement.blur();
       setShowEmoji(true);
-    } else {
-      setShowEmoji(false);
-      if (textareaRef.current) textareaRef.current.focus();
     }
   };
 
-  // EMOJI: Switch category WITHOUT jumping to top - keep bottom position
+  // WHATSAPP: Tap inside Ask box while emoji open - emoji disappear, keyboard come back
+  const onInputFocus = () => {
+    if (showEmojiRef.current) {
+      setShowEmoji(false);
+      // Let keyboard open after panel close, no fight, no jump to top
+      setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 60);
+    }
+  };
+  const onInputClick = () => {
+    if (showEmojiRef.current) {
+      setShowEmoji(false);
+      setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 60);
+    }
+  };
+
   const switchEmojiCat = (cat) => {
     if (emojiGridRef.current) emojiScrollPosRef.current = emojiGridRef.current.scrollTop;
     setEmojiTab(cat);
@@ -200,36 +219,49 @@ export default function EVA() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (emojiGridRef.current) {
-          // Stay for same place - if you dey bottom, stay for bottom, no go top
           const max = emojiGridRef.current.scrollHeight - emojiGridRef.current.clientHeight;
-          emojiGridRef.current.scrollTop = Math.min(emojiScrollPosRef.current, Math.max(0, max));
+          // Smooth restore, no instant jump to top
+          emojiGridRef.current.scrollTo({ top: Math.min(emojiScrollPosRef.current, Math.max(0, max)), behavior: "smooth" });
         }
-        // Keep active tab visible for sideways scroll
         const active = emojiTabsRef.current?.querySelector(`[data-cat="${cat}"]`);
         if (active) active.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
       });
     });
   };
 
-  // EMOJI: Swipe sides to change gesture - different from WhatsApp up-down
+  // SMOOTH SIDE SWIPE: Only when horizontal > vertical, so vertical scroll no trigger switch
   const onEmojiSwipeStart = (e) => {
-    swipeStartXRef.current = e.touches ? e.touches[0].clientX : e.clientX;
+    const t = e.touches ? e.touches[0] : e;
+    swipeStartXRef.current = t.clientX;
+    swipeStartYRef.current = t.clientY;
   };
   const onEmojiSwipeEnd = (e) => {
     if (swipeStartXRef.current == null) return;
-    const endX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
-    const dx = endX - swipeStartXRef.current;
+    const t = e.changedTouches ? e.changedTouches[0] : e;
+    const dx = t.clientX - swipeStartXRef.current;
+    const dy = t.clientY - swipeStartYRef.current;
     swipeStartXRef.current = null;
-    if (Math.abs(dx) < 60) return; // small swipe, ignore - na scroll inside grid
-    if (emojiSearch.trim()) return; // when searching, no swipe
+    swipeStartYRef.current = null;
+    if (Math.abs(dx) < 70) return;
+    if (Math.abs(dy) > Math.abs(dx)) return; // na vertical scroll, not side swipe - leave am
+    if (emojiSearch.trim()) return;
     const idx = EMOJI_CAT_LIST.indexOf(emojiTab);
-    if (dx < 0 && idx < EMOJI_CAT_LIST.length - 1) switchEmojiCat(EMOJI_CAT_LIST[idx + 1]); // swipe left = next
-    if (dx > 0 && idx > 0) switchEmojiCat(EMOJI_CAT_LIST[idx - 1]); // swipe right = prev
+    if (dx < 0 && idx < EMOJI_CAT_LIST.length - 1) switchEmojiCat(EMOJI_CAT_LIST[idx + 1]);
+    if (dx > 0 && idx > 0) switchEmojiCat(EMOJI_CAT_LIST[idx - 1]);
   };
 
+  // STABLE PICK: No focus, no keyboard, no go up. Save scroll, restore smooth.
   const addEmoji = (emoji) => {
+    if (emojiGridRef.current) emojiScrollPosRef.current = emojiGridRef.current.scrollTop;
     setText((prev) => prev + emoji);
-    // Don't close emoji panel, don't focus keyboard - stay for bottom, stable
+    // Keep emoji panel for bottom, don't blur, don't focus, don't move chat
+    requestAnimationFrame(() => {
+      if (emojiGridRef.current) {
+        emojiGridRef.current.scrollTop = emojiScrollPosRef.current;
+      }
+      // Keep textarea from jumping - don't focus
+      if (document.activeElement) document.activeElement.blur();
+    });
   };
 
   const getEmojisToShow = () => {
@@ -379,8 +411,10 @@ export default function EVA() {
     if (textareaRef.current) textareaRef.current.focus();
   };
 
+  // Tap chat while emoji open - close emoji, stay for chat
   const hideKeyboardToRead = () => {
     setShowMenu(false);
+    if (showEmojiRef.current) setShowEmoji(false);
     if (document.activeElement) document.activeElement.blur();
   };
 
@@ -408,7 +442,7 @@ export default function EVA() {
 
       <div
         ref={scrollRef}
-        style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "auto" }}
+        style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}
         onClick={hideKeyboardToRead}
       >
         {messages.length === 0 && (
@@ -437,18 +471,15 @@ export default function EVA() {
         <div ref={bottomRef} style={{ height: 10, flexShrink: 0 }} />
       </div>
 
-      {/* EMOJI PANEL - PINNED FOR BOTTOM, FIXED HEIGHT, NO SHAKE, NO JUMP TO TOP */}
       {showEmoji && (
-        <div style={{ position: "relative", zIndex: 25, flexShrink: 0, flexGrow: 0, height: 280, minHeight: 280, maxHeight: 280, background: "rgba(0,0,0,0.95)", borderTop: "1px solid rgba(255,255,255,0.2)", padding: "10px 10px 6px", display: "flex", flexDirection: "column", overflow: "hidden", boxSizing: "border-box" }}>
-          {/* Search - still on top, your style */}
+        <div style={{ position: "relative", zIndex: 25, flexShrink: 0, flexGrow: 0, height: 280, minHeight: 280, maxHeight: 280, background: "rgba(0,0,0,0.95)", borderTop: "1px solid rgba(255,255,255,0.2)", padding: "10px 10px 6px", display: "flex", flexDirection: "column", overflow: "hidden", boxSizing: "border-box", transform: "translateZ(0)", willChange: "transform" }}>
           <input
             value={emojiSearch}
             onChange={(e) => setEmojiSearch(e.target.value)}
             placeholder="🔍 Search emoji... type car, monkey, love"
             style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 999, color: "white", padding: "9px 14px", fontSize: 13, outline: "none", boxSizing: "border-box", flexShrink: 0 }}
           />
-          {/* Gesture tabs - scroll SIDES */}
-          <div ref={emojiTabsRef} style={{ display: "flex", gap: 6, overflowX: "auto", overflowY: "hidden", padding: "10px 0 8px", whiteSpace: "nowrap", scrollbarWidth: "none", flexShrink: 0, scrollBehavior: "smooth" }}>
+          <div ref={emojiTabsRef} style={{ display: "flex", gap: 6, overflowX: "auto", overflowY: "hidden", padding: "10px 0 8px", whiteSpace: "nowrap", scrollbarWidth: "none", flexShrink: 0, scrollBehavior: "smooth", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
             {EMOJI_CAT_LIST.map((cat) => (
               <button
                 key={cat}
@@ -462,13 +493,13 @@ export default function EVA() {
               </button>
             ))}
           </div>
-          {/* Emoji grid - swipe SIDES to change gesture, scroll up/down inside same gesture */}
+          {/* WHATSAPP SMOOTH SCROLL: momentum + smooth + no catch */}
           <div
             ref={emojiGridRef}
             onTouchStart={onEmojiSwipeStart}
             onTouchEnd={onEmojiSwipeEnd}
             onScroll={() => { if (emojiGridRef.current) emojiScrollPosRef.current = emojiGridRef.current.scrollTop; }}
-            style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4, flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingBottom: 6, WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+            style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4, flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingBottom: 6, WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", scrollBehavior: "smooth", transform: "translateZ(0)", willChange: "scroll-position" }}
           >
             {getEmojisToShow().map((item, i) => (
               <button
@@ -476,7 +507,7 @@ export default function EVA() {
                 onTouchStart={(e) => e.preventDefault()}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => addEmoji(item.e)}
-                style={{ background: "transparent", border: "none", fontSize: 26, padding: 6 }}
+                style={{ background: "transparent", border: "none", fontSize: 26, padding: 6, touchAction: "manipulation" }}
               >
                 {item.e}
               </button>
@@ -496,6 +527,8 @@ export default function EVA() {
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onFocus={onInputFocus}
+            onClick={onInputClick}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askEVA(); } }}
             placeholder="Ask EVA..."
             rows={1}
@@ -520,4 +553,4 @@ export default function EVA() {
       </div>
     </div>
   );
-        }
+            }
