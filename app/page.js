@@ -52,9 +52,9 @@ export default function EVA() {
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const lastUserMsgRef = useRef(null);
-  const keyboardOpenRef = useRef(false);
   const didInitialScroll = useRef(false);
   const isTypingRef = useRef(false);
+  const hasScrolledForThisSend = useRef(false);
 
   useEffect(() => {
     const n = localStorage.getItem("eva_dave_name");
@@ -92,42 +92,10 @@ export default function EVA() {
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       didInitialScroll.current = true;
     }, 100);
-    const t2 = setTimeout(() => {
-      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }, 400);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    return () => { clearTimeout(t1); };
   }, [messages.length]);
 
-  // Keyboard close must REVEAL what it was covering
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.visualViewport) return;
-    let lastH = window.visualViewport.height;
-    let timer = null;
-    const onResize = () => {
-      const newH = window.visualViewport.height;
-      const diff = newH - lastH;
-      if (diff > 100) {
-        keyboardOpenRef.current = false;
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          if (isTypingRef.current) return;
-          if (!scrollRef.current) return;
-          const c = scrollRef.current;
-          const max = c.scrollHeight - c.clientHeight;
-          c.scrollTop = Math.min(max, c.scrollTop + diff - 20);
-        }, 300);
-      } else if (diff < -100) {
-        keyboardOpenRef.current = true;
-        if (timer) clearTimeout(timer);
-      }
-      lastH = newH;
-    };
-    window.visualViewport.addEventListener("resize", onResize);
-    return () => {
-      window.visualViewport.removeEventListener("resize", onResize);
-      if (timer) clearTimeout(timer);
-    };
-  }, []);
+  // NO visualViewport scroll at all - that was causing jump on keyboard open/close
 
   const saveToSupabase = async (sender, msgText) => {
     try { await supabase.from("messages").insert([{ chat_id: CHAT_ID, sender, text: msgText }]); } catch (e) {}
@@ -161,8 +129,11 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  const scrollToQuestionWith3Lines = () => {
-    if (isTypingRef.current) return;
+  // FIX 1: Scroll ONCE, in same frame as message appears, never 600ms later
+  // hasScrolledForThisSend makes sure e no run second time and cause jump
+  const scrollOnceForSend = () => {
+    if (hasScrolledForThisSend.current) return;
+    hasScrolledForThisSend.current = true;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (!lastUserMsgRef.current || !scrollRef.current) return;
@@ -212,6 +183,8 @@ export default function EVA() {
       localStorage.setItem("eva_dave_prefs", JSON.stringify(np));
     }
 
+    // Reset flag for this new send, then add message
+    hasScrolledForThisSend.current = false;
     isTypingRef.current = false;
     setMessages((prev) => {
       const next = [...prev, { from: "you", text: userText }];
@@ -220,15 +193,13 @@ export default function EVA() {
     });
     await saveToSupabase("you", userText);
 
+    // Scroll NOW in same frame - no 600ms wait, no disappear, no jump
+    scrollOnceForSend();
+
     setIsThinking(true);
     isTypingRef.current = true;
     setMessages((prev) => [...prev, { from: "eva", text: "▍" }]);
-
-    setTimeout(() => {
-      isTypingRef.current = false;
-      scrollToQuestionWith3Lines();
-      isTypingRef.current = true;
-    }, 600);
+    // NO second scroll here - that second scroll na the jump for video
 
     const typeOut = (fullText) => {
       const cleaned = cleanText(fullText);
@@ -306,9 +277,17 @@ export default function EVA() {
     if (textareaRef.current) textareaRef.current.focus();
   };
 
+  // FIX 2: When you tap chat to close keyboard, REVEAL wetin keyboard hide
+  // We no use visualViewport diff again. We scroll to bottom of last EVA answer after keyboard don close.
   const hideKeyboardToRead = () => {
     setShowMenu(false);
     if (document.activeElement) document.activeElement.blur();
+    setTimeout(() => {
+      if (isTypingRef.current) return;
+      if (!scrollRef.current) return;
+      const c = scrollRef.current;
+      c.scrollTop = c.scrollHeight - c.clientHeight;
+    }, 350);
   };
 
   return (
@@ -350,7 +329,7 @@ export default function EVA() {
             </div>
           );
         })}
-        <div ref={bottomRef} style={{ height: 20, flexShrink: 0 }} />
+        <div ref={bottomRef} style={{ height: 90, flexShrink: 0 }} />
       </div>
 
       {showEmoji && (
