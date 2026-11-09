@@ -86,7 +86,7 @@ export default function EVA() {
     if (didInitialScroll.current) return;
     if (messages.length === 0) return;
     const t1 = setTimeout(() => {
-      if (bottomRef.current) bottomRef.current.scrollIntoView({ block: "end" });
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       didInitialScroll.current = true;
     }, 100);
     return () => { clearTimeout(t1); };
@@ -123,6 +123,15 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
+  // WhatsApp way: scroll once, directly on the container, no scrollIntoView, no 50ms + await delay
+  const scrollToBottomNow = () => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      });
+    });
+  };
+
   const askEVA = async () => {
     if (!text.trim() || isThinking) return;
     const userText = text.trim();
@@ -152,21 +161,19 @@ export default function EVA() {
       localStorage.setItem("eva_dave_prefs", JSON.stringify(np));
     }
 
+    // FIX: Add your message + EVA placeholder TOGETHER in ONE render.
+    // Before we add you, scroll, then add EVA - that na the 2nd jump.
+    // Now one render, one scroll, your message go show full immediately like WhatsApp.
+    setIsThinking(true);
     setMessages((prev) => {
-      const next = [...prev, { from: "you", text: userText }];
+      const next = [...prev, { from: "you", text: userText }, { from: "eva", text: "▍" }];
       try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
       return next;
     });
-    await saveToSupabase("you", userText);
 
-    // ONLY scroll here, once, native. No maths, no second scroll.
-    setTimeout(() => {
-      if (bottomRef.current) bottomRef.current.scrollIntoView({ block: "end" });
-    }, 50);
-
-    setIsThinking(true);
-    setMessages((prev) => [...prev, { from: "eva", text: "▍" }]);
-    // NO scroll while EVA dey type. You scroll by hand like WhatsApp.
+    // FIX: No await before scroll. Fire and forget, like WhatsApp.
+    saveToSupabase("you", userText);
+    scrollToBottomNow();
 
     const typeOut = (fullText) => {
       const cleaned = cleanText(fullText);
@@ -204,7 +211,7 @@ export default function EVA() {
         const data = await res.json();
         const reply = data.reply || "I dey here Boss, try again.";
         await typeOut(reply);
-        await saveToSupabase("eva", reply);
+        saveToSupabase("eva", reply);
       } else {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -229,7 +236,7 @@ export default function EVA() {
         }
         clearInterval(showLoop);
         await typeOut(fullReply);
-        await saveToSupabase("eva", fullReply);
+        saveToSupabase("eva", fullReply);
       }
     } catch (e) {
       setMessages((prev) => {
@@ -243,7 +250,6 @@ export default function EVA() {
     if (textareaRef.current) textareaRef.current.focus();
   };
 
-  // Just blur keyboard. No scroll maths. Browser go show the rest naturally.
   const hideKeyboardToRead = () => {
     setShowMenu(false);
     if (document.activeElement) document.activeElement.blur();
@@ -273,7 +279,6 @@ export default function EVA() {
         style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "0 20px 10px" }}
         onClick={hideKeyboardToRead}
       >
-        <div style={{ flex: 1 }} />
         {messages.length === 0 && (
           <div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, maxWidth: 420, margin: "0 auto", textAlign: "center" }}>Hello, I am EVA. Ask me anything.</div>
         )}
@@ -361,4 +366,4 @@ export default function EVA() {
       </div>
     </div>
   );
-                        }
+              }
