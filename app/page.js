@@ -7,22 +7,26 @@ const CHAT_ID = 1;
 
 export default function EVA() {
   const [text, setText] = useState("");
-  const [messages, setMessages] = useState([]);
+  // WHATSAPP FIX: Load from phone immediately, no wait for internet
+  // This na why e no go blink again - messages don dey there before page open
+  const [messages, setMessages] = useState(() => {
+    try {
+      const cached = localStorage.getItem("eva_messages_cache");
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
   const [showMenu, setShowMenu] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [myName, setMyName] = useState("");
   const [prefs, setPrefs] = useState({});
 
-  // FIX 1: For scroll to bottom like WhatsApp
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
   const isFirstLoad = useRef(true);
 
-  // FIX 1b: This go jump to last message every time messages change
   useEffect(() => {
     if (bottomRef.current) {
-      // First time: jump straight, no animation (no shake)
-      // After: also jump straight, like WhatsApp
       bottomRef.current.scrollIntoView({ behavior: "auto", block: "end" });
     }
     isFirstLoad.current = false;
@@ -33,7 +37,12 @@ export default function EVA() {
     const p = localStorage.getItem("eva_dave_prefs"); if(p) try{ setPrefs(JSON.parse(p)); }catch(e){}
     const load = async () => {
       const { data } = await supabase.from("messages").select("*").eq("chat_id", CHAT_ID).order("created_at", {ascending:true}).limit(80);
-      if(data && data.length) setMessages(data.map(m=>({from:m.sender==="you"?"you":"eva", text:m.text})));
+      if(data && data.length) {
+        const mapped = data.map(m=>({from:m.sender==="you"?"you":"eva", text:m.text}));
+        setMessages(mapped);
+        // Save am for phone, so next time e open instantly like WhatsApp
+        try { localStorage.setItem("eva_messages_cache", JSON.stringify(mapped)); } catch(e){}
+      }
     }; load();
   }, []);
 
@@ -43,6 +52,7 @@ export default function EVA() {
     if(!window.confirm("Clear all chats?")) return;
     setMessages([]); setMyName(""); setPrefs({});
     localStorage.removeItem("eva_dave_name"); localStorage.removeItem("eva_dave_prefs");
+    localStorage.removeItem("eva_messages_cache");
     try{ await supabase.from("messages").delete().eq("chat_id", CHAT_ID); }catch(e){}
     setShowMenu(false);
   };
@@ -55,7 +65,12 @@ export default function EVA() {
     if(lower.includes("my best food is")){ const v = userText.split(/my best food is/i)[1].trim(); const np = {...prefs, food:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
     if(lower.includes("i want to buy")){ const v = userText.split(/i want to buy/i)[1].trim(); const np = {...prefs, want_to_buy:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
 
-    setMessages(prev=>[...prev, {from:"you", text:userText}]);
+    // Update phone cache immediately too
+    setMessages(prev=>{
+      const next = [...prev, {from:"you", text:userText}];
+      try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){}
+      return next;
+    });
     await saveToSupabase("you", userText);
     setIsThinking(true);
     setMessages(prev=>[...prev, {from:"eva", text:"EVA is thinking..."}]);
@@ -65,17 +80,16 @@ export default function EVA() {
       const res = await fetch("/api/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ message:userText, history, userProfile:{name:myName, prefs, bestFood:prefs.food, wantToBuy:prefs.want_to_buy} }) });
       const data = await res.json();
       const reply = data.reply || "I dey here Boss, try again.";
-      setMessages(prev=>{ const w = prev.slice(0,-1); return [...w, {from:"eva", text:reply}]; });
+      setMessages(prev=>{ const w = prev.slice(0,-1); const next = [...w, {from:"eva", text:reply}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
       await saveToSupabase("eva", reply);
     }catch(e){
-      setMessages(prev=>{ const w = prev.slice(0,-1); return [...w, {from:"eva", text:"Network jam small Boss, try again."}]; });
+      setMessages(prev=>{ const w = prev.slice(0,-1); const next = [...w, {from:"eva", text:"Network jam small Boss, try again."}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     }
     setIsThinking(false);
   };
 
   return (
     <div style={{height:"100dvh", minHeight:"100dvh", background:"#030014", color:"white", display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"sans-serif", position:"fixed", inset:0}}>
-      {/* FIX 2: Background lock — e no go move again */}
       <img src="/eva-bg.jpg" style={{position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", pointerEvents:"none", transform:"translateZ(0)"}} />
       <div style={{position:"relative", display:"flex", padding:"16px 18px", alignItems:"center", justifyContent:"space-between", flexShrink:0}}>
         <div style={{display:"flex", alignItems:"center", gap:10}}><img src="/IMG-20261104-WA3311.jpg" style={{width:38, height:38, borderRadius:999, objectFit:"cover", border:"2px solid #a78bfa"}} /><b style={{fontSize:20, letterSpacing:2}}>EVA</b></div>
@@ -87,11 +101,9 @@ export default function EVA() {
           </div>)}
         </div>
       </div>
-      {/* FIX 2b: Chat list na only thing wey go scroll, with ref */}
       <div ref={scrollRef} style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", padding:"0 20px 10px"}} onClick={()=>setShowMenu(false)}>
         {messages.length===0 && (<div style={{background:"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:14, borderRadius:16, maxWidth:420, margin:"0 auto", textAlign:"center"}}>Hello, I am EVA. Ask me anything.</div>)}
         {messages.map((m,i)=>(<div key={i} style={{alignSelf:m.from==="you"?"flex-end":"flex-start", background:m.from==="you"?"#8b5cf6":"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:"10px 14px", borderRadius:16, maxWidth:"85%", fontSize:14, lineHeight:1.5, whiteSpace:"pre-line"}}>{m.text}</div>))}
-        {/* FIX 1c: Invisible marker for bottom — na this WhatsApp dey use */}
         <div ref={bottomRef} style={{height:1, flexShrink:0}} />
       </div>
       <div style={{position:"relative", padding:"12px 16px 18px", flexShrink:0}}>
@@ -115,4 +127,4 @@ export default function EVA() {
       </div>
     </div>
   );
-            }
+}
