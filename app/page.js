@@ -49,6 +49,7 @@ export default function EVA() {
   const keyboardOpenRef = useRef(false);
   const didInitialScroll = useRef(false);
   const isTypingRef = useRef(false);
+  const keyboardCloseTimer = useRef(null);
 
   useEffect(()=>{
     const n = localStorage.getItem("eva_dave_name"); if(n) setMyName(n);
@@ -78,18 +79,37 @@ export default function EVA() {
     return ()=>{ clearTimeout(t1); clearTimeout(t2); };
   },[messages.length]);
 
+  // ===== FIX: Keyboard close must REVEAL what it was covering =====
+  // Before we comot scrollTop += diff completely -> keyboard close no reveal anything, e stay for same 3.5 lines.
+  // Now: ONLY on keyboard CLOSE, and ONLY when EVA no dey type, wait 300ms for keyboard animation to finish, then push down by exact diff ONCE.
   useEffect(()=>{
     if (!window.visualViewport) return;
     let lastH = window.visualViewport.height;
     const onResize = () => {
       const newH = window.visualViewport.height;
       const diff = newH - lastH;
-      if (diff > 100) keyboardOpenRef.current = false;
-      else if (diff < -100) keyboardOpenRef.current = true;
+      if (diff > 100) {
+        // Keyboard CLOSED - e don open space
+        keyboardOpenRef.current = false;
+        if (keyboardCloseTimer.current) clearTimeout(keyboardCloseTimer.current);
+        keyboardCloseTimer.current = setTimeout(()=>{
+          // No push while EVA dey type, else e go jump
+          if (isTypingRef.current) return;
+          if (!scrollRef.current) return;
+          // Reveal exactly wetin keyboard cover: scroll down by diff, but no pass bottom
+          const c = scrollRef.current;
+          const max = c.scrollHeight - c.clientHeight;
+          c.scrollTop = Math.min(max, c.scrollTop + diff - 20);
+        }, 300);
+      } else if (diff < -100) {
+        // Keyboard OPENED - do NOTHING, make the 3.5 lines stay
+        keyboardOpenRef.current = true;
+        if (keyboardCloseTimer.current) clearTimeout(keyboardCloseTimer.current);
+      }
       lastH = newH;
     };
     window.visualViewport.addEventListener("resize", onResize);
-    return ()=> window.visualViewport.removeEventListener("resize", onResize);
+    return ()=>{ window.visualViewport.removeEventListener("resize", onResize); if(keyboardCloseTimer.current) clearTimeout(keyboardCloseTimer.current); };
   },[]);
 
   const saveToSupabase = async (sender, msgText) => { try{ await supabase.from("messages").insert([{chat_id:CHAT_ID, sender, text:msgText}]); }catch(e){} };
@@ -113,8 +133,6 @@ export default function EVA() {
   };
 
   // ===== BALANCED: 3 FULL LINES, NO BIG SPACE =====
-  // Before: +58 and spacer 140 = too much empty purple space.
-  // Now: +38 and spacer 20 = 3 lines go show, but no big gap.
   const scrollToQuestionWith3Lines = () => {
     if (isTypingRef.current) return;
     requestAnimationFrame(()=>{
@@ -235,6 +253,8 @@ export default function EVA() {
   const hideKeyboardToRead = () => {
     setShowMenu(false);
     if (document.activeElement) document.activeElement.blur();
+    // Keyboard go close, the visualViewport listener above go handle the reveal after 300ms.
+    // We no force scroll here, make e no jump.
   };
 
   return (
@@ -269,40 +289,4 @@ export default function EVA() {
           <input value={emojiSearch} onChange={e=>setEmojiSearch(e.target.value)} placeholder="🔍 Search emoji... type car, monkey, love" style={{width:"100%", background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.2)", borderRadius:999, color:"white", padding:"9px 14px", fontSize:13, outline:"none", boxSizing:"border-box"}} />
           <div style={{display:"flex", gap:6, overflowX:"auto", padding:"10px 0 8px", whiteSpace:"nowrap", scrollbarWidth:"none"}}>
             {Object.keys(EMOJI_CATS).map(cat=>(
-              <button key={cat} onTouchStart={(e)=>e.preventDefault()} onMouseDown={(e)=>e.preventDefault()} onClick={()=>{setEmojiTab(cat); setEmojiSearch("");}} style={{background: emojiTab===cat && !emojiSearch ? "#8b5cf6" : "rgba(255,255,255,0.12)", border:"none", color:"white", padding:"6px 12px", borderRadius:999, fontSize:12, flexShrink:0}}>{cat}</button>
-            ))}
-          </div>
-          <div style={{display:"grid", gridTemplateColumns:"repeat(8, 1fr)", gap:4, maxHeight:190, overflowY:"auto", paddingBottom:6}}>
-            {getEmojisToShow().map((item,i)=>(
-              <button key={i} onTouchStart={(e)=>e.preventDefault()} onMouseDown={(e)=>e.preventDefault()} onClick={()=>addEmoji(item.e)} style={{background:"transparent", border:"none", fontSize:26, padding:6}}>{item.e}</button>
-            ))}
-          </div>
-          {getEmojisToShow().length===0 && <div style={{textAlign:"center", padding:14, fontSize:13, color:"#aaa"}}>No emoji for "{emojiSearch}" — try car, monkey, love, dog</div>}
-        </div>
-      )}
-
-      <div style={{position:"relative", padding:"12px 16px 18px", flexShrink:0}}>
-        <div style={{display:"flex", gap:6, maxWidth:520, margin:"0 auto", background:"rgba(255,255,255,0.14)", border:"1px solid rgba(255,255,255,0.30)", padding:8, borderRadius:999, alignItems:"center"}}>
-          <button onTouchStart={(e)=>e.preventDefault()} onMouseDown={(e)=>e.preventDefault()} onClick={()=>setShowEmoji(!showEmoji)} style={{background:"transparent", border:"none", fontSize:24, padding:"2px 4px", flexShrink:0}}>😊</button>
-          <textarea 
-            ref={textareaRef} 
-            value={text} 
-            onChange={e=>setText(e.target.value)} 
-            onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); askEVA(); } }} 
-            placeholder="Ask EVA..." rows={1} 
-            enterKeyHint="send"
-            autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} 
-            data-lpignore="true" data-1p-ignore="true" 
-            style={{flex:1, background:"transparent", border:"none", outline:"none", color:"white", padding:"10px 6px", fontSize:15, resize:"none", maxHeight:100, fontFamily:"sans-serif"}} 
-          />
-          <button 
-            onTouchStart={(e)=>e.preventDefault()} 
-            onMouseDown={(e)=>e.preventDefault()} 
-            onClick={askEVA} 
-            style={{background:"#8b5cf6", border:"none", color:"white", padding:"10px 18px", borderRadius:999, fontWeight:"bold", flexShrink:0, touchAction:"manipulation"}}
-          >Ask →</button>
-        </div>
-      </div>
-    </div>
-  );
-    }
+              <button key={cat} onTouchStart={(e)=>e.preventDefault()} onMouseDown={(e)=>e.preventDefault()} onClick={()=>{setEmojiTab(cat); setEmojiSearch("");}} style={{background: emojiTab===cat && !emojiSearch ? "#8b5cf6" : "rgba(255,255,255,0.12)", border:"none", color:"white", padding:"6px 12px", borderRadius:999, fontSize
