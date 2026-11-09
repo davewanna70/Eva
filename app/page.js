@@ -30,6 +30,15 @@ const EMOJI_CATS = {
 };
 
 const cleanText = (t) => (t || "").replace(/\*\*/g, "").replace(/^\s*-\s*/gm, "• ");
+const fmtTime = (ts) => {
+  if (!ts) return "";
+  const d = new Date(ts);
+  let h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, "0");
+  const ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${m} ${ap}`;
+};
 
 export default function EVA() {
   const [text, setText] = useState("");
@@ -52,6 +61,7 @@ export default function EVA() {
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const didInitialScroll = useRef(false);
+  const smoothAnimRef = useRef(null);
 
   useEffect(() => {
     const n = localStorage.getItem("eva_dave_name");
@@ -68,7 +78,7 @@ export default function EVA() {
     const load = async () => {
       const { data } = await supabase.from("messages").select("*").eq("chat_id", CHAT_ID).order("created_at", { ascending: true }).limit(80);
       if (data && data.length) {
-        const mapped = data.map((m) => ({ from: m.sender === "you" ? "you" : "eva", text: m.text }));
+        const mapped = data.map((m) => ({ from: m.sender === "you" ? "you" : "eva", text: m.text, time: m.created_at ? new Date(m.created_at).getTime() : Date.now(), status: m.sender === "you" ? "delivered" : undefined }));
         const nowLocal = (() => {
           try { return JSON.parse(localStorage.getItem("eva_messages_cache") || "[]"); }
           catch (e) { return []; }
@@ -92,38 +102,46 @@ export default function EVA() {
     return () => { clearTimeout(t1); };
   }, [messages.length]);
 
-  // *** ONLY NEW CODE - FIX FOR KEYBOARD CLOSE ONLY ***
-  // When keyboard closes, visualViewport grows by keyboard height.
-  // We scroll down by EXACTLY that height, so we reveal what keyboard was hiding.
-  // We no touch send, no touch 3 lines, no touch anything else.
+  // SMOOTH: Animate scroll like WhatsApp keyboard, no 300ms wait + instant jump
+  const smoothScrollBy = (diff) => {
+    if (!scrollRef.current || !diff) return;
+    if (smoothAnimRef.current) cancelAnimationFrame(smoothAnimRef.current);
+    const c = scrollRef.current;
+    const start = c.scrollTop;
+    const target = start + diff;
+    const startTime = performance.now();
+    const DURATION = 250; // same as iOS keyboard animation
+    const tick = (now) => {
+      const p = Math.min(1, (now - startTime) / DURATION);
+      const ease = 1 - Math.pow(1 - p, 3); // easeOutCubic - WhatsApp feel
+      c.scrollTop = start + (target - start) * ease;
+      if (p < 1) smoothAnimRef.current = requestAnimationFrame(tick);
+    };
+    smoothAnimRef.current = requestAnimationFrame(tick);
+  };
+
+  // SMOOTH KEYBOARD CLOSE: Follow visualViewport live, no wait, no skip
   useEffect(() => {
     if (!window.visualViewport) return;
     let lastH = window.visualViewport.height;
-    let timer = null;
     const onResize = () => {
       const newH = window.visualViewport.height;
       const diff = newH - lastH;
       lastH = newH;
-      if (diff > 100) {
-        // Keyboard just closed - wait for animation to finish, then reveal
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          if (!scrollRef.current) return;
-          const c = scrollRef.current;
-          c.scrollTop = c.scrollTop + diff;
-        }, 300);
+      if (diff > 30) {
+        // Keyboard closing - animate with it, immediately, no 300ms delay
+        smoothScrollBy(diff);
       }
     };
     window.visualViewport.addEventListener("resize", onResize);
-    return () => {
-      window.visualViewport.removeEventListener("resize", onResize);
-      if (timer) clearTimeout(timer);
-    };
+    return () => window.visualViewport.removeEventListener("resize", onResize);
   }, []);
-  // *** END OF ONLY NEW CODE ***
 
   const saveToSupabase = async (sender, msgText) => {
-    try { await supabase.from("messages").insert([{ chat_id: CHAT_ID, sender, text: msgText }]); } catch (e) {}
+    try {
+      const { error } = await supabase.from("messages").insert([{ chat_id: CHAT_ID, sender, text: msgText }]);
+      return !error;
+    } catch (e) { return false; }
   };
 
   const clearChat = async () => {
@@ -153,7 +171,6 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // WhatsApp way: scroll once, directly on the container, no scrollIntoView, no 50ms + await delay
   const scrollToBottomNow = () => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -162,12 +179,21 @@ export default function EVA() {
     });
   };
 
+  // If user is already at bottom, follow EVA typing smoothly like WhatsApp
+  const followIfAtBottom = () => {
+    if (!scrollRef.current) return;
+    const c = scrollRef.current;
+    const nearBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 120;
+    if (nearBottom) c.scrollTop = c.scrollHeight;
+  };
+
   const askEVA = async () => {
     if (!text.trim() || isThinking) return;
     const userText = text.trim();
     setText("");
     setShowEmoji(false);
     setEmojiSearch("");
+    const nowTs = Date.now();
 
     const lower = userText.toLowerCase();
     if (lower.includes("my name is")) {
@@ -191,18 +217,26 @@ export default function EVA() {
       localStorage.setItem("eva_dave_prefs", JSON.stringify(np));
     }
 
-    // FIX: Add your message + EVA placeholder TOGETHER in ONE render.
-    // Before we add you, scroll, then add EVA - that na the 2nd jump.
-    // Now one render, one scroll, your message go show full immediately like WhatsApp.
     setIsThinking(true);
     setMessages((prev) => {
-      const next = [...prev, { from: "you", text: userText }, { from: "eva", text: "▍" }];
+      const next = [...prev, { from: "you", text: userText, time: nowTs, status: "sending" }, { from: "eva", text: "▍", time: nowTs }];
       try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
       return next;
     });
 
-    // FIX: No await before scroll. Fire and forget, like WhatsApp.
-    saveToSupabase("you", userText);
+    // TICKS: Fire and forget, then upgrade 1 tick -> 2 ticks when delivered
+    saveToSupabase("you", userText).then((ok) => {
+      if (!ok) return; // stay on 1 tick - not delivered
+      setMessages((prev) => {
+        const copy = [...prev];
+        // Find this user message by time + text
+        for (let i = copy.length - 1; i >= 0; i--) {
+          if (copy[i].from === "you" && copy[i].time === nowTs) { copy[i] = { ...copy[i], status: "delivered" }; break; }
+        }
+        try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {}
+        return copy;
+      });
+    });
     scrollToBottomNow();
 
     const typeOut = (fullText) => {
@@ -215,15 +249,17 @@ export default function EVA() {
           const display = shown + "▍";
           setMessages((prev) => {
             const copy = [...prev];
-            copy[copy.length - 1] = { from: "eva", text: display };
+            copy[copy.length - 1] = { from: "eva", text: display, time: nowTs };
             try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {}
             return copy;
           });
+          // SMOOTH: follow typing if you are at bottom, like WhatsApp
+          requestAnimationFrame(() => followIfAtBottom());
           if (i >= cleaned.length) {
             clearInterval(interval);
             setMessages((prev) => {
               const copy = [...prev];
-              copy[copy.length - 1] = { from: "eva", text: cleaned };
+              copy[copy.length - 1] = { from: "eva", text: cleaned, time: nowTs };
               try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {}
               return copy;
             });
@@ -253,10 +289,11 @@ export default function EVA() {
             const display = cleanText(shown) + "▍";
             setMessages((prev) => {
               const copy = [...prev];
-              copy[copy.length - 1] = { from: "eva", text: display };
+              copy[copy.length - 1] = { from: "eva", text: display, time: nowTs };
               try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {}
               return copy;
             });
+            requestAnimationFrame(() => followIfAtBottom());
           }
         }, 18);
         while (true) {
@@ -271,7 +308,7 @@ export default function EVA() {
     } catch (e) {
       setMessages((prev) => {
         const w = prev.slice(0, -1);
-        const next = [...w, { from: "eva", text: "Network jam small Boss, try again." }];
+        const next = [...w, { from: "eva", text: "Network jam small Boss, try again.", time: Date.now() }];
         try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
         return next;
       });
@@ -306,7 +343,7 @@ export default function EVA() {
 
       <div
         ref={scrollRef}
-        style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "0 20px 10px" }}
+        style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "0 20px 10px", scrollBehavior: "auto" }}
         onClick={hideKeyboardToRead}
       >
         {messages.length === 0 && (
@@ -316,9 +353,17 @@ export default function EVA() {
           return (
             <div
               key={i}
-              style={{ alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 14px", borderRadius: 16, maxWidth: "85%", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}
+              style={{ alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 14px 6px", borderRadius: 16, maxWidth: "85%", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}
             >
-              {cleanText(m.text)}
+              <div>{cleanText(m.text)}</div>
+              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: 4, fontSize: 10, opacity: 0.75 }}>
+                <span>{fmtTime(m.time)}</span>
+                {m.from === "you" && (
+                  <span style={{ fontSize: 12, letterSpacing: -2 }}>
+                    {m.status === "delivered" ? "✓✓" : "✓"}
+                  </span>
+                )}
+              </div>
             </div>
           );
         })}
@@ -396,4 +441,4 @@ export default function EVA() {
       </div>
     </div>
   );
-  }
+        }
