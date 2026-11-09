@@ -29,6 +29,9 @@ const EMOJI_CATS = {
   ],
 };
 
+// Clean ** stars so EVA show clean like WhatsApp, not **Full name**
+const cleanText = (t) => (t || "").replace(/\*\*/g, "").replace(/^\s*-\s*/gm, "• ");
+
 export default function EVA() {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState(() => {
@@ -43,17 +46,10 @@ export default function EVA() {
   const [prefs, setPrefs] = useState({});
 
   const scrollRef = useRef(null); const bottomRef = useRef(null); const textareaRef = useRef(null);
-  const isAutoScrolling = useRef(false);
+  const lastUserMsgRef = useRef(null);
 
-  // WHATSAPP STYLE: Auto-scroll but NEVER steal focus / never hide keyboard
-  const scrollToBottomSoft = () => {
-    if (!scrollRef.current) return;
-    isAutoScrolling.current = true;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    setTimeout(()=>{ isAutoScrolling.current = false; }, 150);
-  };
-
-  useEffect(()=>{ scrollToBottomSoft(); },[messages, isThinking]);
+  // WHATSAPP RULE: NO auto-scroll on messages change. We NEVER scroll while typing.
+  // If we scroll on every typing tick, question go push up and disappear. So we remove that useEffect completely.
 
   useEffect(()=>{
     const n = localStorage.getItem("eva_dave_name"); if(n) setMyName(n);
@@ -71,11 +67,7 @@ export default function EVA() {
     try{ await supabase.from("messages").delete().eq("chat_id", CHAT_ID); }catch(e){} setShowMenu(false);
   };
 
-  const addEmoji = (emoji) => { 
-    setText(prev=>prev+emoji); 
-    // Keep keyboard: focus back immediately, no blur
-    textareaRef.current?.focus(); 
-  };
+  const addEmoji = (emoji) => { setText(prev=>prev+emoji); textareaRef.current?.focus(); };
 
   const getEmojisToShow = () => {
     if(emojiSearch.trim()){
@@ -86,21 +78,28 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // ===== WHATSAPP KEYBOARD RULE =====
-  // Keyboard STAYS after Ask. It only hides when YOU:
-  // 1. Press phone Back button, OR 2. Tap / scroll messages area to read
+  // WHATSAPP: Scroll ONCE to show your question, then LOCK. Never scroll again while answer dey grow.
+  const scrollToQuestionOnce = () => {
+    // Wait small for DOM to paint your question
+    setTimeout(()=>{
+      if (lastUserMsgRef.current && scrollRef.current) {
+        // scrollIntoView with block:start = question go stay for top, answer go dey below am, like WhatsApp
+        // block:"start" + no smooth = no pushing
+        lastUserMsgRef.current.scrollIntoView({behavior:"auto", block:"start"});
+        // Small offset so question no hug top too much
+        scrollRef.current.scrollTop = Math.max(0, scrollRef.current.scrollTop - 10);
+      }
+    }, 50);
+  };
+
   const askEVA = async () => {
     if(!text.trim() || isThinking) return;
     const userText = text.trim();
 
-    // CRITICAL: Focus FIRST, synchronously, before any setState.
-    // If we setState first, React re-render go comot focus and keyboard go close.
+    // KEYBOARD: Focus FIRST synchronously, before any setState, so keyboard no close
     if (textareaRef.current) textareaRef.current.focus();
 
-    setText(""); 
-    // Do NOT close emoji with a re-render that blurs - just hide panel, keep focus
-    setShowEmoji(false); setEmojiSearch("");
-    // Focus again immediately after clear - keyboard must not close
+    setText(""); setShowEmoji(false); setEmojiSearch("");
     requestAnimationFrame(()=>{ textareaRef.current?.focus(); });
 
     const lower = userText.toLowerCase();
@@ -111,26 +110,31 @@ export default function EVA() {
     setMessages(prev=>{ const next=[...prev,{from:"you",text:userText}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     await saveToSupabase("you", userText);
 
+    // WHATSAPP: Scroll ONCE to question, then LOCK. No more scroll.
+    scrollToQuestionOnce();
+
     setIsThinking(true);
     setMessages(prev=>[...prev,{from:"eva",text:"▍"}]);
 
     const typeOut = (fullText) => {
+      const cleaned = cleanText(fullText);
       return new Promise((resolve) => {
         let i = 0;
         const interval = setInterval(() => {
           i += 3;
-          const shown = fullText.slice(0, i);
+          const shown = cleaned.slice(0, i);
           const display = shown + "▍";
           setMessages(prev => {
             const copy = [...prev];
             copy[copy.length-1] = {from:"eva", text: display};
             return copy;
           });
-          if(i >= fullText.length){
+          // NO SCROLL HERE - this na the fix. Answer go grow downwards, question go stay.
+          if(i >= cleaned.length){
             clearInterval(interval);
             setMessages(prev => {
               const copy = [...prev];
-              copy[copy.length-1] = {from:"eva", text: fullText};
+              copy[copy.length-1] = {from:"eva", text: cleaned};
               try{ localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); }catch(e){}
               return copy;
             });
@@ -158,12 +162,13 @@ export default function EVA() {
         const showLoop = setInterval(()=>{
           if(shown.length < fullReply.length){
             shown = fullReply.slice(0, shown.length + 4);
-            const display = shown + "▍";
+            const display = cleanText(shown) + "▍";
             setMessages(prev=>{
               const copy=[...prev];
               copy[copy.length-1]={from:"eva",text:display};
               return copy;
             });
+            // NO SCROLL HERE TOO
           }
         }, 18);
         while(true){
@@ -179,14 +184,12 @@ export default function EVA() {
       setMessages(prev=>{ const w=prev.slice(0,-1); const next=[...w,{from:"eva",text:"Network jam small Boss, try again."}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     }
     setIsThinking(false);
-    // WHATSAPP: After answer, keyboard STILL stays. Do NOT blur.
+    // KEYBOARD STAYS - do NOT blur, do NOT scroll
     textareaRef.current?.focus();
   };
 
-  // WHATSAPP: Tap messages area = you want read, so hide keyboard. Ask button = never hide.
   const hideKeyboardToRead = () => {
     setShowMenu(false);
-    // Only hide emoji, keyboard hide na by blur here - this na intentional, like WhatsApp tap to read
     if (document.activeElement) document.activeElement.blur();
   };
 
@@ -204,15 +207,18 @@ export default function EVA() {
         </div>
       </div>
 
-      {/* MESSAGES: Tap here or scroll to read = hide keyboard, like WhatsApp */}
+      {/* MESSAGES: Tap here / scroll = you wan read, so hide keyboard like WhatsApp. Typing no go auto-scroll again. */}
       <div 
         ref={scrollRef} 
         style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", padding:"0 20px 10px"}}
-        onTouchStart={()=>{ if(!isAutoScrolling.current){ /* manual touch = user want read, let browser handle scroll, don't force blur on scroll start */ } }}
         onClick={hideKeyboardToRead}
       >
         {messages.length===0 && (<div style={{background:"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:14, borderRadius:16, maxWidth:420, margin:"0 auto", textAlign:"center"}}>Hello, I am EVA. Ask me anything.</div>)}
-        {messages.map((m,i)=>(<div key={i} style={{alignSelf:m.from==="you"?"flex-end":"flex-start", background:m.from==="you"?"#8b5cf6":"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:"10px 14px", borderRadius:16, maxWidth:"85%", fontSize:14, lineHeight:1.5, whiteSpace:"pre-line"}}>{m.text}</div>))}
+        {messages.map((m,i)=>{
+          const isLastUser = m.from==="you" && messages.slice(i+1).every(x=>x.from!=="you");
+          // Attach ref to LAST user question so we fit scroll to am once
+          return (<div key={i} ref={isLastUser ? lastUserMsgRef : null} style={{alignSelf:m.from==="you"?"flex-end":"flex-start", background:m.from==="you"?"#8b5cf6":"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:"10px 14px", borderRadius:16, maxWidth:"85%", fontSize:14, lineHeight:1.5, whiteSpace:"pre-line"}}>{cleanText(m.text)}</div>);
+        })}
         <div ref={bottomRef} style={{height:1, flexShrink:0}} />
       </div>
 
@@ -247,7 +253,6 @@ export default function EVA() {
             data-lpignore="true" data-1p-ignore="true" 
             style={{flex:1, background:"transparent", border:"none", outline:"none", color:"white", padding:"10px 6px", fontSize:15, resize:"none", maxHeight:100, fontFamily:"sans-serif"}} 
           />
-          {/* WHATSAPP ASK BUTTON: Touch must NEVER blur input */}
           <button 
             onTouchStart={(e)=>e.preventDefault()} 
             onMouseDown={(e)=>e.preventDefault()} 
