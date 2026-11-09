@@ -41,13 +41,13 @@ const fmtTime = (ts) => {
   return `${h}:${m} ${ap}`;
 };
 
-// MESSAGE 16px like WhatsApp, ONLY EMOJI GO BIG
+// MESSAGE 15px, ONLY EMOJI GO BIG
 const getEmojiSize = (t) => {
   const cleaned = (t || "").replace("▍", "").trim().replace(/\s/g, "");
-  if (!cleaned) return 16;
+  if (!cleaned) return 15;
   const chars = Array.from(cleaned);
   const isOnlyEmoji = chars.every((c) => /\p{Extended_Pictographic}/u.test(c));
-  if (!isOnlyEmoji) return 16; // message + emoji mix = normal 16px
+  if (!isOnlyEmoji) return 15; // message + emoji mix = normal 15px
   if (chars.length === 1) return 50; // 1 emoji
   if (chars.length === 2) return 45; // 2 emoji
   return 40; // 3 emoji and rest = 40px
@@ -59,6 +59,22 @@ const isOnlyEmojiMsg = (t) => {
   if (!cleaned) return false;
   const chars = Array.from(cleaned);
   return chars.length > 0 && chars.every((c) => /\p{Extended_Pictographic}/u.test(c));
+};
+
+// EVERY EMOJI GET HIM OWN TRUE REACTION LIKE WHATSAPP
+const getEmojiAnim = (e) => {
+  if (["😂","🤣","😆","😁"].includes(e)) return "eva-laugh";
+  if (["😌","😉","😏","😜","😋"].includes(e)) return "eva-wink";
+  if (["😍","🥰","😘","❤️","💕","😃","😄","😊"].includes(e)) return "eva-love";
+  if (["😭","😢","🥺","😩"].includes(e)) return "eva-cry";
+  if (["😎","😈","🤩"].includes(e)) return "eva-cool";
+  if (["🔥","✨","💯"].includes(e)) return "eva-fire";
+  if (["😡","😤","💀"].includes(e)) return "eva-angry";
+  if (["🥳","🎉","🎂"].includes(e)) return "eva-party";
+  if (["😴"].includes(e)) return "eva-sleep";
+  if (["🤔","🤯"].includes(e)) return "eva-think";
+  if (["👍","👏","🙏","🙌","👋","🤘","🤙","✌️","👌","💪"].includes(e)) return "eva-hand";
+  return "eva-pop";
 };
 
 export default function EVA() {
@@ -77,7 +93,7 @@ export default function EVA() {
   const [isThinking, setIsThinking] = useState(false);
   const [myName, setMyName] = useState("");
   const [prefs, setPrefs] = useState({});
-  const [replayMap, setReplayMap] = useState({}); // tap naked emoji to react again
+  const [replayMap, setReplayMap] = useState({});
 
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
@@ -217,7 +233,7 @@ export default function EVA() {
   // WHATSAPP: Tap Ask box while emoji open - emoji close FIRST, keyboard after. Never both.
   const onInputTouchStart = (e) => {
     if (showEmojiRef.current) {
-      e.preventDefault(); // Stop keyboard from opening now
+      e.preventDefault();
       setShowEmoji(false);
       setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 120);
     }
@@ -432,14 +448,30 @@ export default function EVA() {
   return (
     <div ref={outerRef} style={{ height: "100dvh", minHeight: "100dvh", maxHeight: "100dvh", background: "#030014", color: "white", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "sans-serif", position: "fixed", inset: 0, top: 0, left: 0, right: 0, bottom: 0, overscrollBehavior: "none" }}>
       <style>{`
-        @keyframes evaEmojiReact {
-          0% { transform: scale(0.5) rotate(-8deg); }
-          30% { transform: scale(1.25) rotate(6deg); }
-          50% { transform: scale(1.1) rotate(-5deg); }
-          70% { transform: scale(1.15) rotate(3deg); }
-          100% { transform: scale(1) rotate(0deg); }
-        }
-        .eva-emoji-react { animation: evaEmojiReact 0.7s ease-out 1; transform-origin: center; will-change: transform; }
+        @keyframes evaLaugh { 0%{transform:scale(.6) rotate(-8deg)} 25%{transform:scale(1.25) rotate(6deg) translateY(-4px)} 50%{transform:scale(1.1) rotate(-6deg) translateY(2px)} 75%{transform:scale(1.2) rotate(4deg)} 100%{transform:scale(1) rotate(0)} }
+        @keyframes evaWink { 0%{transform:scale(.7)} 30%{transform:scale(1.2) rotate(-6deg) translateX(-2px)} 60%{transform:scale(1.05) rotate(4deg)} 100%{transform:scale(1) rotate(0)} }
+        @keyframes evaLove { 0%{transform:scale(.6)} 30%{transform:scale(1.35)} 50%{transform:scale(1.1)} 70%{transform:scale(1.3)} 100%{transform:scale(1)} }
+        @keyframes evaCry { 0%{transform:scale(.7) translateY(-6px)} 40%{transform:scale(1.15) translateY(4px)} 70%{transform:scale(1.05) translateY(2px)} 100%{transform:scale(1) translateY(0)} }
+        @keyframes evaCool { 0%{transform:scale(.7) rotate(-10deg) translateY(-6px)} 50%{transform:scale(1.2) rotate(4deg) translateY(2px)} 100%{transform:scale(1) rotate(0)} }
+        @keyframes evaFire { 0%{transform:scale(.9) rotate(-3deg)} 50%{transform:scale(1.25) rotate(3deg)} 100%{transform:scale(1) rotate(0)} }
+        @keyframes evaAngry { 0%{transform:scale(.8)} 20%{transform:scale(1.2) translateX(-4px)} 40%{transform:scale(1.15) translateX(4px)} 60%{transform:scale(1.2) translateX(-3px)} 100%{transform:scale(1) translateX(0)} }
+        @keyframes evaParty { 0%{transform:scale(.6) translateY(10px)} 40%{transform:scale(1.3) translateY(-8px) rotate(-6deg)} 70%{transform:scale(1.1) translateY(2px) rotate(4deg)} 100%{transform:scale(1) translateY(0)} }
+        @keyframes evaSleep { 0%{transform:scale(.9)} 50%{transform:scale(1.15) translateY(-2px)} 100%{transform:scale(1)} }
+        @keyframes evaThink { 0%{transform:scale(.8) rotate(-8deg)} 50%{transform:scale(1.15) rotate(6deg)} 100%{transform:scale(1) rotate(0)} }
+        @keyframes evaHand { 0%{transform:scale(.7) rotate(-10deg)} 50%{transform:scale(1.2) rotate(10deg)} 100%{transform:scale(1) rotate(0)} }
+        @keyframes evaPop { 0%{transform:scale(.5)} 50%{transform:scale(1.25)} 100%{transform:scale(1)} }
+        .eva-laugh{ animation: evaLaugh 0.8s ease-out 1; }
+        .eva-wink{ animation: evaWink 0.7s ease-out 1; }
+        .eva-love{ animation: evaLove 0.8s ease-out 1; }
+        .eva-cry{ animation: evaCry 0.8s ease-out 1; }
+        .eva-cool{ animation: evaCool 0.7s ease-out 1; }
+        .eva-fire{ animation: evaFire 0.7s ease-out 1; }
+        .eva-angry{ animation: evaAngry 0.7s ease-out 1; }
+        .eva-party{ animation: evaParty 0.8s ease-out 1; }
+        .eva-sleep{ animation: evaSleep 0.9s ease-out 1; }
+        .eva-think{ animation: evaThink 0.7s ease-out 1; }
+        .eva-hand{ animation: evaHand 0.7s ease-out 1; }
+        .eva-pop{ animation: evaPop 0.6s ease-out 1; }
       `}</style>
       <img src="/eva-bg.jpg" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", zIndex: 0 }} />
 
@@ -471,7 +503,7 @@ export default function EVA() {
         )}
         {messages.map((m, i) => {
           const isLastUser = m.from === "you" && messages.slice(i + 1).every((x) => x.from !== "you");
-          const naked = isOnlyEmojiMsg(m.text); // single + multiple emoji = naked, no square
+          const naked = isOnlyEmojiMsg(m.text);
           return (
             <div
               key={i}
@@ -483,7 +515,7 @@ export default function EVA() {
                 padding: "2px 2px 2px",
                 borderRadius: 0,
                 maxWidth: "85%",
-                fontSize: 16,
+                fontSize: 15,
                 lineHeight: 1.2,
                 whiteSpace: "pre-line",
                 boxShadow: "none"
@@ -494,7 +526,7 @@ export default function EVA() {
                 padding: "10px 14px 6px",
                 borderRadius: 16,
                 maxWidth: "85%",
-                fontSize: 16,
+                fontSize: 15,
                 lineHeight: 1.5,
                 whiteSpace: "pre-line"
               }}
@@ -502,14 +534,21 @@ export default function EVA() {
               {naked ? (
                 <div
                   key={replayMap[i] || `emoji-${m.time}-${i}`}
-                  className="eva-emoji-react"
                   onClick={(e) => { e.stopPropagation(); setReplayMap((prev) => ({ ...prev, [i]: Date.now() })); }}
-                  style={{ fontSize: getEmojiSize(m.text), lineHeight: 1.3, textShadow: "0 2px 8px rgba(0,0,0,0.6)", display: "inline-block", cursor: "pointer" }}
+                  style={{ display: "flex", gap: 2, cursor: "pointer" }}
                 >
-                  {cleanText(m.text)}
+                  {Array.from(cleanText(m.text)).map((ch, j) => (
+                    <span
+                      key={j}
+                      className={getEmojiAnim(ch)}
+                      style={{ fontSize: getEmojiSize(m.text), lineHeight: 1.3, textShadow: "0 2px 8px rgba(0,0,0,0.6)", display: "inline-block", animationDelay: `${j * 0.08}s` }}
+                    >
+                      {ch}
+                    </span>
+                  ))}
                 </div>
               ) : (
-                <div style={{ fontSize: 16, lineHeight: 1.5 }}>{cleanText(m.text)}</div>
+                <div style={{ fontSize: 15, lineHeight: 1.5 }}>{cleanText(m.text)}</div>
               )}
               <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: naked ? 0 : 4, fontSize: 10, opacity: naked ? 0.85 : 0.75, textShadow: naked ? "0 1px 3px rgba(0,0,0,0.9)" : "none" }}>
                 <span>{fmtTime(m.time)}</span>
@@ -607,4 +646,4 @@ export default function EVA() {
       </div>
     </div>
   );
-          }
+    }
