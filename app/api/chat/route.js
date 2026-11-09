@@ -27,11 +27,9 @@ export async function POST(req) {
       if (q.includes(key)) { person = PEOPLE[key]; personKey = key; personName = PEOPLE[key].name; break }
     }
 
-    // If user type @handle, use am directly
     const atMatch = message.match(/@([a-zA-Z0-9._]+)/)
     const typedHandle = atMatch ? atMatch[1].toLowerCase() : ""
 
-    // If name no dey for list, try guess the name from question: "How many followers does [NAME] has..."
     if (!person && !typedHandle) {
       const m = message.match(/followers does (.+?) (has|have|on|on tiktok|on instagram)/i) || message.match(/does (.+?) have/i) || message.match(/how many followers does (.+?)\?/i)
       if (m && m[1]) personName = m[1].trim()
@@ -68,30 +66,22 @@ export async function POST(req) {
       for (const plat of platforms) {
         let handle = ""
         let displayName = personName || "This person"
-
-        // 1. Known person -> use coded handle
         if (person) handle = plat === "instagram" ? person.instagram : person.tiktok
         else if (typedHandle) handle = typedHandle
-
-        // 2. UNKNOWN person -> DYNAMIC: Search to discover @handle first
         if (!handle && personName) {
           const discover = await tavilySearch(personName + " " + plat + " @ handle followers")
-          // Find @handle inside result url or content
           for (const res of discover) {
             const urlHandle = res.url ? res.url.match(/@([a-zA-Z0-9._]+)/) || res.url.match(/instagram\.com\/([a-zA-Z0-9._]+)/) : null
             if (urlHandle) { handle = urlHandle[1].toLowerCase(); break }
             const contentHandle = res.content ? res.content.match(/@([a-zA-Z0-9._]+)/) : null
             if (contentHandle) { handle = contentHandle[1].toLowerCase(); break }
           }
-          // If still no handle, use the search results as context directly
           if (!handle && discover[0]) contexts.push("RECENT SEARCH for " + displayName + " " + plat + ": " + discover[0].title + ": " + discover[0].content.slice(0, 800) + " Source: " + discover[0].url)
         }
-
         if (!handle) {
           if (personKey === "drake" && plat === "tiktok") contexts.push("DRAKE TIKTOK: Drake has NO official verified TikTok. @champagnepapi is Instagram only. Do NOT invent TikTok number.")
           continue
         }
-
         const profileUrl = plat === "instagram" ? "https://www.instagram.com/" + handle + "/" : "https://www.tiktok.com/@" + handle
         const extractText = await tavilyExtract(profileUrl)
         if (extractText && extractText.toLowerCase().includes("follower")) {
@@ -131,32 +121,62 @@ export async function POST(req) {
       { role: "user", content: message }
     ]
 
-    let reply = null, lastError = ""
-    try {
-      const groqKey = process.env.GROQ_API_KEY
-      if (groqKey) {
-        const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { Authorization: "Bearer " + groqKey, "Content-Type": "application/json" }, body: JSON.stringify({ model: "openai/gpt-oss-20b", messages: finalMessages, temperature: 0.7, max_tokens: 700 }) })
-        const groqData = await groqRes.json()
-        if (groqData.choices && groqData.choices[0] && groqData.choices[0].message && groqData.choices[0].message.content) reply = groqData.choices[0].message.content
-        else if (groqData.error) lastError = "Groq: " + groqData.error.message
-        else lastError = "Groq empty"
-      } else lastError = "No GROQ key"
-    } catch (e) { lastError = "Groq catch: " + e.message }
+    // ===== STREAMING HELPER - Turns Groq/Cerebras SSE into plain text stream =====
+    const streamFromAI = async (url, apiKey, model) => {
+      const aiRes = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ model, messages: finalMessages, temperature: 0.7, max_tokens: 700, stream: true })
+      })
+      if (!aiRes.ok || !aiRes.body) return null
 
-    if (!reply) {
-      try {
-        const cereKey = process.env.CEREBRAS_API_KEY
-        if (cereKey) {
-          const cereRes = await fetch("https://api.cerebras.ai/v1/chat/completions", { method: "POST", headers: { Authorization: "Bearer " + cereKey, "Content-Type": "application/json" }, body: JSON.stringify({ model: "llama-3.3-70b", messages: finalMessages, temperature: 0.7, max_tokens: 700 }) })
-          const cereData = await cereRes.json()
-          if (cereData.choices && cereData.choices[0] && cereData.choices[0].message && cereData.choices[0].message.content) reply = cereData.choices[0].message.content
-          else lastError += " | Cerebras empty"
-        } else lastError += " | No Cerebras key"
-      } catch (e) { lastError += " | Cerebras: " + e.message }
+      const encoder = new TextEncoder()
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = aiRes.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ""
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              buffer += decoder.decode(value, { stream: true })
+              const lines = buffer.split("\n")
+              buffer = lines.pop() || ""
+              for (const line of lines) {
+                const clean = line.trim()
+                if (!clean.startsWith("data:")) continue
+                const data = clean.replace("data:", "").trim()
+                if (data === "[DONE]") break
+                try {
+                  const json = JSON.parse(data)
+                  const text = json.choices?.[0]?.delta?.content || ""
+                  if (text) controller.enqueue(encoder.encode(text))
+                } catch {}
+              }
+            }
+          } catch {}
+          controller.close()
+        }
+      })
+      return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8" } })
     }
 
-    if (!reply) return NextResponse.json({ reply: "Eva jam small Boss, try again. (" + lastError + ")" })
-    return NextResponse.json({ reply: reply.trim() })
+    // Try Groq first - STREAMING
+    const groqKey = process.env.GROQ_API_KEY
+    if (groqKey) {
+      const groqStream = await streamFromAI("https://api.groq.com/openai/v1/chat/completions", groqKey, "openai/gpt-oss-20b")
+      if (groqStream) return groqStream
+    }
+
+    // Fallback Cerebras - STREAMING
+    const cereKey = process.env.CEREBRAS_API_KEY
+    if (cereKey) {
+      const cereStream = await streamFromAI("https://api.cerebras.ai/v1/chat/completions", cereKey, "llama-3.3-70b")
+      if (cereStream) return cereStream
+    }
+
+    return NextResponse.json({ reply: "Eva jam small Boss, try again." })
   } catch (err) {
     return NextResponse.json({ reply: "Eva jam small Boss, make we try again." }, { status: 200 })
   }
