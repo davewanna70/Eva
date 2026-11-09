@@ -63,6 +63,26 @@ export default function EVA() {
   const didInitialScroll = useRef(false);
   const smoothAnimRef = useRef(null);
   const lastUserMsgRef = useRef(null);
+  const outerRef = useRef(null);
+
+  // STABLE LAYOUT: Lock outer height to visualViewport, so keyboard no shake whole page
+  useEffect(() => {
+    if (!window.visualViewport) return;
+    const setH = () => {
+      if (outerRef.current) {
+        outerRef.current.style.height = window.visualViewport.height + "px";
+        outerRef.current.style.minHeight = window.visualViewport.height + "px";
+        outerRef.current.style.maxHeight = window.visualViewport.height + "px";
+      }
+    };
+    setH();
+    window.visualViewport.addEventListener("resize", setH);
+    window.visualViewport.addEventListener("scroll", setH);
+    return () => {
+      window.visualViewport.removeEventListener("resize", setH);
+      window.visualViewport.removeEventListener("scroll", setH);
+    };
+  }, []);
 
   useEffect(() => {
     const n = localStorage.getItem("eva_dave_name");
@@ -103,7 +123,7 @@ export default function EVA() {
     return () => { clearTimeout(t1); };
   }, [messages.length]);
 
-  // WHATSAPP SMOOTH: Animate scroll by diff only, like keyboard animation. NO scroll to bottom.
+  // WHATSAPP SMOOTH: Animate by diff only, NO scroll to bottom
   const smoothScrollBy = (diff) => {
     if (!scrollRef.current || !diff) return;
     if (smoothAnimRef.current) cancelAnimationFrame(smoothAnimRef.current);
@@ -121,8 +141,7 @@ export default function EVA() {
     smoothAnimRef.current = requestAnimationFrame(tick);
   };
 
-  // WHATSAPP KEYBOARD CLOSE: Reveal by EXACT keyboard height, NOT scroll to bottom.
-  // Your question + 3 lines stay, we just uncover wetin keyboard hide below.
+  // WHATSAPP KEYBOARD CLOSE: Reveal by EXACT keyboard height, NOT scroll to bottom
   useEffect(() => {
     if (!window.visualViewport) return;
     let lastH = window.visualViewport.height;
@@ -172,17 +191,13 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // WHATSAPP SEND: Show question + 3 lines, once. Anchor to question, not to bottom.
   const scrollToQuestionWith3Lines = () => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (!scrollRef.current || !lastUserMsgRef.current) return;
         const c = scrollRef.current;
         const q = lastUserMsgRef.current;
-        // Put question near top of visible area, with room for 3 lines of EVA answer below it
-        // This is the anchor - after this, we NEVER scroll again while EVA dey type
         const target = q.offsetTop - 10;
-        // Clamp so we no jump to bottom
         c.scrollTop = Math.max(0, Math.min(target, c.scrollHeight - c.clientHeight));
       });
     });
@@ -237,7 +252,6 @@ export default function EVA() {
       });
     });
 
-    // ONE scroll only, to anchor question + 3 lines. After this, NO scroll while typing.
     scrollToQuestionWith3Lines();
 
     const typeOut = (fullText) => {
@@ -254,7 +268,6 @@ export default function EVA() {
             try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {}
             return copy;
           });
-          // NO followIfAtBottom here - answer dey go DOWN, question dey stay. WhatsApp style.
           if (i >= cleaned.length) {
             clearInterval(interval);
             setMessages((prev) => {
@@ -293,7 +306,6 @@ export default function EVA() {
               try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {}
               return copy;
             });
-            // NO follow here too - let am grow DOWN
           }
         }, 18);
         while (true) {
@@ -323,27 +335,33 @@ export default function EVA() {
   };
 
   return (
-    <div style={{ height: "100dvh", minHeight: "100dvh", maxHeight: "100dvh", background: "#030014", color: "white", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "sans-serif", position: "fixed", inset: 0 }}>
-      <img src="/eva-bg.jpg" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }} />
-      <div style={{ position: "relative", display: "flex", padding: "16px 18px", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="/IMG-20261104-WA3311.jpg" style={{ width: 38, height: 38, borderRadius: 999, objectFit: "cover", border: "2px solid #a78bfa" }} />
-          <b style={{ fontSize: 20, letterSpacing: 2 }}>EVA</b>
-        </div>
-        <div style={{ position: "relative" }}>
-          <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => setShowMenu(!showMenu)} style={{ width: 42, height: 42, borderRadius: 999, background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", fontSize: 22 }}>⋮</button>
-          {showMenu && (
-            <div style={{ position: "absolute", top: 50, right: 0, width: 170, background: "rgba(0,0,0,0.85)", borderRadius: 14, overflow: "hidden", zIndex: 50 }}>
-              <button onClick={clearChat} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "#ff8080", padding: "13px 16px", fontSize: 14 }}>🗑️ Clear Chat</button>
-              <button onClick={() => setShowMenu(false)} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "white", padding: "13px 16px", fontSize: 14 }}>✖️ Close</button>
-            </div>
-          )}
+    <div ref={outerRef} style={{ height: "100dvh", minHeight: "100dvh", maxHeight: "100dvh", background: "#030014", color: "white", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "sans-serif", position: "fixed", inset: 0, top: 0, left: 0, right: 0, bottom: 0, overscrollBehavior: "none" }}>
+      {/* Background fixed - e no go move when keyboard open */}
+      <img src="/eva-bg.jpg" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", zIndex: 0 }} />
+
+      {/* HEADER - PINNED LIKE WHATSAPP, NEVER SCROLL, NEVER CUT */}
+      <div style={{ position: "relative", zIndex: 30, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", paddingTop: "env(safe-area-inset-top)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <div style={{ display: "flex", padding: "12px 18px 12px", alignItems: "center", justifyContent: "space-between", minHeight: 56, boxSizing: "border-box" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <img src="/IMG-20261104-WA3311.jpg" style={{ width: 38, height: 38, borderRadius: 999, objectFit: "cover", border: "2px solid #a78bfa", flexShrink: 0 }} />
+            <b style={{ fontSize: 20, letterSpacing: 2, lineHeight: 1 }}>EVA</b>
+          </div>
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => setShowMenu(!showMenu)} style={{ width: 42, height: 42, borderRadius: 999, background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", fontSize: 22, lineHeight: 1 }}>⋮</button>
+            {showMenu && (
+              <div style={{ position: "absolute", top: 50, right: 0, width: 170, background: "rgba(0,0,0,0.95)", borderRadius: 14, overflow: "hidden", zIndex: 50, boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
+                <button onClick={clearChat} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "#ff8080", padding: "13px 16px", fontSize: 14 }}>🗑️ Clear Chat</button>
+                <button onClick={() => setShowMenu(false)} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "white", padding: "13px 16px", fontSize: 14 }}>✖️ Close</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* CHAT - ONLY THIS ONE DEY SCROLL */}
       <div
         ref={scrollRef}
-        style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "0 20px 10px", scrollBehavior: "auto" }}
+        style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "auto" }}
         onClick={hideKeyboardToRead}
       >
         {messages.length === 0 && (
@@ -373,7 +391,7 @@ export default function EVA() {
       </div>
 
       {showEmoji && (
-        <div style={{ position: "relative", background: "rgba(0,0,0,0.95)", borderTop: "1px solid rgba(255,255,255,0.2)", padding: "10px 10px 6px", flexShrink: 0, zIndex: 20 }}>
+        <div style={{ position: "relative", zIndex: 25, background: "rgba(0,0,0,0.95)", borderTop: "1px solid rgba(255,255,255,0.2)", padding: "10px 10px 6px", flexShrink: 0 }}>
           <input
             value={emojiSearch}
             onChange={(e) => setEmojiSearch(e.target.value)}
@@ -412,7 +430,8 @@ export default function EVA() {
         </div>
       )}
 
-      <div style={{ position: "relative", padding: "12px 16px 18px", flexShrink: 0 }}>
+      {/* INPUT BAR - PINNED LIKE WHATSAPP, NEVER SCROLL */}
+      <div style={{ position: "relative", zIndex: 30, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", padding: "12px 16px 12px", paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
         <div style={{ display: "flex", gap: 6, maxWidth: 520, margin: "0 auto", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", padding: 8, borderRadius: 999, alignItems: "center" }}>
           <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => setShowEmoji(!showEmoji)} style={{ background: "transparent", border: "none", fontSize: 24, padding: "2px 4px", flexShrink: 0 }}>😊</button>
           <textarea
@@ -443,4 +462,4 @@ export default function EVA() {
       </div>
     </div>
   );
-      }
+}
