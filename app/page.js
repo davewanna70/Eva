@@ -47,13 +47,13 @@ export default function EVA() {
   const scrollRef = useRef(null); const bottomRef = useRef(null); const textareaRef = useRef(null);
   const lastUserMsgRef = useRef(null);
   const keyboardOpenRef = useRef(false);
+  const didInitialScroll = useRef(false);
 
-  // FIX 1 + 2: Load from localStorage ONLY. Supabase must NEVER overwrite.
   useEffect(()=>{
     const n = localStorage.getItem("eva_dave_name"); if(n) setMyName(n);
     const p = localStorage.getItem("eva_dave_prefs"); if(p) try{ setPrefs(JSON.parse(p)); }catch(e){}
     const local = (()=>{ try{ return JSON.parse(localStorage.getItem("eva_messages_cache") || "[]"); }catch(e){ return []; } })();
-    if (local.length > 0) return; // Local na truth. Kill Ronaldo comeback + new messages disappearing.
+    if (local.length > 0) return;
     const load = async () => {
       const { data } = await supabase.from("messages").select("*").eq("chat_id", CHAT_ID).order("created_at", {ascending:true}).limit(80);
       if(data && data.length){ 
@@ -64,9 +64,21 @@ export default function EVA() {
     }; load();
   },[]);
 
-  // ===== CORRECTED WHATSAPP RULE: Keyboard OFF = Shift down by keyboard height ONLY, NOT to bottom =====
-  // When keyboard close, viewport grow by diff (e.g. +300px). We scroll down by that diff only.
-  // That reveals exactly wetin keyboard bin cover. If answer long, tail still dey down, you scroll by hand.
+  // On OPEN only, scroll to BOTTOM once - like WhatsApp
+  useEffect(()=>{
+    if (didInitialScroll.current) return;
+    if (messages.length === 0) return;
+    const t1 = setTimeout(()=>{
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      didInitialScroll.current = true;
+    }, 100);
+    const t2 = setTimeout(()=>{
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }, 400);
+    return ()=>{ clearTimeout(t1); clearTimeout(t2); };
+  },[messages.length]);
+
+  // WHATSAPP RULE: Keyboard OFF = Shift down by keyboard height ONLY, NOT to bottom
   useEffect(()=>{
     if (!window.visualViewport) return;
     let lastH = window.visualViewport.height;
@@ -74,13 +86,9 @@ export default function EVA() {
       const newH = window.visualViewport.height;
       const diff = newH - lastH;
       if (diff > 100) {
-        // Keyboard closed
         keyboardOpenRef.current = false;
         setTimeout(()=>{
-          if (scrollRef.current) {
-            // CORRECTED: scroll by diff only, NOT to scrollHeight
-            scrollRef.current.scrollTop += diff;
-          }
+          if (scrollRef.current) scrollRef.current.scrollTop += diff;
         }, 120);
       } else if (diff < -100) {
         keyboardOpenRef.current = true;
@@ -96,6 +104,7 @@ export default function EVA() {
     if(!window.confirm("Clear all chats?")) return;
     setMessages([]); setMyName(""); setPrefs({}); localStorage.removeItem("eva_dave_name"); localStorage.removeItem("eva_dave_prefs"); localStorage.removeItem("eva_messages_cache");
     try{ await supabase.from("messages").delete().eq("chat_id", CHAT_ID); }catch(e){} setShowMenu(false);
+    didInitialScroll.current = true;
     setTimeout(()=>{ if(scrollRef.current) scrollRef.current.scrollTop = 0; }, 50);
   };
 
@@ -110,14 +119,16 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // WHATSAPP: Keyboard ON = Question + 3 lines of answer
+  // ===== FIXED: Show 3 FULL lines, not 2.5 =====
+  // Before: qTop - 90 (question too low, 3rd line cut by input bar)
+  // Now: qTop - 135 (question go up 45px = 1 full line + breathing space, so 3rd line go show fully)
   const scrollToQuestionWith3Lines = () => {
     setTimeout(()=>{
       if (lastUserMsgRef.current && scrollRef.current) {
         const qEl = lastUserMsgRef.current;
         const container = scrollRef.current;
         const qTop = qEl.offsetTop;
-        container.scrollTop = Math.max(0, qTop - 90);
+        container.scrollTop = Math.max(0, qTop - 135);
       }
     }, 60);
   };
@@ -136,10 +147,7 @@ export default function EVA() {
 
     setMessages(prev=>{ const next=[...prev,{from:"you",text:userText}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     await saveToSupabase("you", userText);
-
-    // Keyboard ON - show question + 3 lines, then LOCK. No auto-scroll while typing.
     scrollToQuestionWith3Lines();
-
     setIsThinking(true);
     setMessages(prev=>[...prev,{from:"eva",text:"▍"}]);
 
@@ -157,7 +165,6 @@ export default function EVA() {
             try{ localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); }catch(e){}
             return copy;
           });
-          // NO SCROLL HERE
           if(i >= cleaned.length){
             clearInterval(interval);
             setMessages(prev => {
@@ -214,15 +221,11 @@ export default function EVA() {
     textareaRef.current?.focus();
   };
 
-  // ===== CORRECTED: Tap messages to hide keyboard = Shift down by ~280px ONLY, NOT to bottom =====
   const hideKeyboardToRead = () => {
     setShowMenu(false);
     if (document.activeElement) document.activeElement.blur();
     setTimeout(()=>{
-      if (scrollRef.current) {
-        // Reveal wetin keyboard bin cover. If answer long, you still go scroll by hand for remaining.
-        scrollRef.current.scrollTop += 280;
-      }
+      if (scrollRef.current) scrollRef.current.scrollTop += 280;
     }, 250);
   };
 
@@ -294,4 +297,4 @@ export default function EVA() {
       </div>
     </div>
   );
-      }
+          }
