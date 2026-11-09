@@ -51,7 +51,6 @@ export default function EVA() {
     if (h > 400) setAppHeight(h + "px");
   }, []);
 
-  // FIX BLACK: Only listen to REAL keyboard, no fake 280px jump, no whole-screen transform
   useEffect(() => {
     if (!window.visualViewport) return;
     let raf = 0;
@@ -99,6 +98,7 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
+  // ===== STREAMING askEVA - Types like Meta AI, word by word =====
   const askEVA = async () => {
     if(!text.trim() || isThinking) return;
     const userText = text.trim(); setText(""); setShowEmoji(false); setEmojiSearch("");
@@ -107,19 +107,56 @@ export default function EVA() {
     if(lower.includes("my best food is")){ const v = userText.split(/my best food is/i)[1].trim(); const np = {...prefs, food:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
     if(lower.includes("i want to buy")){ const v = userText.split(/i want to buy/i)[1].trim(); const np = {...prefs, want_to_buy:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
     setMessages(prev=>{ const next=[...prev,{from:"you",text:userText}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
-    await saveToSupabase("you", userText); setIsThinking(true); setMessages(prev=>[...prev,{from:"eva",text:"EVA is thinking..."}]);
+    await saveToSupabase("you", userText);
+
+    setIsThinking(true);
+    // Start empty bubble with typing cursor - like Meta AI
+    setMessages(prev=>[...prev,{from:"eva",text:"▍"}]);
+
     try{
       const history=[...messages,{from:"you",text:userText}].slice(-10).map(m=>({role:m.from==="you"?"user":"assistant", content:m.text}));
       const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:userText,history,userProfile:{name:myName,prefs,bestFood:prefs.food,wantToBuy:prefs.want_to_buy}})});
-      const data=await res.json(); const reply=data.reply||"I dey here Boss, try again.";
-      setMessages(prev=>{ const w=prev.slice(0,-1); const next=[...w,{from:"eva",text:reply}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
-      await saveToSupabase("eva", reply);
-    }catch(e){ setMessages(prev=>{ const w=prev.slice(0,-1); const next=[...w,{from:"eva",text:"Network jam small Boss, try again."}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; }); }
+      const contentType = res.headers.get("content-type") || "";
+
+      // Fallback: if backend still send JSON (old route)
+      if(contentType.includes("application/json")){
+        const data=await res.json(); const reply=data.reply||"I dey here Boss, try again.";
+        setMessages(prev=>{ const w=prev.slice(0,-1); const next=[...w,{from:"eva",text:reply}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
+        await saveToSupabase("eva", reply);
+      } else {
+        // STREAMING: Read small-small as e dey come
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let fullReply = "";
+        while(true){
+          const {done, value} = await reader.read();
+          if(done) break;
+          const chunk = decoder.decode(value, {stream:true});
+          fullReply += chunk;
+          const display = fullReply + "▍";
+          setMessages(prev=>{
+            const copy=[...prev];
+            copy[copy.length-1]={from:"eva",text:display};
+            return copy;
+          });
+          if(bottomRef.current) bottomRef.current.scrollIntoView({behavior:"auto", block:"end"});
+        }
+        // Remove cursor when done
+        setMessages(prev=>{
+          const copy=[...prev];
+          copy[copy.length-1]={from:"eva",text:fullReply || "I dey here Boss, try again."};
+          try{ localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); }catch(e){}
+          return copy;
+        });
+        await saveToSupabase("eva", fullReply);
+      }
+    }catch(e){
+      setMessages(prev=>{ const w=prev.slice(0,-1); const next=[...w,{from:"eva",text:"Network jam small Boss, try again."}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
+    }
     setIsThinking(false);
   };
 
   return (
-    // NO translateY here again - this was the black screen cause. Container stays fixed.
     <div style={{height:appHeight, minHeight:appHeight, maxHeight:appHeight, background:"#030014", color:"white", display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"sans-serif", position:"fixed", inset:0}}>
       <img src="/eva-bg.jpg" style={{position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", pointerEvents:"none"}} />
       <div style={{position:"relative", display:"flex", padding:"16px 18px", alignItems:"center", justifyContent:"space-between", flexShrink:0}}>
@@ -132,7 +169,6 @@ export default function EVA() {
           </div>)}
         </div>
       </div>
-      {/* Messages area shrinks by keyboard height - background still covers all, no black */}
       <div ref={scrollRef} style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", padding:"0 20px 10px", paddingBottom: keyboardOffset ? 10 : 10, scrollBehavior:"auto"}} onClick={()=>{setShowMenu(false); setShowEmoji(false);}}>
         {messages.length===0 && (<div style={{background:"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:14, borderRadius:16, maxWidth:420, margin:"0 auto", textAlign:"center"}}>Hello, I am EVA. Ask me anything.</div>)}
         {messages.map((m,i)=>(<div key={i} style={{alignSelf:m.from==="you"?"flex-end":"flex-start", background:m.from==="you"?"#8b5cf6":"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:"10px 14px", borderRadius:16, maxWidth:"85%", fontSize:14, lineHeight:1.5, whiteSpace:"pre-line"}}>{m.text}</div>))}
@@ -156,7 +192,6 @@ export default function EVA() {
         </div>
       )}
 
-      {/* Input: only this moves up, with bottom padding = keyboard height. No black gap because container no move. */}
       <div style={{position:"relative", padding:"12px 16px 18px", paddingBottom: keyboardOffset ? 12 : 18, flexShrink:0, transform: keyboardOffset ? `translateY(0px)` : "none"}}>
         <div style={{display:"flex", gap:6, maxWidth:520, margin:"0 auto", background:"rgba(255,255,255,0.14)", border:"1px solid rgba(255,255,255,0.30)", padding:8, borderRadius:999, alignItems:"center"}}>
           <button onClick={()=>setShowEmoji(!showEmoji)} style={{background:"transparent", border:"none", fontSize:24, padding:"2px 4px", flexShrink:0}}>😊</button>
@@ -164,8 +199,7 @@ export default function EVA() {
           <button onClick={askEVA} style={{background:"#8b5cf6", border:"none", color:"white", padding:"10px 18px", borderRadius:999, fontWeight:"bold", flexShrink:0}}>Ask →</button>
         </div>
       </div>
-      {/* Spacer that holds keyboard space - this prevents black, keyboard covers this area */}
       {keyboardOffset > 0 && <div style={{height: keyboardOffset, flexShrink:0, background:"transparent"}} />}
     </div>
   );
-                                    }
+      }
