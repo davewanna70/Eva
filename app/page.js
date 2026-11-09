@@ -51,10 +51,7 @@ export default function EVA() {
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
-  const lastUserMsgRef = useRef(null);
   const didInitialScroll = useRef(false);
-  const isTypingRef = useRef(false);
-  const hasScrolledForThisSend = useRef(false);
 
   useEffect(() => {
     const n = localStorage.getItem("eva_dave_name");
@@ -89,13 +86,11 @@ export default function EVA() {
     if (didInitialScroll.current) return;
     if (messages.length === 0) return;
     const t1 = setTimeout(() => {
-      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      if (bottomRef.current) bottomRef.current.scrollIntoView({ block: "end" });
       didInitialScroll.current = true;
     }, 100);
     return () => { clearTimeout(t1); };
   }, [messages.length]);
-
-  // NO visualViewport scroll at all - that was causing jump on keyboard open/close
 
   const saveToSupabase = async (sender, msgText) => {
     try { await supabase.from("messages").insert([{ chat_id: CHAT_ID, sender, text: msgText }]); } catch (e) {}
@@ -112,7 +107,6 @@ export default function EVA() {
     try { await supabase.from("messages").delete().eq("chat_id", CHAT_ID); } catch (e) {}
     setShowMenu(false);
     didInitialScroll.current = true;
-    setTimeout(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; }, 50);
   };
 
   const addEmoji = (emoji) => {
@@ -127,31 +121,6 @@ export default function EVA() {
       return all.filter((item) => item.k.includes(q));
     }
     return EMOJI_CATS[emojiTab] || [];
-  };
-
-  // FIX 1: Scroll ONCE, in same frame as message appears, never 600ms later
-  // hasScrolledForThisSend makes sure e no run second time and cause jump
-  const scrollOnceForSend = () => {
-    if (hasScrolledForThisSend.current) return;
-    hasScrolledForThisSend.current = true;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!lastUserMsgRef.current || !scrollRef.current) return;
-        const container = scrollRef.current;
-        const qEl = lastUserMsgRef.current;
-        const qTop = qEl.offsetTop;
-        const qHeight = qEl.offsetHeight;
-        let visibleChatHeight = container.clientHeight;
-        if (window.visualViewport) {
-          const vvH = window.visualViewport.height;
-          visibleChatHeight = Math.max(200, vvH - 172);
-        }
-        const LINE_H = 22;
-        const wantBottom = qTop + qHeight + 10 + (3 * LINE_H) + 38;
-        const target = wantBottom - visibleChatHeight + 8;
-        container.scrollTop = Math.max(0, target);
-      });
-    });
   };
 
   const askEVA = async () => {
@@ -183,9 +152,6 @@ export default function EVA() {
       localStorage.setItem("eva_dave_prefs", JSON.stringify(np));
     }
 
-    // Reset flag for this new send, then add message
-    hasScrolledForThisSend.current = false;
-    isTypingRef.current = false;
     setMessages((prev) => {
       const next = [...prev, { from: "you", text: userText }];
       try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
@@ -193,13 +159,14 @@ export default function EVA() {
     });
     await saveToSupabase("you", userText);
 
-    // Scroll NOW in same frame - no 600ms wait, no disappear, no jump
-    scrollOnceForSend();
+    // ONLY scroll here, once, native. No maths, no second scroll.
+    setTimeout(() => {
+      if (bottomRef.current) bottomRef.current.scrollIntoView({ block: "end" });
+    }, 50);
 
     setIsThinking(true);
-    isTypingRef.current = true;
     setMessages((prev) => [...prev, { from: "eva", text: "▍" }]);
-    // NO second scroll here - that second scroll na the jump for video
+    // NO scroll while EVA dey type. You scroll by hand like WhatsApp.
 
     const typeOut = (fullText) => {
       const cleaned = cleanText(fullText);
@@ -273,21 +240,13 @@ export default function EVA() {
       });
     }
     setIsThinking(false);
-    isTypingRef.current = false;
     if (textareaRef.current) textareaRef.current.focus();
   };
 
-  // FIX 2: When you tap chat to close keyboard, REVEAL wetin keyboard hide
-  // We no use visualViewport diff again. We scroll to bottom of last EVA answer after keyboard don close.
+  // Just blur keyboard. No scroll maths. Browser go show the rest naturally.
   const hideKeyboardToRead = () => {
     setShowMenu(false);
     if (document.activeElement) document.activeElement.blur();
-    setTimeout(() => {
-      if (isTypingRef.current) return;
-      if (!scrollRef.current) return;
-      const c = scrollRef.current;
-      c.scrollTop = c.scrollHeight - c.clientHeight;
-    }, 350);
   };
 
   return (
@@ -314,22 +273,21 @@ export default function EVA() {
         style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "0 20px 10px" }}
         onClick={hideKeyboardToRead}
       >
+        <div style={{ flex: 1 }} />
         {messages.length === 0 && (
           <div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, maxWidth: 420, margin: "0 auto", textAlign: "center" }}>Hello, I am EVA. Ask me anything.</div>
         )}
         {messages.map((m, i) => {
-          const isLastUser = m.from === "you" && messages.slice(i + 1).every((x) => x.from !== "you");
           return (
             <div
               key={i}
-              ref={isLastUser ? lastUserMsgRef : null}
               style={{ alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 14px", borderRadius: 16, maxWidth: "85%", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}
             >
               {cleanText(m.text)}
             </div>
           );
         })}
-        <div ref={bottomRef} style={{ height: 90, flexShrink: 0 }} />
+        <div ref={bottomRef} style={{ height: 10, flexShrink: 0 }} />
       </div>
 
       {showEmoji && (
@@ -403,4 +361,4 @@ export default function EVA() {
       </div>
     </div>
   );
-    }
+                        }
