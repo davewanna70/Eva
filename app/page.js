@@ -41,16 +41,24 @@ const fmtTime = (ts) => {
   return `${h}:${m} ${ap}`;
 };
 
-// ONLY EMOJI GO BIG - messages stay 18px
+// MESSAGE 16px like WhatsApp, ONLY EMOJI GO BIG
 const getEmojiSize = (t) => {
   const cleaned = (t || "").replace("▍", "").trim().replace(/\s/g, "");
-  if (!cleaned) return 18;
+  if (!cleaned) return 16;
   const chars = Array.from(cleaned);
   const isOnlyEmoji = chars.every((c) => /\p{Extended_Pictographic}/u.test(c));
-  if (!isOnlyEmoji) return 18; // message + emoji mix = normal 18px
+  if (!isOnlyEmoji) return 16; // message + emoji mix = normal 16px
   if (chars.length === 1) return 50; // 1 emoji
   if (chars.length === 2) return 45; // 2 emoji
   return 40; // 3 emoji and rest = 40px
+};
+
+// WHATSAPP NAKED: true if message na only emoji, no text
+const isOnlyEmojiMsg = (t) => {
+  const cleaned = (t || "").replace("▍", "").trim().replace(/\s/g, "");
+  if (!cleaned) return false;
+  const chars = Array.from(cleaned);
+  return chars.length > 0 && chars.every((c) => /\p{Extended_Pictographic}/u.test(c));
 };
 
 export default function EVA() {
@@ -69,6 +77,7 @@ export default function EVA() {
   const [isThinking, setIsThinking] = useState(false);
   const [myName, setMyName] = useState("");
   const [prefs, setPrefs] = useState({});
+  const [replayMap, setReplayMap] = useState({}); // tap naked emoji to react again
 
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
@@ -422,6 +431,16 @@ export default function EVA() {
 
   return (
     <div ref={outerRef} style={{ height: "100dvh", minHeight: "100dvh", maxHeight: "100dvh", background: "#030014", color: "white", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "sans-serif", position: "fixed", inset: 0, top: 0, left: 0, right: 0, bottom: 0, overscrollBehavior: "none" }}>
+      <style>{`
+        @keyframes evaEmojiReact {
+          0% { transform: scale(0.5) rotate(-8deg); }
+          30% { transform: scale(1.25) rotate(6deg); }
+          50% { transform: scale(1.1) rotate(-5deg); }
+          70% { transform: scale(1.15) rotate(3deg); }
+          100% { transform: scale(1) rotate(0deg); }
+        }
+        .eva-emoji-react { animation: evaEmojiReact 0.7s ease-out 1; transform-origin: center; will-change: transform; }
+      `}</style>
       <img src="/eva-bg.jpg" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", zIndex: 0 }} />
 
       <div style={{ position: "relative", zIndex: 30, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", paddingTop: "env(safe-area-inset-top)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
@@ -452,14 +471,47 @@ export default function EVA() {
         )}
         {messages.map((m, i) => {
           const isLastUser = m.from === "you" && messages.slice(i + 1).every((x) => x.from !== "you");
+          const naked = isOnlyEmojiMsg(m.text); // single + multiple emoji = naked, no square
           return (
             <div
               key={i}
               ref={isLastUser ? lastUserMsgRef : null}
-              style={{ alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 14px 6px", borderRadius: 16, maxWidth: "85%", fontSize: 18, lineHeight: 1.5, whiteSpace: "pre-line" }}
+              style={naked ? {
+                alignSelf: m.from === "you" ? "flex-end" : "flex-start",
+                background: "transparent",
+                border: "none",
+                padding: "2px 2px 2px",
+                borderRadius: 0,
+                maxWidth: "85%",
+                fontSize: 16,
+                lineHeight: 1.2,
+                whiteSpace: "pre-line",
+                boxShadow: "none"
+              } : {
+                alignSelf: m.from === "you" ? "flex-end" : "flex-start",
+                background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)",
+                border: "1px solid rgba(255,255,255,0.25)",
+                padding: "10px 14px 6px",
+                borderRadius: 16,
+                maxWidth: "85%",
+                fontSize: 16,
+                lineHeight: 1.5,
+                whiteSpace: "pre-line"
+              }}
             >
-              <div style={{ fontSize: getEmojiSize(m.text), lineHeight: getEmojiSize(m.text) > 18 ? 1.3 : 1.5 }}>{cleanText(m.text)}</div>
-              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: 4, fontSize: 10, opacity: 0.75 }}>
+              {naked ? (
+                <div
+                  key={replayMap[i] || `emoji-${m.time}-${i}`}
+                  className="eva-emoji-react"
+                  onClick={(e) => { e.stopPropagation(); setReplayMap((prev) => ({ ...prev, [i]: Date.now() })); }}
+                  style={{ fontSize: getEmojiSize(m.text), lineHeight: 1.3, textShadow: "0 2px 8px rgba(0,0,0,0.6)", display: "inline-block", cursor: "pointer" }}
+                >
+                  {cleanText(m.text)}
+                </div>
+              ) : (
+                <div style={{ fontSize: 16, lineHeight: 1.5 }}>{cleanText(m.text)}</div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: naked ? 0 : 4, fontSize: 10, opacity: naked ? 0.85 : 0.75, textShadow: naked ? "0 1px 3px rgba(0,0,0,0.9)" : "none" }}>
                 <span>{fmtTime(m.time)}</span>
                 {m.from === "you" && (
                   <span style={{ fontSize: 12, letterSpacing: -2 }}>
@@ -555,4 +607,4 @@ export default function EVA() {
       </div>
     </div>
   );
-    }
+          }
