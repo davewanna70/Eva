@@ -41,40 +41,51 @@ export default function EVA() {
   const [isThinking, setIsThinking] = useState(false);
   const [myName, setMyName] = useState("");
   const [prefs, setPrefs] = useState({});
-  // WHATSAPP FIX: Lock height once, no resize when keyboard opens
   const [appHeight, setAppHeight] = useState("100dvh");
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [isKeyboardOpening, setIsKeyboardOpening] = useState(false);
 
   const scrollRef = useRef(null); const bottomRef = useRef(null); const textareaRef = useRef(null);
 
-  // LOCK HEIGHT - This is the main fix
+  // SPEED FIX 1: Lock height once
   useEffect(() => {
-    const lockHeight = () => {
-      // Take height when keyboard is CLOSED, lock am
-      const h = window.innerHeight;
-      // Only update if keyboard is closed (height is big) - so keyboard no go shrink am
-      if (h > 400) {
-        setAppHeight(h + "px");
-      }
-    };
-    lockHeight();
-    // Listen for visualViewport - this is how native apps detect keyboard without resizing
-    if (window.visualViewport) {
-      const onResize = () => {
-        const vv = window.visualViewport;
-        // If viewport shrink small, na keyboard open - no resize EVA, just push input up
-        if (vv.height < window.innerHeight * 0.75) {
-          setKeyboardOpen(true);
-        } else {
-          setKeyboardOpen(false);
-        }
-      };
-      window.visualViewport.addEventListener("resize", onResize);
-      return () => window.visualViewport.removeEventListener("resize", onResize);
-    }
-    window.addEventListener("resize", lockHeight);
-    return () => window.removeEventListener("resize", lockHeight);
+    const h = window.innerHeight;
+    if (h > 400) setAppHeight(h + "px");
   }, []);
+
+  // SPEED FIX 2: Follow keyboard with requestAnimationFrame - no delay, no smooth animation
+  useEffect(() => {
+    if (!window.visualViewport) return;
+    let raf = 0;
+    const onResize = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const vv = window.visualViewport;
+        const offset = window.innerHeight - vv.height - vv.offsetTop;
+        // offset > 0 = keyboard open. Move EVA instantly, no transition
+        setKeyboardOffset(offset > 30 ? offset : 0);
+      });
+    };
+    window.visualViewport.addEventListener("resize", onResize);
+    window.visualViewport.addEventListener("scroll", onResize);
+    return () => {
+      window.visualViewport.removeEventListener("resize", onResize);
+      window.visualViewport.removeEventListener("scroll", onResize);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  // SPEED FIX 3: Pre-jump - the moment finger touches input, jump up BEFORE keyboard comes
+  const handleTouchStart = () => {
+    // Guess keyboard height ~ 280px, jump immediately
+    // When real keyboard comes, visualViewport go correct am to exact height
+    if (keyboardOffset === 0) {
+      setIsKeyboardOpening(true);
+      setKeyboardOffset(280);
+      // If keyboard no come in 800ms (user no actually open), go back
+      setTimeout(() => setIsKeyboardOpening(false), 800);
+    }
+  };
 
   useEffect(()=>{ if(bottomRef.current) bottomRef.current.scrollIntoView({behavior:"auto", block:"end"}); },[messages, isThinking]);
   useEffect(()=>{
@@ -123,9 +134,8 @@ export default function EVA() {
   };
 
   return (
-    <div style={{height:appHeight, minHeight:appHeight, maxHeight:appHeight, background:"#030014", color:"white", display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"sans-serif", position:"fixed", inset:0}}>
-      {/* Background - FIXED size, no resize, no shake */}
-      <img src="/eva-bg.jpg" style={{position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", pointerEvents:"none", transform:"translateZ(0)", willChange:"transform"}} />
+    <div style={{height:appHeight, minHeight:appHeight, maxHeight:appHeight, background:"#030014", color:"white", display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"sans-serif", position:"fixed", inset:0, transform:`translateY(${-keyboardOffset}px)`, transition:"none", willChange:"transform"}}>
+      <img src="/eva-bg.jpg" style={{position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", pointerEvents:"none"}} />
       <div style={{position:"relative", display:"flex", padding:"16px 18px", alignItems:"center", justifyContent:"space-between", flexShrink:0}}>
         <div style={{display:"flex", alignItems:"center", gap:10}}><img src="/IMG-20261104-WA3311.jpg" style={{width:38, height:38, borderRadius:999, objectFit:"cover", border:"2px solid #a78bfa"}} /><b style={{fontSize:20, letterSpacing:2}}>EVA</b></div>
         <div style={{position:"relative"}}>
@@ -136,7 +146,7 @@ export default function EVA() {
           </div>)}
         </div>
       </div>
-      <div ref={scrollRef} style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", padding:"0 20px 10px"}} onClick={()=>{setShowMenu(false); setShowEmoji(false);}}>
+      <div ref={scrollRef} style={{position:"relative", flex:1, minHeight:0, display:"flex", flexDirection:"column", gap:10, overflowY:"auto", overscrollBehavior:"contain", padding:"0 20px 10px", scrollBehavior:"auto"}} onClick={()=>{setShowMenu(false); setShowEmoji(false);}}>
         {messages.length===0 && (<div style={{background:"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:14, borderRadius:16, maxWidth:420, margin:"0 auto", textAlign:"center"}}>Hello, I am EVA. Ask me anything.</div>)}
         {messages.map((m,i)=>(<div key={i} style={{alignSelf:m.from==="you"?"flex-end":"flex-start", background:m.from==="you"?"#8b5cf6":"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:"10px 14px", borderRadius:16, maxWidth:"85%", fontSize:14, lineHeight:1.5, whiteSpace:"pre-line"}}>{m.text}</div>))}
         <div ref={bottomRef} style={{height:1, flexShrink:0}} />
@@ -159,14 +169,13 @@ export default function EVA() {
         </div>
       )}
 
-      {/* Input bar - stays stable, keyboard just overlays like WhatsApp */}
-      <div style={{position:"relative", padding:"12px 16px 18px", flexShrink:0, transform: keyboardOpen ? "translateZ(0)" : "none"}}>
+      <div style={{position:"relative", padding:"12px 16px 18px", flexShrink:0}}>
         <div style={{display:"flex", gap:6, maxWidth:520, margin:"0 auto", background:"rgba(255,255,255,0.14)", border:"1px solid rgba(255,255,255,0.30)", padding:8, borderRadius:999, alignItems:"center"}}>
           <button onClick={()=>setShowEmoji(!showEmoji)} style={{background:"transparent", border:"none", fontSize:24, padding:"2px 4px", flexShrink:0}}>😊</button>
-          <textarea ref={textareaRef} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); askEVA(); } }} onFocus={()=>setShowEmoji(false)} placeholder="Ask EVA..." rows={1} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" style={{flex:1, background:"transparent", border:"none", outline:"none", color:"white", padding:"10px 6px", fontSize:15, resize:"none", maxHeight:100, fontFamily:"sans-serif"}} />
+          <textarea ref={textareaRef} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); askEVA(); } }} onTouchStart={handleTouchStart} onFocus={handleTouchStart} onBlur={()=>setKeyboardOffset(0)} placeholder="Ask EVA..." rows={1} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" style={{flex:1, background:"transparent", border:"none", outline:"none", color:"white", padding:"10px 6px", fontSize:15, resize:"none", maxHeight:100, fontFamily:"sans-serif"}} />
           <button onClick={askEVA} style={{background:"#8b5cf6", border:"none", color:"white", padding:"10px 18px", borderRadius:999, fontWeight:"bold", flexShrink:0}}>Ask →</button>
         </div>
       </div>
     </div>
   );
-       }
+      }
