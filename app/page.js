@@ -78,7 +78,6 @@ export default function EVA() {
     return ()=>{ clearTimeout(t1); clearTimeout(t2); };
   },[messages.length]);
 
-  // ===== NEAT FIX: Keyboard must NEVER push chat while typing =====
   useEffect(()=>{
     if (!window.visualViewport) return;
     let lastH = window.visualViewport.height;
@@ -113,9 +112,9 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // ===== FINAL FIX FOR 2.5 -> 3 FULL LINES =====
-  // OLD mistake: vvH - 160 and +30 = always short by 25px = half line.
-  // NEW: vvH - 185 (real header + Ask bar + safe-area) and +58 (real bubble padding + safety)
+  // ===== BALANCED: 3 FULL LINES, NO BIG SPACE =====
+  // Before: +58 and spacer 140 = too much empty purple space.
+  // Now: +38 and spacer 20 = 3 lines go show, but no big gap.
   const scrollToQuestionWith3Lines = () => {
     if (isTypingRef.current) return;
     requestAnimationFrame(()=>{
@@ -128,11 +127,11 @@ export default function EVA() {
         let visibleChatHeight = container.clientHeight;
         if (window.visualViewport) {
           const vvH = window.visualViewport.height;
-          visibleChatHeight = Math.max(200, vvH - 185);
+          visibleChatHeight = Math.max(200, vvH - 172);
         }
         const LINE_H = 22;
-        const wantBottom = qTop + qHeight + 10 + (3 * LINE_H) + 58;
-        const target = wantBottom - visibleChatHeight + 14;
+        const wantBottom = qTop + qHeight + 10 + (3 * LINE_H) + 38;
+        const target = wantBottom - visibleChatHeight + 8;
         container.scrollTop = Math.max(0, target);
       });
     });
@@ -148,17 +147,14 @@ export default function EVA() {
     if(lower.includes("my best food is")){ const v = userText.split(/my best food is/i)[1].trim(); const np = {...prefs, food:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
     if(lower.includes("i want to buy")){ const v = userText.split(/i want to buy/i)[1].trim(); const np = {...prefs, want_to_buy:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
 
-    // 1. Add your message FIRST - your message go stay, no disappear
     isTypingRef.current = false;
     setMessages(prev=>{ const next=[...prev,{from:"you",text:userText}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     await saveToSupabase("you", userText);
 
-    // 2. Lock, add EVA placeholder
     setIsThinking(true);
     isTypingRef.current = true;
     setMessages(prev=>[...prev,{from:"eva",text:"▍"}]);
 
-    // 3. NEW: Wait let EVA type 3 lines first, THEN do ONE scroll. Before we dey scroll before EVA type - na why first message dey fail and why e dey show 2.5.
     setTimeout(()=>{
       isTypingRef.current = false;
       scrollToQuestionWith3Lines();
@@ -265,7 +261,7 @@ export default function EVA() {
           const isLastUser = m.from==="you" && messages.slice(i+1).every(x=>x.from!=="you");
           return (<div key={i} ref={isLastUser ? lastUserMsgRef : null} style={{alignSelf:m.from==="you"?"flex-end":"flex-start", background:m.from==="you"?"#8b5cf6":"rgba(0,0,0,0.65)", border:"1px solid rgba(255,255,255,0.25)", padding:"10px 14px", borderRadius:16, maxWidth:"85%", fontSize:14, lineHeight:1.5, whiteSpace:"pre-line"}}>{cleanText(m.text)}</div>);
         })}
-        <div ref={bottomRef} style={{height:140, flexShrink:0}} />
+        <div ref={bottomRef} style={{height:20, flexShrink:0}} />
       </div>
 
       {showEmoji && (
