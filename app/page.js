@@ -41,6 +41,18 @@ const fmtTime = (ts) => {
   return `${h}:${m} ${ap}`;
 };
 
+// ONLY EMOJI GO BIG - messages stay 18px
+const getEmojiSize = (t) => {
+  const cleaned = (t || "").replace("▍", "").trim().replace(/\s/g, "");
+  if (!cleaned) return 18;
+  const chars = Array.from(cleaned);
+  const isOnlyEmoji = chars.every((c) => /\p{Extended_Pictographic}/u.test(c));
+  if (!isOnlyEmoji) return 18; // message + emoji mix = normal 18px
+  if (chars.length === 1) return 50; // 1 emoji
+  if (chars.length === 2) return 45; // 2 emoji
+  return 40; // 3 emoji and rest = 40px
+};
+
 export default function EVA() {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState(() => {
@@ -444,9 +456,9 @@ export default function EVA() {
             <div
               key={i}
               ref={isLastUser ? lastUserMsgRef : null}
-              style={{ alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 14px 6px", borderRadius: 16, maxWidth: "85%", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}
+              style={{ alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: "10px 14px 6px", borderRadius: 16, maxWidth: "85%", fontSize: 18, lineHeight: 1.5, whiteSpace: "pre-line" }}
             >
-              <div>{cleanText(m.text)}</div>
+              <div style={{ fontSize: getEmojiSize(m.text), lineHeight: getEmojiSize(m.text) > 18 ? 1.3 : 1.5 }}>{cleanText(m.text)}</div>
               <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: 4, fontSize: 10, opacity: 0.75 }}>
                 <span>{fmtTime(m.time)}</span>
                 {m.from === "you" && (
@@ -543,4 +555,4 @@ export default function EVA() {
       </div>
     </div>
   );
-      }
+    }
