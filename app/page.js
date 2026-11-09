@@ -98,7 +98,7 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // ===== STREAMING askEVA - Types like Meta AI, word by word =====
+  // ===== STREAMING + TYPEWRITER askEVA - Types like Meta AI =====
   const askEVA = async () => {
     if(!text.trim() || isThinking) return;
     const userText = text.trim(); setText(""); setShowEmoji(false); setEmojiSearch("");
@@ -106,48 +106,74 @@ export default function EVA() {
     if(lower.includes("my name is")){ const nm = userText.split(/my name is/i)[1].trim().split(" ")[0].replace(/[^a-zA-Z]/g,""); if(nm){ const cap = nm.charAt(0).toUpperCase()+nm.slice(1).toLowerCase(); setMyName(cap); localStorage.setItem("eva_dave_name", cap);} }
     if(lower.includes("my best food is")){ const v = userText.split(/my best food is/i)[1].trim(); const np = {...prefs, food:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
     if(lower.includes("i want to buy")){ const v = userText.split(/i want to buy/i)[1].trim(); const np = {...prefs, want_to_buy:v}; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
+
     setMessages(prev=>{ const next=[...prev,{from:"you",text:userText}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
     await saveToSupabase("you", userText);
 
     setIsThinking(true);
-    // Start empty bubble with typing cursor - like Meta AI
     setMessages(prev=>[...prev,{from:"eva",text:"▍"}]);
+
+    const typeOut = (fullText) => {
+      return new Promise((resolve) => {
+        let i = 0;
+        const interval = setInterval(() => {
+          i += 3;
+          const shown = fullText.slice(0, i);
+          const display = shown + "▍";
+          setMessages(prev => {
+            const copy = [...prev];
+            copy[copy.length-1] = {from:"eva", text: display};
+            return copy;
+          });
+          if(bottomRef.current) bottomRef.current.scrollIntoView({behavior:"auto", block:"end"});
+          if(i >= fullText.length){
+            clearInterval(interval);
+            setMessages(prev => {
+              const copy = [...prev];
+              copy[copy.length-1] = {from:"eva", text: fullText};
+              try{ localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); }catch(e){}
+              return copy;
+            });
+            resolve();
+          }
+        }, 18);
+      });
+    };
 
     try{
       const history=[...messages,{from:"you",text:userText}].slice(-10).map(m=>({role:m.from==="you"?"user":"assistant", content:m.text}));
       const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:userText,history,userProfile:{name:myName,prefs,bestFood:prefs.food,wantToBuy:prefs.want_to_buy}})});
       const contentType = res.headers.get("content-type") || "";
 
-      // Fallback: if backend still send JSON (old route)
       if(contentType.includes("application/json")){
-        const data=await res.json(); const reply=data.reply||"I dey here Boss, try again.";
-        setMessages(prev=>{ const w=prev.slice(0,-1); const next=[...w,{from:"eva",text:reply}]; try{ localStorage.setItem("eva_messages_cache", JSON.stringify(next)); }catch(e){} return next; });
+        const data=await res.json();
+        const reply=data.reply||"I dey here Boss, try again.";
+        await typeOut(reply);
         await saveToSupabase("eva", reply);
       } else {
-        // STREAMING: Read small-small as e dey come
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let fullReply = "";
+        let shown = "";
+        const showLoop = setInterval(()=>{
+          if(shown.length < fullReply.length){
+            shown = fullReply.slice(0, shown.length + 4);
+            const display = shown + "▍";
+            setMessages(prev=>{
+              const copy=[...prev];
+              copy[copy.length-1]={from:"eva",text:display};
+              return copy;
+            });
+            if(bottomRef.current) bottomRef.current.scrollIntoView({behavior:"auto", block:"end"});
+          }
+        }, 18);
         while(true){
           const {done, value} = await reader.read();
           if(done) break;
-          const chunk = decoder.decode(value, {stream:true});
-          fullReply += chunk;
-          const display = fullReply + "▍";
-          setMessages(prev=>{
-            const copy=[...prev];
-            copy[copy.length-1]={from:"eva",text:display};
-            return copy;
-          });
-          if(bottomRef.current) bottomRef.current.scrollIntoView({behavior:"auto", block:"end"});
+          fullReply += decoder.decode(value, {stream:true});
         }
-        // Remove cursor when done
-        setMessages(prev=>{
-          const copy=[...prev];
-          copy[copy.length-1]={from:"eva",text:fullReply || "I dey here Boss, try again."};
-          try{ localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); }catch(e){}
-          return copy;
-        });
+        clearInterval(showLoop);
+        await typeOut(fullReply);
         await saveToSupabase("eva", fullReply);
       }
     }catch(e){
@@ -202,4 +228,4 @@ export default function EVA() {
       {keyboardOffset > 0 && <div style={{height: keyboardOffset, flexShrink:0, background:"transparent"}} />}
     </div>
   );
-      }
+  }
