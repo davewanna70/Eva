@@ -117,10 +117,9 @@ export default function EVA() {
     return EMOJI_CATS[emojiTab] || [];
   };
 
-  // ===== FIXED FOR 2.5 -> 3 FULL LINES =====
-  // No more fixed 90 / 135. We measure your real screen.
-  // We want: question + 10px gap + 3 full lines (22px each) + bubble padding (28px)
-  // to end 12px above the Ask bar. That guarantees 3rd line no cut.
+  // ===== PHONE-PROOF: 3 FULL LINES FOR ANY PHONE =====
+  // We no use fixed 90 / 135 again. We measure the REAL visible height with visualViewport.
+  // Small phone = viewport small = push question up more. Big phone = push less. Result same: 3 full lines.
   const scrollToQuestionWith3Lines = () => {
     setTimeout(()=>{
       if (!lastUserMsgRef.current || !scrollRef.current) return;
@@ -128,8 +127,21 @@ export default function EVA() {
       const qEl = lastUserMsgRef.current;
       const qTop = qEl.offsetTop;
       const qHeight = qEl.offsetHeight;
-      const wantBottom = qTop + qHeight + 10 + (3 * 22) + 28;
-      const target = wantBottom - container.clientHeight + 12;
+
+      // Real visible chat height for THIS phone, with keyboard open
+      // visualViewport.height = wetin screen show now. Minus header (~70) and input bar (~90) = chat area.
+      // If visualViewport no dey, fall back to container.clientHeight.
+      let visibleChatHeight = container.clientHeight;
+      if (window.visualViewport) {
+        const vvH = window.visualViewport.height;
+        // Header + input bar na about 160px total. This work for any phone because vvH na real.
+        visibleChatHeight = Math.max(200, vvH - 160);
+      }
+
+      // We want question + gap + 3 full lines + bubble padding to end 14px above Ask bar
+      const LINE_H = 22; // 14px font * 1.5 lineHeight = 21, plus 1px safety = 22
+      const wantBottom = qTop + qHeight + 10 + (3 * LINE_H) + 30;
+      const target = wantBottom - visibleChatHeight + 14;
       container.scrollTop = Math.max(0, target);
     }, 80);
   };
@@ -151,8 +163,8 @@ export default function EVA() {
     scrollToQuestionWith3Lines();
     setIsThinking(true);
     setMessages(prev=>[...prev,{from:"eva",text:"▍"}]);
-    // Call again after bubble appears, so layout no shift am back
     setTimeout(()=>{ scrollToQuestionWith3Lines(); }, 350);
+    setTimeout(()=>{ scrollToQuestionWith3Lines(); }, 700);
 
     const typeOut = (fullText) => {
       const cleaned = cleanText(fullText);
@@ -300,4 +312,4 @@ export default function EVA() {
       </div>
     </div>
   );
-}
+                                                                                                                                                                                                               }
