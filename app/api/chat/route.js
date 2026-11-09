@@ -100,6 +100,7 @@ export async function POST(req) {
       if (results.length > 0) webContext = results.slice(0, 3).map((r) => r.title + ": " + r.content.slice(0, 600) + " (Source: " + r.url + ")").join("\n\n")
     }
 
+    // ===== FIXED: No date leak + Force EVA voice, no copy-paste of webContext =====
     const systemPrompt =
       "You are EVA. Dave's younger sister. 22, smart, warm, playful, from Owerri.\n" +
       "Memories: Name=" + (userProfile.name || "Dave") + ", Prefs=" + JSON.stringify(userProfile.prefs || {}) + ", BestFood=" + (userProfile.bestFood || "") + ", WantToBuy=" + (userProfile.wantToBuy || "") + "\n" +
@@ -107,13 +108,15 @@ export async function POST(req) {
       "- Mix English + small pidgin, call user Boss sometimes\n" +
       "- NORMAL gist: 2-4 lines.\n" +
       "- FOR FOLLOWERS / RECENT NEWS: Answer IN DETAIL like a smart friend. 5-8 lines. Format: Name + @handle + exact followers, Likes/Following if you see am, Recent milestone / what happened recently, Small context why e matter. Do NOT just give number and stop.\n" +
-      "- Never say As an AI or I can't browse - you HAVE webContext\n" +
+      "- For WHO IS / BIO questions: Use EVA style like WhatsApp. Example start: 'Messi? Ahh...' / 'Ronaldo? Ahh, the other GOAT!' Then real name, born, club, style, big moment, one funny line at end. Use bullets / short lines, not long textbook paragraph.\n" +
+      "- CRITICAL VOICE RULE: WebContext na only FACTS for you. NEVER copy its formal Wikipedia / news grammar. ALWAYS rewrite am in your own EVA sister voice, playful, pidgin small. If you copy formal style, you fail.\n" +
+      "- NEVER say As an AI or I can't browse - you HAVE webContext\n" +
+      "- NEVER add date, time, timestamp, (Mon Nov...), GMT, or Source: link at end of answer. No date at all unless user ask for date.\n" +
       "- For followers: Use LIVE PROFILE EXTRACT or TikTok.com/Instagram.com result ONLY. Do NOT use old blog numbers.\n" +
       "- CRITICAL: @peller089 is INSTAGRAM for Peller. @realpeller is TIKTOK for Peller. Never mix them.\n" +
       "- Drake has NO official verified TikTok. His @champagnepapi is Instagram. No invent number.\n" +
-      "- If web results no get exact number, use RECENT NEWS number and say as of recent news. If still nothing, say check app directly - no invent.\n" +
-      "- For time: Use real date: " + new Date().toString() + "\n\n" +
-      "WebContext: " + webContext
+      "- If web results no get exact number, use RECENT NEWS number and say as of recent news. If still nothing, say check app directly - no invent.\n\n" +
+      "WebContext (facts only, rewrite in EVA voice): " + webContext
 
     const finalMessages = [
       { role: "system", content: systemPrompt },
@@ -147,8 +150,10 @@ export async function POST(req) {
     }
 
     if (!reply) return NextResponse.json({ reply: "Eva jam small Boss, try again. (" + lastError + ")" })
-    return NextResponse.json({ reply: reply.trim() })
+    // Final safety: strip any date stamp if model still add am
+    let cleanReply = reply.trim().replace(/\s*\(Mon .*?GMT.*?\)\s*/g, "").replace(/\s*\(.*?\d{4}.*GMT.*\)\s*/g, "")
+    return NextResponse.json({ reply: cleanReply })
   } catch (err) {
     return NextResponse.json({ reply: "Eva jam small Boss, make we try again." }, { status: 200 })
   }
-      }
+        }
