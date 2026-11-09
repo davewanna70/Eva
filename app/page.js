@@ -74,13 +74,11 @@ export default function EVA() {
   const showEmojiRef = useRef(false);
   showEmojiRef.current = showEmoji;
 
-  // STABLE OUTER HEIGHT: Lock when emoji open, so keyboard no push panel up
+  // Outer height follows keyboard, NO lock - lock na why panel dey jump go top before
   useEffect(() => {
     if (!window.visualViewport) return;
     const setH = () => {
       if (!outerRef.current) return;
-      // If emoji open, don't shrink - keep full height, panel stays for bottom
-      if (showEmojiRef.current) return;
       outerRef.current.style.height = window.visualViewport.height + "px";
       outerRef.current.style.minHeight = window.visualViewport.height + "px";
       outerRef.current.style.maxHeight = window.visualViewport.height + "px";
@@ -157,7 +155,6 @@ export default function EVA() {
       const newH = window.visualViewport.height;
       const diff = newH - lastH;
       lastH = newH;
-      if (showEmojiRef.current) return; // emoji open: don't move chat, stay stable
       if (diff > 30) {
         smoothScrollBy(diff);
       }
@@ -186,29 +183,27 @@ export default function EVA() {
     didInitialScroll.current = true;
   };
 
-  // WHATSAPP: Tap emoji button - if emoji open, close + bring keyboard. If closed, close keyboard + open emoji
   const toggleEmoji = () => {
     if (showEmoji) {
       setShowEmoji(false);
-      setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 60);
+      setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 100);
     } else {
       if (document.activeElement) document.activeElement.blur();
       setShowEmoji(true);
     }
   };
 
-  // WHATSAPP: Tap inside Ask box while emoji open - emoji disappear, keyboard come back
+  // WHATSAPP: Tap Ask box while emoji open - emoji close FIRST, keyboard after. Never both.
+  const onInputTouchStart = (e) => {
+    if (showEmojiRef.current) {
+      e.preventDefault(); // Stop keyboard from opening now
+      setShowEmoji(false);
+      setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 120);
+    }
+  };
   const onInputFocus = () => {
     if (showEmojiRef.current) {
       setShowEmoji(false);
-      // Let keyboard open after panel close, no fight, no jump to top
-      setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 60);
-    }
-  };
-  const onInputClick = () => {
-    if (showEmojiRef.current) {
-      setShowEmoji(false);
-      setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 60);
     }
   };
 
@@ -220,7 +215,6 @@ export default function EVA() {
       requestAnimationFrame(() => {
         if (emojiGridRef.current) {
           const max = emojiGridRef.current.scrollHeight - emojiGridRef.current.clientHeight;
-          // Smooth restore, no instant jump to top
           emojiGridRef.current.scrollTo({ top: Math.min(emojiScrollPosRef.current, Math.max(0, max)), behavior: "smooth" });
         }
         const active = emojiTabsRef.current?.querySelector(`[data-cat="${cat}"]`);
@@ -229,7 +223,6 @@ export default function EVA() {
     });
   };
 
-  // SMOOTH SIDE SWIPE: Only when horizontal > vertical, so vertical scroll no trigger switch
   const onEmojiSwipeStart = (e) => {
     const t = e.touches ? e.touches[0] : e;
     swipeStartXRef.current = t.clientX;
@@ -243,23 +236,21 @@ export default function EVA() {
     swipeStartXRef.current = null;
     swipeStartYRef.current = null;
     if (Math.abs(dx) < 70) return;
-    if (Math.abs(dy) > Math.abs(dx)) return; // na vertical scroll, not side swipe - leave am
+    if (Math.abs(dy) > Math.abs(dx)) return;
     if (emojiSearch.trim()) return;
     const idx = EMOJI_CAT_LIST.indexOf(emojiTab);
     if (dx < 0 && idx < EMOJI_CAT_LIST.length - 1) switchEmojiCat(EMOJI_CAT_LIST[idx + 1]);
     if (dx > 0 && idx > 0) switchEmojiCat(EMOJI_CAT_LIST[idx - 1]);
   };
 
-  // STABLE PICK: No focus, no keyboard, no go up. Save scroll, restore smooth.
+  // STABLE PICK: No focus, no keyboard, stay for bottom
   const addEmoji = (emoji) => {
     if (emojiGridRef.current) emojiScrollPosRef.current = emojiGridRef.current.scrollTop;
     setText((prev) => prev + emoji);
-    // Keep emoji panel for bottom, don't blur, don't focus, don't move chat
     requestAnimationFrame(() => {
       if (emojiGridRef.current) {
         emojiGridRef.current.scrollTop = emojiScrollPosRef.current;
       }
-      // Keep textarea from jumping - don't focus
       if (document.activeElement) document.activeElement.blur();
     });
   };
@@ -411,7 +402,6 @@ export default function EVA() {
     if (textareaRef.current) textareaRef.current.focus();
   };
 
-  // Tap chat while emoji open - close emoji, stay for chat
   const hideKeyboardToRead = () => {
     setShowMenu(false);
     if (showEmojiRef.current) setShowEmoji(false);
@@ -493,7 +483,6 @@ export default function EVA() {
               </button>
             ))}
           </div>
-          {/* WHATSAPP SMOOTH SCROLL: momentum + smooth + no catch */}
           <div
             ref={emojiGridRef}
             onTouchStart={onEmojiSwipeStart}
@@ -527,8 +516,8 @@ export default function EVA() {
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onTouchStart={onInputTouchStart}
             onFocus={onInputFocus}
-            onClick={onInputClick}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askEVA(); } }}
             placeholder="Ask EVA..."
             rows={1}
@@ -537,6 +526,7 @@ export default function EVA() {
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
+            readOnly={showEmoji}
             data-lpignore="true"
             data-1p-ignore="true"
             style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "white", padding: "10px 6px", fontSize: 15, resize: "none", maxHeight: 100, fontFamily: "sans-serif" }}
@@ -553,4 +543,4 @@ export default function EVA() {
       </div>
     </div>
   );
-            }
+      }
