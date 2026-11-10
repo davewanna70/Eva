@@ -100,23 +100,36 @@ const isMediaMsg = (m) => {
   return false;
 };
 const isLinkMsg = (m) => extractLinks(m.text).length > 0;
-// FIXED: Real EVA size - not WhatsApp 282.5 MB
-const getEVASize = (msgs, onlyMedia = false) => {
+// NEW: EVA own size - separate Videos / Photos, no WhatsApp numbers
+const isVideoMsg = (m) => {
+  if (m.type === "video") return true;
+  const t = (m.text || "").toLowerCase();
+  return /\.mp4|\.mov|\.gif/.test(t) || m.mediaType === "video";
+};
+const isPhotoMsg = (m) => {
+  if (m.type === "image") return true;
+  const t = (m.text || "").toLowerCase();
+  return /\.jpg|\.jpeg|\.png|\.webp/.test(t) || m.mediaUrl || m.imageUrl;
+};
+const getSizeFor = (msgs, kind) => {
   let bytes = 0;
   (msgs || []).forEach((m) => {
-    if (onlyMedia && !isMediaMsg(m)) return;
-    const txt = m.text || "";
-    bytes += new Blob([txt]).size;
-    if (m.mediaUrl || m.imageUrl) bytes += 1200000;
-    else if (m.type === "video") bytes += 8000000;
-    else if (isDocMsg(m)) bytes += 800000;
-    else if (isMediaMsg(m)) bytes += 500000;
-    bytes += 200;
+    if (kind === "videos" && !isVideoMsg(m)) return;
+    if (kind === "photos" && !isPhotoMsg(m)) return;
+    if (kind === "all") {
+      bytes += new Blob([m.text || ""]).size + 200;
+      if (m.mediaUrl || m.imageUrl) bytes += 1200000;
+      else if (m.type === "video") bytes += 8000000;
+      else if (isDocMsg(m)) bytes += 800000;
+      else if (isMediaMsg(m)) bytes += 500000;
+      return;
+    }
+    if (kind === "videos") bytes += m.mediaSize || 8000000;
+    if (kind === "photos") bytes += m.mediaSize || 1200000;
   });
-  const mb = bytes / (1024 * 1024);
-  if (mb < 0.05) return "0.0 MB";
-  if (mb < 1) return (bytes / 1024).toFixed(1) + " KB";
-  return mb.toFixed(1) + " MB";
+  if (bytes < 1024) return "0.0 MB";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 };
 
 export default function EVA() {
@@ -145,8 +158,6 @@ export default function EVA() {
   const [highlightIdx, setHighlightIdx] = useState(null);
   const [showClearSheet, setShowClearSheet] = useState(false);
   const [clearMode, setClearMode] = useState("all");
-  const [clearStarred, setClearStarred] = useState(false);
-  const [clearScheduled, setClearScheduled] = useState(false);
 
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
@@ -176,9 +187,9 @@ export default function EVA() {
   const mediaList = messages.map((m, idx) => ({ m, idx })).filter(({ m }) => isMediaMsg(m));
   const docsList = messages.map((m, idx) => ({ m, idx })).filter(({ m }) => isDocMsg(m));
   const linksList = messages.map((m, idx) => ({ m, idx })).filter(({ m }) => isLinkMsg(m));
-  // FIXED: Dynamic EVA sizes
-  const totalSize = getEVASize(messages, false);
-  const mediaSize = getEVASize(messages, true);
+  const totalSize = getSizeFor(messages, "all");
+  const videoSize = getSizeFor(messages, "videos");
+  const photoSize = getSizeFor(messages, "photos");
 
   const jumpToMessage = (idx) => {
     setShowSearch(false);
@@ -270,9 +281,15 @@ export default function EVA() {
     setShowClearSheet(true);
   };
   const doClearChat = async () => {
-    if (clearMode === "media") {
+    if (clearMode === "videos") {
       setMessages((prev) => {
-        const next = prev.filter((m) => !isMediaMsg(m));
+        const next = prev.filter((m) => !isVideoMsg(m));
+        try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
+        return next;
+      });
+    } else if (clearMode === "photos") {
+      setMessages((prev) => {
+        const next = prev.filter((m) => !isPhotoMsg(m));
         try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
         return next;
       });
@@ -282,7 +299,7 @@ export default function EVA() {
       try { await supabase.from("messages").delete().eq("chat_id", CHAT_ID); } catch (e) {}
     }
     setShowClearSheet(false); setShowSearch(false); setShowMedia(false);
-    setClearStarred(false); setClearScheduled(false); setClearMode("all");
+    setClearMode("all");
     didInitialScroll.current = true;
     showToast("Chat cleared");
   };
@@ -656,24 +673,19 @@ export default function EVA() {
               <span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "all" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} />
               <span style={{ color: "white", fontSize: 15, flex: 1 }}>All messages <span style={{ color: "#aaa" }}>({totalSize})</span></span>
             </button>
-            <button onClick={() => setClearMode("media")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}>
-              <span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "media" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} />
-              <span style={{ color: "white", fontSize: 15, flex: 1 }}>Media files only <span style={{ color: "#aaa" }}>({mediaSize})</span></span>
-              <span style={{ color: "#aaa", fontSize: 18 }}>›</span>
+            <button onClick={() => setClearMode("videos")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}>
+              <span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "videos" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} />
+              <span style={{ color: "white", fontSize: 15, flex: 1 }}>Videos <span style={{ color: "#aaa" }}>({videoSize})</span></span>
             </button>
-            <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", cursor: "pointer" }}>
-              <input type="checkbox" checked={clearStarred} onChange={(e) => setClearStarred(e.target.checked)} style={{ width: 18, height: 18, accentColor: "#25D366" }} />
-              <span style={{ color: "white", fontSize: 15 }}>Clear starred messages</span>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", cursor: "pointer" }}>
-              <input type="checkbox" checked={clearScheduled} onChange={(e) => setClearScheduled(e.target.checked)} style={{ width: 18, height: 18, accentColor: "#25D366" }} />
-              <span style={{ color: "white", fontSize: 15 }}>Clear scheduled tasks</span>
-            </label>
-            <div style={{ fontSize: 12, color: "#888", lineHeight: 1.4, margin: "10px 0 16px" }}>
-              Media files you have saved from WhatsApp will remain in your device gallery.
+            <button onClick={() => setClearMode("photos")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}>
+              <span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "photos" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} />
+              <span style={{ color: "white", fontSize: 15, flex: 1 }}>Photos <span style={{ color: "#aaa" }}>({photoSize})</span></span>
+            </button>
+            <div style={{ fontSize: 12, color: "#888", lineHeight: 1.4, margin: "14px 0 16px" }}>
+              Your saved files from EVA will remain in your device gallery after clearing.
             </div>
             <button onClick={doClearChat} style={{ width: "100%", background: "transparent", border: "none", color: "#ff5a5a", fontSize: 15, padding: "12px 0", fontWeight: "bold" }}>
-              Clear chat ({clearMode === "all" ? totalSize : mediaSize})
+              {clearMode === "all" ? `Clear chat (${totalSize})` : clearMode === "videos" ? `Clear videos (${videoSize})` : `Clear photos (${photoSize})`}
             </button>
           </div>
         </div>
@@ -705,4 +717,4 @@ export default function EVA() {
       )}
     </div>
   );
-                                                                                                                                                                                                                                                                                                                                                               }
+    }
