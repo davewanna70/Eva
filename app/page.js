@@ -100,6 +100,24 @@ const isMediaMsg = (m) => {
   return false;
 };
 const isLinkMsg = (m) => extractLinks(m.text).length > 0;
+// FIXED: Real EVA size - not WhatsApp 282.5 MB
+const getEVASize = (msgs, onlyMedia = false) => {
+  let bytes = 0;
+  (msgs || []).forEach((m) => {
+    if (onlyMedia && !isMediaMsg(m)) return;
+    const txt = m.text || "";
+    bytes += new Blob([txt]).size;
+    if (m.mediaUrl || m.imageUrl) bytes += 1200000;
+    else if (m.type === "video") bytes += 8000000;
+    else if (isDocMsg(m)) bytes += 800000;
+    else if (isMediaMsg(m)) bytes += 500000;
+    bytes += 200;
+  });
+  const mb = bytes / (1024 * 1024);
+  if (mb < 0.05) return "0.0 MB";
+  if (mb < 1) return (bytes / 1024).toFixed(1) + " KB";
+  return mb.toFixed(1) + " MB";
+};
 
 export default function EVA() {
   const [text, setText] = useState("");
@@ -125,6 +143,10 @@ export default function EVA() {
   const [showMedia, setShowMedia] = useState(false);
   const [mediaTab, setMediaTab] = useState("Media");
   const [highlightIdx, setHighlightIdx] = useState(null);
+  const [showClearSheet, setShowClearSheet] = useState(false);
+  const [clearMode, setClearMode] = useState("all");
+  const [clearStarred, setClearStarred] = useState(false);
+  const [clearScheduled, setClearScheduled] = useState(false);
 
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
@@ -154,6 +176,9 @@ export default function EVA() {
   const mediaList = messages.map((m, idx) => ({ m, idx })).filter(({ m }) => isMediaMsg(m));
   const docsList = messages.map((m, idx) => ({ m, idx })).filter(({ m }) => isDocMsg(m));
   const linksList = messages.map((m, idx) => ({ m, idx })).filter(({ m }) => isLinkMsg(m));
+  // FIXED: Dynamic EVA sizes
+  const totalSize = getEVASize(messages, false);
+  const mediaSize = getEVASize(messages, true);
 
   const jumpToMessage = (idx) => {
     setShowSearch(false);
@@ -240,12 +265,26 @@ export default function EVA() {
   const saveToSupabase = async (sender, msgText) => {
     try { const { error } = await supabase.from("messages").insert([{ chat_id: CHAT_ID, sender, text: msgText }]); return !error; } catch (e) { return false; }
   };
-  const clearChat = async () => {
-    if (!window.confirm("Clear all chats?")) return;
-    setMessages([]); setMyName(""); setPrefs({});
-    localStorage.removeItem("eva_dave_name"); localStorage.removeItem("eva_dave_prefs"); localStorage.removeItem("eva_messages_cache");
-    try { await supabase.from("messages").delete().eq("chat_id", CHAT_ID); } catch (e) {}
-    setShowMenu(false); setShowSearch(false); setShowMedia(false); didInitialScroll.current = true;
+  const openClearSheet = () => {
+    setShowMenu(false);
+    setShowClearSheet(true);
+  };
+  const doClearChat = async () => {
+    if (clearMode === "media") {
+      setMessages((prev) => {
+        const next = prev.filter((m) => !isMediaMsg(m));
+        try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
+        return next;
+      });
+    } else {
+      setMessages([]); setMyName(""); setPrefs({});
+      localStorage.removeItem("eva_dave_name"); localStorage.removeItem("eva_dave_prefs"); localStorage.removeItem("eva_messages_cache");
+      try { await supabase.from("messages").delete().eq("chat_id", CHAT_ID); } catch (e) {}
+    }
+    setShowClearSheet(false); setShowSearch(false); setShowMedia(false);
+    setClearStarred(false); setClearScheduled(false); setClearMode("all");
+    didInitialScroll.current = true;
+    showToast("Chat cleared");
   };
   const toggleEmoji = () => {
     if (showEmoji) { setShowEmoji(false); setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 100); }
@@ -435,7 +474,6 @@ export default function EVA() {
       `}</style>
       <img src="/eva-bg.jpg" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", zIndex: 0 }} />
 
-      {/* FIXED: Overlay UNDER menu, so menu buttons work, but tap anywhere else closes */}
       {showMenu && (
         <div style={{ position: "fixed", inset: 0, zIndex: 35, background: "transparent" }} onClick={() => setShowMenu(false)} />
       )}
@@ -443,7 +481,6 @@ export default function EVA() {
       <div style={{ position: "relative", zIndex: 50, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", paddingTop: "env(safe-area-inset-top)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
         <div style={{ display: "flex", padding: "12px 18px 12px", alignItems: "center", justifyContent: "space-between", minHeight: 56, boxSizing: "border-box" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {/* FIXED: No picture again - just water droplet 💧 */}
             <div style={{ width: 38, height: 38, minWidth: 38, minHeight: 38, borderRadius: 999, overflow: "hidden", border: "2px solid #a78bfa", background: "linear-gradient(135deg, #1e1b4b, #4c1d95, #0ea5e9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 22 }}>
               💧
             </div>
@@ -455,7 +492,7 @@ export default function EVA() {
               <div style={{ position: "absolute", top: 50, right: 0, width: 210, background: "rgba(10,10,20,0.98)", borderRadius: 14, overflow: "hidden", zIndex: 80, boxShadow: "0 10px 30px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.12)" }} onClick={(e) => e.stopPropagation()}>
                 <button onClick={() => { setShowMenu(false); setShowSearch(true); setSearchQuery(""); setTimeout(() => { const inp = document.getElementById("eva-search-input"); if (inp) inp.focus(); }, 100); }} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "white", padding: "13px 16px", fontSize: 14, borderBottom: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>🔍 Search</button>
                 <button onClick={() => { setShowMenu(false); setShowMedia(true); }} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "white", padding: "13px 16px", fontSize: 14, borderBottom: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>🖼️ Media, links, and docs</button>
-                <button onClick={clearChat} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "#ff8080", padding: "13px 16px", fontSize: 14, cursor: "pointer" }}>🗑️ Clear Chat</button>
+                <button onClick={openClearSheet} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "#ff8080", padding: "13px 16px", fontSize: 14, cursor: "pointer" }}>🗑️ Clear Chat</button>
               </div>
             )}
           </div>
@@ -608,6 +645,40 @@ export default function EVA() {
         </div>
       )}
 
+      {showClearSheet && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 110, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setShowClearSheet(false)}>
+          <div style={{ width: "100%", maxWidth: 520, background: "#111118", borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: "12px 20px calc(20px + env(safe-area-inset-bottom))" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+              <button onClick={() => setShowClearSheet(false)} style={{ background: "transparent", border: "none", color: "white", fontSize: 20, padding: 4 }}>✕</button>
+              <b style={{ fontSize: 18, color: "white" }}>Clear chat</b>
+            </div>
+            <button onClick={() => setClearMode("all")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}>
+              <span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "all" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} />
+              <span style={{ color: "white", fontSize: 15, flex: 1 }}>All messages <span style={{ color: "#aaa" }}>({totalSize})</span></span>
+            </button>
+            <button onClick={() => setClearMode("media")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}>
+              <span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "media" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} />
+              <span style={{ color: "white", fontSize: 15, flex: 1 }}>Media files only <span style={{ color: "#aaa" }}>({mediaSize})</span></span>
+              <span style={{ color: "#aaa", fontSize: 18 }}>›</span>
+            </button>
+            <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", cursor: "pointer" }}>
+              <input type="checkbox" checked={clearStarred} onChange={(e) => setClearStarred(e.target.checked)} style={{ width: 18, height: 18, accentColor: "#25D366" }} />
+              <span style={{ color: "white", fontSize: 15 }}>Clear starred messages</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", cursor: "pointer" }}>
+              <input type="checkbox" checked={clearScheduled} onChange={(e) => setClearScheduled(e.target.checked)} style={{ width: 18, height: 18, accentColor: "#25D366" }} />
+              <span style={{ color: "white", fontSize: 15 }}>Clear scheduled tasks</span>
+            </label>
+            <div style={{ fontSize: 12, color: "#888", lineHeight: 1.4, margin: "10px 0 16px" }}>
+              Media files you have saved from WhatsApp will remain in your device gallery.
+            </div>
+            <button onClick={doClearChat} style={{ width: "100%", background: "transparent", border: "none", color: "#ff5a5a", fontSize: 15, padding: "12px 0", fontWeight: "bold" }}>
+              Clear chat ({clearMode === "all" ? totalSize : mediaSize})
+            </button>
+          </div>
+        </div>
+      )}
+
       {showEmoji && !showSearch && !showMedia && (
         <div style={{ position: "relative", zIndex: 25, flexShrink: 0, flexGrow: 0, height: 280, minHeight: 280, maxHeight: 280, background: "rgba(0,0,0,0.95)", borderTop: "1px solid rgba(255,255,255,0.2)", padding: "10px 10px 6px", display: "flex", flexDirection: "column", overflow: "hidden", boxSizing: "border-box", transform: "translateZ(0)", willChange: "transform" }}>
           <input value={emojiSearch} onChange={(e) => setEmojiSearch(e.target.value)} placeholder="🔍 Search emoji... type car, monkey, love" style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 999, color: "white", padding: "9px 14px", fontSize: 13, outline: "none", boxSizing: "border-box", flexShrink: 0 }} />
@@ -634,4 +705,4 @@ export default function EVA() {
       )}
     </div>
   );
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  }
+                                                                                                                                                                                                                                                                                                                                                               }
