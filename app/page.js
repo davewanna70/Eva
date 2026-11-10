@@ -117,6 +117,7 @@ export default function EVA() {
   const swipeStartX = useRef(null);
   const swipeStartY = useRef(null);
   const longPressTimer = useRef(null);
+  const savedScrollTop = useRef(0);
 
   const emojiGridRef = useRef(null);
   const emojiScrollPosRef = useRef(0);
@@ -334,7 +335,14 @@ export default function EVA() {
     const t = e.touches[0];
     swipeStartX.current = t.clientX;
     swipeStartY.current = t.clientY;
-    longPressTimer.current = setTimeout(() => { setSelectedIdx(idx); setSwipeOffset({}); }, 500);
+    if (scrollRef.current) savedScrollTop.current = scrollRef.current.scrollTop;
+    longPressTimer.current = setTimeout(() => {
+      setSelectedIdx(idx);
+      setSwipeOffset({});
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = savedScrollTop.current;
+      });
+    }, 500);
   };
   const onMsgTouchMove = (e, idx) => {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
@@ -366,7 +374,9 @@ export default function EVA() {
     if (selectedIdx == null) return;
     const txt = cleanText(messages[selectedIdx]?.text || "");
     try { await navigator.clipboard.writeText(txt); } catch (err) {}
+    const st = scrollRef.current ? scrollRef.current.scrollTop : 0;
     setSelectedIdx(null);
+    requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = st; });
     showToast("Copied");
   };
   const doForward = (e) => {
@@ -508,7 +518,11 @@ export default function EVA() {
 
   const hideKeyboardToRead = () => {
     setShowMenu(false);
-    setSelectedIdx(null);
+    if (selectedIdx != null) {
+      const st = scrollRef.current ? scrollRef.current.scrollTop : 0;
+      setSelectedIdx(null);
+      requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = st; });
+    }
     if (showEmojiRef.current) setShowEmoji(false);
     if (document.activeElement) document.activeElement.blur();
   };
@@ -568,7 +582,7 @@ export default function EVA() {
       <div
         ref={scrollRef}
         className="eva-no-select"
-        style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}
+        style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "auto" }}
         onClick={hideKeyboardToRead}
         onContextMenu={(e) => e.preventDefault()}
         onSelectStart={(e) => e.preventDefault()}
@@ -604,8 +618,7 @@ export default function EVA() {
                   whiteSpace: "pre-line",
                   boxShadow: "none",
                   touchAction: "pan-y",
-                  transform: `translateX(${off}px)`,
-                  transition: off ? "none" : "transform 0.2s"
+                  transform: off ? `translateX(${off}px)` : "none"
                 } : {
                   background: isSel ? "rgba(139,92,246,0.75)" : (m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)"),
                   border: "1px solid rgba(255,255,255,0.25)",
@@ -616,8 +629,7 @@ export default function EVA() {
                   lineHeight: 1.5,
                   whiteSpace: "pre-line",
                   touchAction: "pan-y",
-                  transform: `translateX(${off}px)`,
-                  transition: off ? "none" : "transform 0.2s"
+                  transform: off ? `translateX(${off}px)` : "none"
                 }}
               >
                 {m.replyTo && (
@@ -655,9 +667,9 @@ export default function EVA() {
                 </div>
               </div>
 
-              {/* WHATSAPP STYLE - UNDER THAT PARTICULAR MESSAGE, NAKED, NO BOX */}
+              {/* WHATSAPP STYLE - FLOATING OVERLAY, NO PUSH, NO SHAKE - UNDER THAT MESSAGE ONLY */}
               {isSel && (
-                <div style={{ width: "100%", maxWidth: "85%", background: "transparent", border: "none", boxShadow: "none", padding: "6px 4px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, width: "100%", maxWidth: "85%", alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: "transparent", border: "none", boxShadow: "none", padding: "4px 4px 0", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 20, pointerEvents: "auto" }} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
                   <button onClick={doCopy} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 6, cursor: "pointer" }}>
                     <CopyIcon />
                   </button>
@@ -767,4 +779,4 @@ export default function EVA() {
       </div>
     </div>
   );
-                                                                                                                                                                                                                                            }
+    }
