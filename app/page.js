@@ -683,10 +683,24 @@ export default function EVA() {
           const isSel = selectedIdxs.includes(i);
           const off = swipeOffset[i] || 0;
           return (
-            <div key={i} className="eva-no-select" style={{ position: "relative", alignSelf: m.from === "you" ? "flex-end" : "flex-start", width: "100%", display: "flex", flexDirection: "column", alignItems: m.from === "you" ? "flex-end" : "flex-start" }} onContextMenu={(e) => e.preventDefault()} onSelectStart={(e) => e.preventDefault()}>
+            <div key={i} className="eva-no-select" style={{ position: "relative", alignSelf: m.from === "you" ? "flex-end" : "flex-start", width: "100%", display: "flex", flexDirection: "column", alignItems: m.from === "you" ? "flex-end" : "flex-start", paddingTop: (isSingle && isSel && naked) ? 36 : 0 }} onContextMenu={(e) => e.preventDefault()} onSelectStart={(e) => e.preventDefault()}>
               {off > 20 && (
                 <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", opacity: Math.min(1, off / 60), fontSize: 22 }}>↩️</div>
               )}
+
+              {/* EMOJI PILL - ON TOP ONLY, SMALL BLACK CAPSULE */}
+              {isSingle && isSel && naked && (
+                <div
+                  style={{ position: "absolute", top: 0, right: m.from === "you" ? 0 : "auto", left: m.from === "you" ? "auto" : 0, display: "flex", alignItems: "center", gap: 14, background: "rgba(0,0,0,0.88)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 999, padding: "6px 12px", boxShadow: "0 6px 20px rgba(0,0,0,0.5)", zIndex: 30 }}
+                  onClick={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                >
+                  <button onClick={doCopy} style={{ background: "transparent", border: "none", padding: 2, cursor: "pointer" }}><CopyIcon size={18} /></button>
+                  <button onClick={doForward} style={{ background: "transparent", border: "none", padding: 2, cursor: "pointer" }}><ForwardIcon size={20} /></button>
+                  <button onClick={openDeleteSheet} style={{ background: "transparent", border: "none", padding: 2, cursor: "pointer" }}><TrashIcon size={18} /></button>
+                </div>
+              )}
+
               <div
                 ref={isLastUser ? lastUserMsgRef : null}
                 onTouchStart={(e) => onMsgTouchStart(e, i)}
@@ -755,8 +769,8 @@ export default function EVA() {
                 </div>
               </div>
 
-              {/* SINGLE ONLY: DELETE - CLOSER NOW: top -8, right 2, small padding */}
-              {isSingle && isSel && (
+              {/* TEXT ONLY - SINGLE: DELETE CLOSE ON TOP, COPY LEFT + FORWARD RIGHT UNDER */}
+              {isSingle && isSel && !naked && (
                 <button
                   onClick={openDeleteSheet}
                   onTouchStart={(e) => e.stopPropagation()}
@@ -765,9 +779,7 @@ export default function EVA() {
                   <TrashIcon />
                 </button>
               )}
-
-              {/* SINGLE ONLY: COPY LEFT + FORWARD RIGHT UNDER */}
-              {isSingle && isSel && (
+              {isSingle && isSel && !naked && (
                 <div style={{ position: "absolute", top: "100%", left: 0, right: 0, width: "100%", maxWidth: "85%", alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: "transparent", border: "none", boxShadow: "none", padding: "4px 4px 0", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 20, pointerEvents: "auto" }} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
                   <button onClick={doCopy} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 6, cursor: "pointer" }}>
                     <CopyIcon />
@@ -787,7 +799,7 @@ export default function EVA() {
         <div style={{ position: "relative", zIndex: 40, margin: "0 auto", background: "rgba(0,0,0,0.9)", color: "white", padding: "8px 16px", borderRadius: 999, fontSize: 13, marginBottom: 6 }}>{toast}</div>
       )}
 
-      {/* MULTI-SELECT BAR - STABLE LEFT, JUST ON TOP OF ASK EVA, SMALL LIKE WHATSAPP */}
+      {/* MULTI-SELECT BAR - STABLE LEFT, JUST ON TOP OF ASK EVA */}
       {isMulti && (
         <div style={{ position: "relative", zIndex: 35, flexShrink: 0, display: "flex", justifyContent: "flex-start", padding: "0 16px 6px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, background: "rgba(0,0,0,0.88)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 999, padding: "7px 14px", boxShadow: "0 6px 20px rgba(0,0,0,0.5)" }}>
@@ -880,7 +892,7 @@ export default function EVA() {
             <button onClick={() => setReplyTo(null)} style={{ background: "transparent", border: "none", color: "white", fontSize: 16 }}>✕</button>
           </div>
         )}
-        <div style={{ display: "flex", gap: 6, maxWidth: 520, margin: "0 auto", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", padding: 8, borderRadius: 999, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 6, maxWidth: 520, margin: "0 auto", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", borderRadius: 999, padding: 8, alignItems: "center" }}>
           <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={toggleEmoji} style={{ background: showEmoji ? "#8b5cf6" : "transparent", border: "none", fontSize: 24, padding: "2px 4px", flexShrink: 0, borderRadius: 999 }}>😊</button>
           <textarea
             ref={textareaRef}
@@ -913,4 +925,4 @@ export default function EVA() {
       </div>
     </div>
   );
-                                                                             }
+  }
