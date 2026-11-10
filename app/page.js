@@ -74,18 +74,18 @@ const getEmojiAnim = (e) => {
   return "eva-pop";
 };
 
-const CopyIcon = () => (
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))", display: "block" }}>
+const CopyIcon = ({size=26}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))", display: "block" }}>
     <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
   </svg>
 );
-const ForwardIcon = () => (
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))", display: "block" }}>
+const ForwardIcon = ({size=28}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))", display: "block" }}>
     <path d="M14 9V5l7 7-7 7v-4c-5 0-8.5 1.6-11 5 1-5 4-10 11-11z" />
   </svg>
 );
-const TrashIcon = () => (
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 5px rgba(0,0,0,0.95))", display: "block" }}>
+const TrashIcon = ({size=26}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 5px rgba(0,0,0,0.95))", display: "block" }}>
     <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
   </svg>
 );
@@ -136,6 +136,8 @@ export default function EVA() {
   showEmojiRef.current = showEmoji;
 
   const selectedIdx = selectedIdxs.length > 0 ? selectedIdxs[0] : null;
+  const isMulti = selectedIdxs.length >= 2;
+  const isSingle = selectedIdxs.length === 1;
 
   useEffect(() => {
     if (!window.visualViewport) return;
@@ -408,18 +410,18 @@ export default function EVA() {
 
   const doCopy = async (e) => {
     if (e) e.stopPropagation();
-    if (selectedIdx == null) return;
-    const txt = cleanText(messages[selectedIdx]?.text || "");
+    if (selectedIdxs.length === 0) return;
+    const txt = selectedIdxs.map((i) => cleanText(messages[i]?.text || "")).join("\n");
     try { await navigator.clipboard.writeText(txt); } catch (err) {}
     const st = scrollRef.current ? scrollRef.current.scrollTop : 0;
     setSelectedIdxs([]);
     requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = st; });
-    showToast("Copied");
+    showToast(isMulti ? `${selectedIdxs.length} messages copied` : "Copied");
   };
   const doForward = (e) => {
     if (e) e.stopPropagation();
-    if (selectedIdx == null) return;
-    const txt = cleanText(messages[selectedIdx]?.text || "");
+    if (selectedIdxs.length === 0) return;
+    const txt = selectedIdxs.map((i) => cleanText(messages[i]?.text || "")).join("\n");
     setText(txt);
     setSelectedIdxs([]);
     setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 50);
@@ -753,17 +755,19 @@ export default function EVA() {
                 </div>
               </div>
 
-              {isSel && (
+              {/* SINGLE ONLY: DELETE - CLOSER NOW: top -8, right 2, small padding */}
+              {isSingle && isSel && (
                 <button
                   onClick={openDeleteSheet}
                   onTouchStart={(e) => e.stopPropagation()}
-                  style={{ position: "absolute", top: -14, right: 0, background: "transparent", border: "none", boxShadow: "none", padding: 6, cursor: "pointer", zIndex: 25 }}
+                  style={{ position: "absolute", top: -8, right: 2, background: "transparent", border: "none", boxShadow: "none", padding: 4, cursor: "pointer", zIndex: 25 }}
                 >
                   <TrashIcon />
                 </button>
               )}
 
-              {isSel && selectedIdx === i && selectedIdxs.length === 1 && (
+              {/* SINGLE ONLY: COPY LEFT + FORWARD RIGHT UNDER */}
+              {isSingle && isSel && (
                 <div style={{ position: "absolute", top: "100%", left: 0, right: 0, width: "100%", maxWidth: "85%", alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: "transparent", border: "none", boxShadow: "none", padding: "4px 4px 0", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 20, pointerEvents: "auto" }} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
                   <button onClick={doCopy} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 6, cursor: "pointer" }}>
                     <CopyIcon />
@@ -781,6 +785,25 @@ export default function EVA() {
 
       {toast && (
         <div style={{ position: "relative", zIndex: 40, margin: "0 auto", background: "rgba(0,0,0,0.9)", color: "white", padding: "8px 16px", borderRadius: 999, fontSize: 13, marginBottom: 6 }}>{toast}</div>
+      )}
+
+      {/* MULTI-SELECT BAR - STABLE LEFT, JUST ON TOP OF ASK EVA, SMALL LIKE WHATSAPP */}
+      {isMulti && (
+        <div style={{ position: "relative", zIndex: 35, flexShrink: 0, display: "flex", justifyContent: "flex-start", padding: "0 16px 6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, background: "rgba(0,0,0,0.88)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 999, padding: "7px 14px", boxShadow: "0 6px 20px rgba(0,0,0,0.5)" }}>
+            <span style={{ fontSize: 12, color: "#c4b5fd", fontWeight: "bold", whiteSpace: "nowrap" }}>{selectedIdxs.length} selected</span>
+            <button onClick={doCopy} style={{ background: "transparent", border: "none", padding: 2, cursor: "pointer" }}>
+              <CopyIcon size={20} />
+            </button>
+            <button onClick={doForward} style={{ background: "transparent", border: "none", padding: 2, cursor: "pointer" }}>
+              <ForwardIcon size={22} />
+            </button>
+            <button onClick={openDeleteSheet} style={{ background: "transparent", border: "none", padding: 2, cursor: "pointer" }}>
+              <TrashIcon size={20} />
+            </button>
+            <button onClick={() => setSelectedIdxs([])} style={{ background: "transparent", border: "none", color: "#aaa", fontSize: 14, padding: "0 2px", cursor: "pointer" }}>✕</button>
+          </div>
+        </div>
       )}
 
       {showDeleteSheet && (
@@ -890,4 +913,4 @@ export default function EVA() {
       </div>
     </div>
   );
-  }
+                                                                             }
