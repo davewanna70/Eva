@@ -100,7 +100,6 @@ const isMediaMsg = (m) => {
   return false;
 };
 const isLinkMsg = (m) => extractLinks(m.text).length > 0;
-// NEW: EVA own size - separate Videos / Photos, no WhatsApp numbers
 const isVideoMsg = (m) => {
   if (m.type === "video") return true;
   const t = (m.text || "").toLowerCase();
@@ -180,6 +179,41 @@ export default function EVA() {
   const showEmojiRef = useRef(false);
   showEmojiRef.current = showEmoji;
 
+  // ===== FIX: STICK TO BOTTOM LOGIC =====
+  const stickToBottomRef = useRef(true);
+  const scrollToBottom = (instant = false) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (bottomRef.current) {
+          bottomRef.current.scrollIntoView({ behavior: instant ? "auto" : "smooth", block: "end" });
+        } else if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
+    });
+  };
+  const handleChatScroll = () => {
+    if (!scrollRef.current) return;
+    const c = scrollRef.current;
+    const distanceFromBottom = c.scrollHeight - c.scrollTop - c.clientHeight;
+    // If user is within 120px of bottom, we consider them at bottom -> keep sticking
+    stickToBottomRef.current = distanceFromBottom < 120;
+  };
+  // Auto-scroll whenever messages change (new msg or EVA typing), ONLY if user was already at bottom
+  const lastMsgText = messages.length ? messages[messages.length - 1]?.text : "";
+  useEffect(() => {
+    if (stickToBottomRef.current) scrollToBottom(false);
+  }, [messages.length, lastMsgText]);
+  // Force scroll to bottom when keyboard hides / input blurs
+  const handleInputBlur = () => {
+    setTimeout(() => { scrollToBottom(false); }, 180);
+  };
+  const handleInputFocus = () => {
+    if (showEmojiRef.current) setShowEmoji(false);
+    setTimeout(() => { scrollToBottom(false); }, 250);
+  };
+  // ===== END FIX =====
+
   const isMulti = selectedIdxs.length >= 2;
   const isSingle = selectedIdxs.length === 1;
 
@@ -196,6 +230,8 @@ export default function EVA() {
     setShowMedia(false);
     setSearchQuery("");
     setHighlightIdx(idx);
+    // User intentionally jumped up, so don't auto-stick for a moment
+    stickToBottomRef.current = false;
     setTimeout(() => {
       const el = document.getElementById(`eva-msg-${idx}`);
       if (el && scrollRef.current) el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -235,42 +271,16 @@ export default function EVA() {
     load();
   }, []);
 
+  // FIXED: Initial load -> go straight to bottom instantly
   useEffect(() => {
     if (didInitialScroll.current) return;
     if (messages.length === 0) return;
-    const t1 = setTimeout(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; didInitialScroll.current = true; }, 100);
+    const t1 = setTimeout(() => { scrollToBottom(true); didInitialScroll.current = true; }, 120);
     return () => { clearTimeout(t1); };
   }, [messages.length]);
 
-  const smoothScrollBy = (diff) => {
-    if (!scrollRef.current || !diff) return;
-    if (smoothAnimRef.current) cancelAnimationFrame(smoothAnimRef.current);
-    const c = scrollRef.current;
-    const start = c.scrollTop;
-    const target = start + diff;
-    const startTime = performance.now();
-    const DURATION = 250;
-    const tick = (now) => {
-      const p = Math.min(1, (now - startTime) / DURATION);
-      const ease = 1 - Math.pow(1 - p, 3);
-      c.scrollTop = start + (target - start) * ease;
-      if (p < 1) smoothAnimRef.current = requestAnimationFrame(tick);
-    };
-    smoothAnimRef.current = requestAnimationFrame(tick);
-  };
-
-  useEffect(() => {
-    if (!window.visualViewport) return;
-    let lastH = window.visualViewport.height;
-    const onResize = () => {
-      const newH = window.visualViewport.height;
-      const diff = newH - lastH;
-      lastH = newH;
-      if (diff > 30) smoothScrollBy(diff);
-    };
-    window.visualViewport.addEventListener("resize", onResize);
-    return () => window.visualViewport.removeEventListener("resize", onResize);
-  }, []);
+  // REMOVED old smoothScrollBy visualViewport logic that was fighting the scroll.
+  // VisualViewport resize now just re-sticks to bottom if we were at bottom.
 
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(""), 1500); };
   const saveToSupabase = async (sender, msgText) => {
@@ -310,7 +320,7 @@ export default function EVA() {
   const onInputTouchStart = (e) => {
     if (showEmojiRef.current) { e.preventDefault(); setShowEmoji(false); setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 120); }
   };
-  const onInputFocus = () => { if (showEmojiRef.current) setShowEmoji(false); };
+  const onInputFocus = () => { handleInputFocus(); };
   const switchEmojiCat = (cat) => {
     if (emojiGridRef.current) emojiScrollPosRef.current = emojiGridRef.current.scrollTop;
     setEmojiTab(cat); setEmojiSearch("");
@@ -340,13 +350,7 @@ export default function EVA() {
     if (emojiSearch.trim()) { const q = emojiSearch.toLowerCase(); const all = Object.values(EMOJI_CATS).flat(); return all.filter((item) => item.k.includes(q)); }
     return EMOJI_CATS[emojiTab] || [];
   };
-  const scrollToQuestionWith3Lines = () => {
-    requestAnimationFrame(() => { requestAnimationFrame(() => {
-      if (!scrollRef.current || !lastUserMsgRef.current) return;
-      const c = scrollRef.current; const q = lastUserMsgRef.current; const target = q.offsetTop - 10;
-      c.scrollTop = Math.max(0, Math.min(target, c.scrollHeight - c.clientHeight));
-    }); });
-  };
+  // DELETED: scrollToQuestionWith3Lines() - this was the bug causing jump to middle
   const toggleSelect = (idx) => { setSelectedIdxs((prev) => { if (prev.includes(idx)) return prev.filter((x) => x !== idx); return [...prev, idx]; }); };
   const onMsgTouchStart = (e, idx) => {
     const t = e.touches[0]; swipeStartX.current = t.clientX; swipeStartY.current = t.clientY; isLongPress.current = false;
@@ -407,6 +411,7 @@ export default function EVA() {
     if (!text.trim() || isThinking) return;
     const userText = text.trim(); const curReply = replyTo;
     setText(""); setReplyTo(null); setShowEmoji(false); setEmojiSearch(""); const nowTs = Date.now();
+    stickToBottomRef.current = true;
     const lower = userText.toLowerCase();
     if (lower.includes("my name is")) { const nm = userText.split(/my name is/i)[1].trim().split(" ")[0].replace(/[^a-zA-Z]/g, ""); if (nm) { const cap = nm.charAt(0).toUpperCase() + nm.slice(1).toLowerCase(); setMyName(cap); localStorage.setItem("eva_dave_name", cap); } }
     if (lower.includes("my best food is")) { const v = userText.split(/my best food is/i)[1].trim(); const np = { ...prefs, food: v }; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
@@ -417,7 +422,7 @@ export default function EVA() {
       if (!ok) return;
       setMessages((prev) => { const copy = [...prev]; for (let i = copy.length - 1; i >= 0; i--) { if (copy[i].from === "you" && copy[i].time === nowTs) { copy[i] = { ...copy[i], status: "delivered" }; break; } } try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {} return copy; });
     });
-    scrollToQuestionWith3Lines();
+    scrollToBottom(false);
     const typeOut = (fullText) => {
       const cleaned = cleanText(fullText);
       return new Promise((resolve) => {
@@ -445,13 +450,16 @@ export default function EVA() {
       setMessages((prev) => { const w = prev.slice(0, -1); const next = [...w, { from: "eva", text: "Network jam small Boss, try again.", time: Date.now() }]; try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {} return next; });
     }
     setIsThinking(false); if (textareaRef.current) textareaRef.current.focus();
+    setTimeout(() => scrollToBottom(false), 200);
   };
   const hideKeyboardToRead = (e) => {
     if (e && e.target !== e.currentTarget) return;
     setShowMenu(false);
-    if (selectedIdxs.length > 0) { const st = scrollRef.current ? scrollRef.current.scrollTop : 0; setSelectedIdxs([]); requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = st; }); }
+    if (selectedIdxs.length > 0) { const st = scrollRef.current ? scrollRef.current.scrollTop : 0; setSelectedIdxs([]); requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = st; }); return; }
     if (showEmojiRef.current) setShowEmoji(false);
     if (document.activeElement) document.activeElement.blur();
+    // FIX: When you tap background to hide keyboard, stay at bottom if you were at bottom
+    if (stickToBottomRef.current) setTimeout(() => scrollToBottom(false), 120);
   };
   const selectedHasYou = selectedIdxs.some((i) => messages[i]?.from === "you");
   const selectedOnlyEva = selectedIdxs.length > 0 && !selectedHasYou;
@@ -597,7 +605,7 @@ export default function EVA() {
       )}
 
       {!showSearch && !showMedia && (
-      <div ref={scrollRef} className="eva-no-select" style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "auto" }} onClick={hideKeyboardToRead} onContextMenu={(e) => e.preventDefault()} onSelectStart={(e) => e.preventDefault()}>
+      <div ref={scrollRef} onScroll={handleChatScroll} className="eva-no-select" style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "auto" }} onClick={hideKeyboardToRead} onContextMenu={(e) => e.preventDefault()} onSelectStart={(e) => e.preventDefault()}>
         {messages.length === 0 && (<div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, maxWidth: 420, margin: "0 auto", textAlign: "center" }}>Hello, I am EVA. Ask me anything.</div>)}
         {messages.map((m, i) => {
           const isLastUser = m.from === "you" && messages.slice(i + 1).every((x) => x.from !== "you");
@@ -710,11 +718,11 @@ export default function EVA() {
         {replyTo && (<div style={{ maxWidth: 520, margin: "0 auto 8px", background: "rgba(139,92,246,0.25)", borderLeft: "3px solid #8b5cf6", padding: "8px 10px", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}><div style={{ minWidth: 0 }}><div style={{ fontSize: 12, fontWeight: "bold", color: "#c4b5fd" }}>Replying to {replyTo.from === "you" ? "You" : "EVA"}</div><div style={{ fontSize: 13, opacity: 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cleanText(replyTo.text)}</div></div><button onClick={() => setReplyTo(null)} style={{ background: "transparent", border: "none", color: "white", fontSize: 16 }}>✕</button></div>)}
         <div style={{ display: "flex", gap: 6, maxWidth: 520, margin: "0 auto", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", borderRadius: 999, padding: 8, alignItems: "center" }}>
           <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={toggleEmoji} style={{ background: showEmoji ? "#8b5cf6" : "transparent", border: "none", fontSize: 24, padding: "2px 4px", flexShrink: 0, borderRadius: 999 }}>😊</button>
-          <textarea ref={textareaRef} value={text} onChange={(e) => setText(e.target.value)} onTouchStart={onInputTouchStart} onFocus={onInputFocus} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askEVA(); } }} placeholder="Ask EVA..." rows={1} enterKeyHint="send" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} readOnly={showEmoji} data-lpignore="true" data-1p-ignore="true" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "white", padding: "10px 6px", fontSize: 15, resize: "none", maxHeight: 100, fontFamily: "sans-serif" }} />
+          <textarea ref={textareaRef} value={text} onChange={(e) => setText(e.target.value)} onTouchStart={onInputTouchStart} onFocus={onInputFocus} onBlur={handleInputBlur} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askEVA(); } }} placeholder="Ask EVA..." rows={1} enterKeyHint="send" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} readOnly={showEmoji} data-lpignore="true" data-1p-ignore="true" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "white", padding: "10px 6px", fontSize: 15, resize: "none", maxHeight: 100, fontFamily: "sans-serif" }} />
           <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={askEVA} style={{ background: "#8b5cf6", border: "none", color: "white", padding: "10px 18px", borderRadius: 999, fontWeight: "bold", flexShrink: 0, touchAction: "manipulation" }}>Ask →</button>
         </div>
       </div>
       )}
     </div>
   );
-    }
+                                                                                                                                                                                                                                                                                        }
