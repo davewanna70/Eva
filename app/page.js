@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -29,7 +29,6 @@ const EMOJI_CATS = {
   ]
 };
 const EMOJI_CAT_LIST = Object.keys(EMOJI_CATS);
-
 const cleanText = (t) => (t || "").replace(/\*\*/g, "").replace(/^\s*-\s*/gm, "• ");
 const fmtTime = (ts) => {
   if (!ts) return "";
@@ -132,11 +131,10 @@ const getSizeFor = (msgs, kind) => {
 };
 
 export default function EVA() {
+  // FIX SHAKE: start empty, load cache BEFORE paint. No useState(localStorage) — na that dey cause hydration shake.
   const [text, setText] = useState("");
-  const [messages, setMessages] = useState(() => {
-    try { const c = localStorage.getItem("eva_messages_cache"); if (c) return JSON.parse(c); } catch (e) {}
-    return [];
-  });
+  const [messages, setMessages] = useState([]);
+  const [isReady, setIsReady] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [emojiTab, setEmojiTab] = useState("😊 Faces");
@@ -162,7 +160,6 @@ export default function EVA() {
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const didInitialScroll = useRef(false);
-  const smoothAnimRef = useRef(null);
   const lastUserMsgRef = useRef(null);
   const outerRef = useRef(null);
   const swipeStartX = useRef(null);
@@ -179,41 +176,22 @@ export default function EVA() {
   const showEmojiRef = useRef(false);
   showEmojiRef.current = showEmoji;
 
-  // ===== FIX: STICK TO BOTTOM LOGIC =====
-  const stickToBottomRef = useRef(true);
-  const scrollToBottom = (instant = false) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (bottomRef.current) {
-          bottomRef.current.scrollIntoView({ behavior: instant ? "auto" : "smooth", block: "end" });
-        } else if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      });
-    });
+  // ===== WHATSAPP STABLE — NO AUTO SCROLL ON TYPING =====
+  const scrollToQuestionWhatsApp = (userMsgIndex) => {
+    setTimeout(() => {
+      if (!scrollRef.current) return;
+      const el = document.getElementById(`eva-msg-${userMsgIndex}`);
+      if (!el) { scrollRef.current.scrollTop = scrollRef.current.scrollHeight; return; }
+      scrollRef.current.scrollTo({ top: el.offsetTop - 12, behavior: "smooth" });
+    }, 80);
   };
-  const handleChatScroll = () => {
-    if (!scrollRef.current) return;
-    const c = scrollRef.current;
-    const distanceFromBottom = c.scrollHeight - c.scrollTop - c.clientHeight;
-    stickToBottomRef.current = distanceFromBottom < 120;
-  };
-  const lastMsgText = messages.length ? messages[messages.length - 1]?.text : "";
-  useEffect(() => {
-    if (stickToBottomRef.current) scrollToBottom(false);
-  }, [messages.length, lastMsgText]);
-  const handleInputBlur = () => {
-    setTimeout(() => { scrollToBottom(false); }, 180);
-  };
-  const handleInputFocus = () => {
-    if (showEmojiRef.current) setShowEmoji(false);
-    setTimeout(() => { scrollToBottom(false); }, 250);
-  };
-  // ===== END FIX =====
+  const saveScroll = () => { if (scrollRef.current) savedScrollTop.current = scrollRef.current.scrollTop; };
+  const restoreScroll = () => { requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = savedScrollTop.current; }); };
+  const handleInputBlur = () => { setTimeout(() => { restoreScroll(); }, 50); };
+  const handleInputFocus = () => { if (showEmojiRef.current) setShowEmoji(false); saveScroll(); };
 
   const isMulti = selectedIdxs.length >= 2;
   const isSingle = selectedIdxs.length === 1;
-
   const searchResults = searchQuery.trim() ? messages.map((m, idx) => ({ m, idx })).filter(({ m }) => cleanText(m.text).toLowerCase().includes(searchQuery.toLowerCase())) : [];
   const mediaList = messages.map((m, idx) => ({ m, idx })).filter(({ m }) => isMediaMsg(m));
   const docsList = messages.map((m, idx) => ({ m, idx })).filter(({ m }) => isDocMsg(m));
@@ -223,11 +201,7 @@ export default function EVA() {
   const photoSize = getSizeFor(messages, "photos");
 
   const jumpToMessage = (idx) => {
-    setShowSearch(false);
-    setShowMedia(false);
-    setSearchQuery("");
-    setHighlightIdx(idx);
-    stickToBottomRef.current = false;
+    setShowSearch(false); setShowMedia(false); setSearchQuery(""); setHighlightIdx(idx);
     setTimeout(() => {
       const el = document.getElementById(`eva-msg-${idx}`);
       if (el && scrollRef.current) el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -235,83 +209,77 @@ export default function EVA() {
     }, 100);
   };
 
-  useEffect(() => {
-    if (!window.visualViewport) return;
-    const setH = () => {
-      if (!outerRef.current) return;
-      outerRef.current.style.height = window.visualViewport.height + "px";
-      outerRef.current.style.minHeight = window.visualViewport.height + "px";
-      outerRef.current.style.maxHeight = window.visualViewport.height + "px";
-    };
-    setH();
-    window.visualViewport.addEventListener("resize", setH);
-    window.visualViewport.addEventListener("scroll", setH);
-    return () => { window.visualViewport.removeEventListener("resize", setH); window.visualViewport.removeEventListener("scroll", setH); };
+  // ===== FIX SHAKE: LOCALSTORAGE = INSTANT, SUPABASE = SILENT BACKUP =====
+  useLayoutEffect(() => {
+    try {
+      const n = localStorage.getItem("eva_dave_name"); if (n) setMyName(n);
+      const p = localStorage.getItem("eva_dave_prefs"); if (p) setPrefs(JSON.parse(p));
+    } catch (e) {}
+    let cached = [];
+    try { cached = JSON.parse(localStorage.getItem("eva_messages_cache") || "[]"); } catch (e) { cached = []; }
+    if (cached.length > 0) {
+      setMessages(cached);
+      setIsReady(true);
+      // Supabase background — only if e get MORE messages, never replace, never shake
+      (async () => {
+        try {
+          const { data } = await supabase.from("messages").select("*").eq("chat_id", CHAT_ID).order("created_at", { ascending: true }).limit(80);
+          if (data && data.length) {
+            const mapped = data.map((m) => ({ from: m.sender === "you" ? "you" : "eva", text: m.text, time: m.created_at ? new Date(m.created_at).getTime() : Date.now(), status: m.sender === "you" ? "delivered" : undefined }));
+            if (mapped.length > cached.length) {
+              setMessages(mapped);
+              try { localStorage.setItem("eva_messages_cache", JSON.stringify(mapped)); } catch (e) {}
+            }
+          }
+        } catch (e) {}
+      })();
+      return;
+    }
+    // No cache (new phone) — load from Supabase ONCE
+    (async () => {
+      try {
+        const { data } = await supabase.from("messages").select("*").eq("chat_id", CHAT_ID).order("created_at", { ascending: true }).limit(80);
+        if (data && data.length) {
+          const mapped = data.map((m) => ({ from: m.sender === "you" ? "you" : "eva", text: m.text, time: m.created_at ? new Date(m.created_at).getTime() : Date.now(), status: m.sender === "you" ? "delivered" : undefined }));
+          setMessages(mapped);
+          try { localStorage.setItem("eva_messages_cache", JSON.stringify(mapped)); } catch (e) {}
+        }
+      } catch (e) {}
+      setIsReady(true);
+    })();
   }, []);
 
+  // Initial scroll ONCE, INSTANT, no smooth
   useEffect(() => {
-    const n = localStorage.getItem("eva_dave_name");
-    if (n) setMyName(n);
-    const p = localStorage.getItem("eva_dave_prefs");
-    if (p) { try { setPrefs(JSON.parse(p)); } catch (e) {} }
-    const local = (() => { try { return JSON.parse(localStorage.getItem("eva_messages_cache") || "[]"); } catch (e) { return []; } })();
-    if (local.length > 0) return;
-    const load = async () => {
-      const { data } = await supabase.from("messages").select("*").eq("chat_id", CHAT_ID).order("created_at", { ascending: true }).limit(80);
-      if (data && data.length) {
-        const mapped = data.map((m) => ({ from: m.sender === "you" ? "you" : "eva", text: m.text, time: m.created_at ? new Date(m.created_at).getTime() : Date.now(), status: m.sender === "you" ? "delivered" : undefined }));
-        const nowLocal = (() => { try { return JSON.parse(localStorage.getItem("eva_messages_cache") || "[]"); } catch (e) { return []; } })();
-        if (nowLocal.length === 0) { setMessages(mapped); try { localStorage.setItem("eva_messages_cache", JSON.stringify(mapped)); } catch (e) {} }
-      }
-    };
-    load();
-  }, []);
-
-  useEffect(() => {
+    if (!isReady) return;
     if (didInitialScroll.current) return;
     if (messages.length === 0) return;
-    const t1 = setTimeout(() => { scrollToBottom(true); didInitialScroll.current = true; }, 120);
-    return () => { clearTimeout(t1); };
-  }, [messages.length]);
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    didInitialScroll.current = true;
+  }, [isReady, messages.length]);
 
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(""), 1500); };
   const saveToSupabase = async (sender, msgText) => {
     try { const { error } = await supabase.from("messages").insert([{ chat_id: CHAT_ID, sender, text: msgText }]); return !error; } catch (e) { return false; }
   };
-  const openClearSheet = () => {
-    setShowMenu(false);
-    setShowClearSheet(true);
-  };
+  const openClearSheet = () => { setShowMenu(false); setShowClearSheet(true); };
   const doClearChat = async () => {
     if (clearMode === "videos") {
-      setMessages((prev) => {
-        const next = prev.filter((m) => !isVideoMsg(m));
-        try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
-        return next;
-      });
+      setMessages((prev) => { const next = prev.filter((m) => !isVideoMsg(m)); try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {} return next; });
     } else if (clearMode === "photos") {
-      setMessages((prev) => {
-        const next = prev.filter((m) => !isPhotoMsg(m));
-        try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
-        return next;
-      });
+      setMessages((prev) => { const next = prev.filter((m) => !isPhotoMsg(m)); try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {} return next; });
     } else {
       setMessages([]); setMyName(""); setPrefs({});
       localStorage.removeItem("eva_dave_name"); localStorage.removeItem("eva_dave_prefs"); localStorage.removeItem("eva_messages_cache");
       try { await supabase.from("messages").delete().eq("chat_id", CHAT_ID); } catch (e) {}
     }
-    setShowClearSheet(false); setShowSearch(false); setShowMedia(false);
-    setClearMode("all");
-    didInitialScroll.current = true;
-    showToast("Chat cleared");
+    setShowClearSheet(false); setShowSearch(false); setShowMedia(false); setClearMode("all"); didInitialScroll.current = true; showToast("Chat cleared");
   };
   const toggleEmoji = () => {
     if (showEmoji) { setShowEmoji(false); setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 100); }
     else { if (document.activeElement) document.activeElement.blur(); setShowEmoji(true); }
   };
-  const onInputTouchStart = (e) => {
-    if (showEmojiRef.current) { e.preventDefault(); setShowEmoji(false); setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 120); }
-  };
+  const onInputTouchStart = (e) => { if (showEmojiRef.current) { e.preventDefault(); setShowEmoji(false); setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 120); } };
   const onInputFocus = () => { handleInputFocus(); };
   const switchEmojiCat = (cat) => {
     if (emojiGridRef.current) emojiScrollPosRef.current = emojiGridRef.current.scrollTop;
@@ -342,7 +310,6 @@ export default function EVA() {
     if (emojiSearch.trim()) { const q = emojiSearch.toLowerCase(); const all = Object.values(EMOJI_CATS).flat(); return all.filter((item) => item.k.includes(q)); }
     return EMOJI_CATS[emojiTab] || [];
   };
-  // DELETED: scrollToQuestionWith3Lines() - this was the bug causing jump to middle
   const toggleSelect = (idx) => { setSelectedIdxs((prev) => { if (prev.includes(idx)) return prev.filter((x) => x !== idx); return [...prev, idx]; }); };
   const onMsgTouchStart = (e, idx) => {
     const t = e.touches[0]; swipeStartX.current = t.clientX; swipeStartY.current = t.clientY; isLongPress.current = false;
@@ -403,18 +370,18 @@ export default function EVA() {
     if (!text.trim() || isThinking) return;
     const userText = text.trim(); const curReply = replyTo;
     setText(""); setReplyTo(null); setShowEmoji(false); setEmojiSearch(""); const nowTs = Date.now();
-    stickToBottomRef.current = true;
     const lower = userText.toLowerCase();
     if (lower.includes("my name is")) { const nm = userText.split(/my name is/i)[1].trim().split(" ")[0].replace(/[^a-zA-Z]/g, ""); if (nm) { const cap = nm.charAt(0).toUpperCase() + nm.slice(1).toLowerCase(); setMyName(cap); localStorage.setItem("eva_dave_name", cap); } }
     if (lower.includes("my best food is")) { const v = userText.split(/my best food is/i)[1].trim(); const np = { ...prefs, food: v }; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
     if (lower.includes("i want to buy")) { const v = userText.split(/i want to buy/i)[1].trim(); const np = { ...prefs, want_to_buy: v }; setPrefs(np); localStorage.setItem("eva_dave_prefs", JSON.stringify(np)); }
     setIsThinking(true);
+    const userMsgIndex = messages.length;
     setMessages((prev) => { const next = [...prev, { from: "you", text: userText, time: nowTs, status: "sending", replyTo: curReply }, { from: "eva", text: "▍", time: nowTs }]; try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {} return next; });
     saveToSupabase("you", userText).then((ok) => {
       if (!ok) return;
       setMessages((prev) => { const copy = [...prev]; for (let i = copy.length - 1; i >= 0; i--) { if (copy[i].from === "you" && copy[i].time === nowTs) { copy[i] = { ...copy[i], status: "delivered" }; break; } } try { localStorage.setItem("eva_messages_cache", JSON.stringify(copy)); } catch (e) {} return copy; });
     });
-    scrollToBottom(false);
+    scrollToQuestionWhatsApp(userMsgIndex);
     const typeOut = (fullText) => {
       const cleaned = cleanText(fullText);
       return new Promise((resolve) => {
@@ -428,7 +395,6 @@ export default function EVA() {
     };
     try {
       const history = [...messages, { from: "you", text: userText }].slice(-10).map((m) => ({ role: m.from === "you" ? "user" : "assistant", content: m.text }));
-      // ===== TIMEZONE FIX: Send browser timezone to brain so London user gets London time, Lagos gets Lagos time =====
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: userText, history, userProfile: { name: myName, prefs, bestFood: prefs.food, wantToBuy: prefs.want_to_buy, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Lagos" } }) });
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
@@ -443,7 +409,6 @@ export default function EVA() {
       setMessages((prev) => { const w = prev.slice(0, -1); const next = [...w, { from: "eva", text: "Network jam small Boss, try again.", time: Date.now() }]; try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {} return next; });
     }
     setIsThinking(false); if (textareaRef.current) textareaRef.current.focus();
-    setTimeout(() => scrollToBottom(false), 200);
   };
   const hideKeyboardToRead = (e) => {
     if (e && e.target !== e.currentTarget) return;
@@ -451,7 +416,7 @@ export default function EVA() {
     if (selectedIdxs.length > 0) { const st = scrollRef.current ? scrollRef.current.scrollTop : 0; setSelectedIdxs([]); requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = st; }); return; }
     if (showEmojiRef.current) setShowEmoji(false);
     if (document.activeElement) document.activeElement.blur();
-    if (stickToBottomRef.current) setTimeout(() => scrollToBottom(false), 120);
+    saveScroll(); setTimeout(() => { restoreScroll(); }, 60);
   };
   const selectedHasYou = selectedIdxs.some((i) => messages[i]?.from === "you");
   const selectedOnlyEva = selectedIdxs.length > 0 && !selectedHasYou;
@@ -490,17 +455,11 @@ export default function EVA() {
         .eva-pop{ animation: evaPop 0.6s ease-out 1; }
       `}</style>
       <img src="/eva-bg.jpg" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", zIndex: 0 }} />
-
-      {showMenu && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 35, background: "transparent" }} onClick={() => setShowMenu(false)} />
-      )}
-
+      {showMenu && (<div style={{ position: "fixed", inset: 0, zIndex: 35, background: "transparent" }} onClick={() => setShowMenu(false)} />)}
       <div style={{ position: "relative", zIndex: 50, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", paddingTop: "env(safe-area-inset-top)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
         <div style={{ display: "flex", padding: "12px 18px 12px", alignItems: "center", justifyContent: "space-between", minHeight: 56, boxSizing: "border-box" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 38, height: 38, minWidth: 38, minHeight: 38, borderRadius: 999, overflow: "hidden", border: "2px solid #a78bfa", background: "linear-gradient(135deg, #1e1b4b, #4c1d95, #0ea5e9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 22 }}>
-              💧
-            </div>
+            <div style={{ width: 38, height: 38, minWidth: 38, minHeight: 38, borderRadius: 999, overflow: "hidden", border: "2px solid #a78bfa", background: "linear-gradient(135deg, #1e1b4b, #4c1d95, #0ea5e9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 22 }}>💧</div>
             <b style={{ fontSize: 20, letterSpacing: 2, lineHeight: 1 }}>EVA</b>
           </div>
           <div style={{ position: "relative", flexShrink: 0, zIndex: 70 }}>
@@ -515,7 +474,6 @@ export default function EVA() {
           </div>
         </div>
       </div>
-
       {showSearch && (
         <div style={{ position: "relative", zIndex: 40, flex: 1, minHeight: 0, background: "#0a0a15", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.1)", flexShrink: 0 }}>
@@ -536,7 +494,6 @@ export default function EVA() {
           </div>
         </div>
       )}
-
       {showMedia && !showSearch && (
         <div style={{ position: "relative", zIndex: 40, flex: 1, minHeight: 0, background: "#0a0a15", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.1)", flexShrink: 0 }}>
@@ -549,56 +506,15 @@ export default function EVA() {
             ))}
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
-            {mediaTab === "Media" && (
-              <>
-                {mediaList.length === 0 ? (
-                  <div style={{ textAlign: "center", color: "#888", fontSize: 13, marginTop: 40 }}>No media yet<br /><span style={{ fontSize: 12, opacity: 0.7 }}>When you send pics / videos in EVA, dem go show here</span></div>
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
-                    {mediaList.map(({ m, idx }) => (
-                      <button key={idx} onClick={() => jumpToMessage(idx)} style={{ aspectRatio: "1", background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 8, overflow: "hidden", padding: 0, position: "relative" }}>
-                        {m.mediaUrl || m.imageUrl ? <img src={m.mediaUrl || m.imageUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 28, display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>{isOnlyEmojiMsg(m.text) ? cleanText(m.text).slice(0, 2) : "🖼️"}</span>}
-                        <span style={{ position: "absolute", bottom: 4, right: 6, fontSize: 10, color: "white", textShadow: "0 1px 3px black" }}>{fmtTime(m.time)}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-            {mediaTab === "Docs" && (
-              <>
-                {docsList.length === 0 ? (
-                  <div style={{ textAlign: "center", color: "#888", fontSize: 13, marginTop: 40 }}>No docs yet<br /><span style={{ fontSize: 12, opacity: 0.7 }}>When you send PDF / Doc / files in EVA, dem go show here</span></div>
-                ) : docsList.map(({ m, idx }) => (
-                  <button key={idx} onClick={() => jumpToMessage(idx)} style={{ width: "100%", textAlign: "left", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px", marginBottom: 8, color: "white", display: "flex", gap: 10, alignItems: "center" }}>
-                    <span style={{ fontSize: 28 }}>📄</span>
-                    <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.fileName || cleanText(m.text).slice(0, 60)}</span><span style={{ fontSize: 11, color: "#aaa" }}>{m.from === "you" ? "You" : "EVA"} • {fmtTime(m.time)}</span></span>
-                  </button>
-                ))}
-              </>
-            )}
-            {mediaTab === "Links" && (
-              <>
-                {linksList.length === 0 ? (
-                  <div style={{ textAlign: "center", color: "#888", fontSize: 13, marginTop: 40 }}>No links yet<br /><span style={{ fontSize: 12, opacity: 0.7 }}>When you or EVA send links, dem go show here</span></div>
-                ) : linksList.map(({ m, idx }) => (
-                  <button key={idx} onClick={() => jumpToMessage(idx)} style={{ width: "100%", textAlign: "left", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px", marginBottom: 8, color: "white" }}>
-                    <div style={{ fontSize: 11, color: "#aaa", marginBottom: 4 }}>{m.from === "you" ? "You" : "EVA"} • {fmtTime(m.time)}</div>
-                    {extractLinks(m.text).map((l, li) => (
-                      <div key={li} style={{ fontSize: 14, color: "#4da3ff", wordBreak: "break-all", marginBottom: 4 }}>{l}</div>
-                    ))}
-                    <div style={{ fontSize: 13, opacity: 0.8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{cleanText(m.text)}</div>
-                  </button>
-                ))}
-              </>
-            )}
+            {mediaTab === "Media" && (<>{mediaList.length === 0 ? (<div style={{ textAlign: "center", color: "#888", fontSize: 13, marginTop: 40 }}>No media yet<br /><span style={{ fontSize: 12, opacity: 0.7 }}>When you send pics / videos in EVA, dem go show here</span></div>) : (<div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>{mediaList.map(({ m, idx }) => (<button key={idx} onClick={() => jumpToMessage(idx)} style={{ aspectRatio: "1", background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 8, overflow: "hidden", padding: 0, position: "relative" }}>{m.mediaUrl || m.imageUrl ? <img src={m.mediaUrl || m.imageUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 28, display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>{isOnlyEmojiMsg(m.text) ? cleanText(m.text).slice(0, 2) : "🖼️"}</span>}<span style={{ position: "absolute", bottom: 4, right: 6, fontSize: 10, color: "white", textShadow: "0 1px 3px black" }}>{fmtTime(m.time)}</span></button>))}</div>)}</>)}
+            {mediaTab === "Docs" && (<>{docsList.length === 0 ? (<div style={{ textAlign: "center", color: "#888", fontSize: 13, marginTop: 40 }}>No docs yet<br /><span style={{ fontSize: 12, opacity: 0.7 }}>When you send PDF / Doc / files in EVA, dem go show here</span></div>) : docsList.map(({ m, idx }) => (<button key={idx} onClick={() => jumpToMessage(idx)} style={{ width: "100%", textAlign: "left", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px", marginBottom: 8, color: "white", display: "flex", gap: 10, alignItems: "center" }}><span style={{ fontSize: 28 }}>📄</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.fileName || cleanText(m.text).slice(0, 60)}</span><span style={{ fontSize: 11, color: "#aaa" }}>{m.from === "you" ? "You" : "EVA"} • {fmtTime(m.time)}</span></span></button>))}</>)}
+            {mediaTab === "Links" && (<>{linksList.length === 0 ? (<div style={{ textAlign: "center", color: "#888", fontSize: 13, marginTop: 40 }}>No links yet<br /><span style={{ fontSize: 12, opacity: 0.7 }}>When you or EVA send links, dem go show here</span></div>) : linksList.map(({ m, idx }) => (<button key={idx} onClick={() => jumpToMessage(idx)} style={{ width: "100%", textAlign: "left", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px", marginBottom: 8, color: "white" }}><div style={{ fontSize: 11, color: "#aaa", marginBottom: 4 }}>{m.from === "you" ? "You" : "EVA"} • {fmtTime(m.time)}</div>{extractLinks(m.text).map((l, li) => (<div key={li} style={{ fontSize: 14, color: "#4da3ff", wordBreak: "break-all", marginBottom: 4 }}>{l}</div>))}<div style={{ fontSize: 13, opacity: 0.8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{cleanText(m.text)}</div></button>))}</>)}
           </div>
         </div>
       )}
-
       {!showSearch && !showMedia && (
-      <div ref={scrollRef} onScroll={handleChatScroll} className="eva-no-select" style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "auto" }} onClick={hideKeyboardToRead} onContextMenu={(e) => e.preventDefault()} onSelectStart={(e) => e.preventDefault()}>
-        {messages.length === 0 && (<div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, maxWidth: 420, margin: "0 auto", textAlign: "center" }}>Hello, I am EVA. Ask me anything.</div>)}
+      <div ref={scrollRef} className="eva-no-select" style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "auto", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "auto", visibility: isReady ? "visible" : "hidden" }} onClick={hideKeyboardToRead} onContextMenu={(e) => e.preventDefault()} onSelectStart={(e) => e.preventDefault()}>
+        {messages.length === 0 && isReady && (<div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, maxWidth: 420, margin: "0 auto", textAlign: "center" }}>Hello, I am EVA. Ask me anything.</div>)}
         {messages.map((m, i) => {
           const isLastUser = m.from === "you" && messages.slice(i + 1).every((x) => x.from !== "you");
           const naked = isOnlyEmojiMsg(m.text);
@@ -617,15 +533,8 @@ export default function EVA() {
               )}
               <div ref={isLastUser ? lastUserMsgRef : null} onTouchStart={(e) => onMsgTouchStart(e, i)} onTouchMove={(e) => onMsgTouchMove(e, i)} onTouchEnd={(e) => onMsgTouchEnd(e, m, i)} onClick={(e) => onMsgClick(e, i)} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); if (!selectedIdxs.includes(i)) { justSelectedAt.current = Date.now(); setSelectedIdxs((prev) => [...prev, i]); } }} onSelectStart={(e) => e.preventDefault()} style={naked ? { background: isSel ? "rgba(139,92,246,0.45)" : (isHighlighted ? "rgba(37,211,102,0.4)" : "transparent"), border: isSel ? "1px solid rgba(139,92,246,0.5)" : (isHighlighted ? "1px solid #25D366" : "none"), padding: "2px 6px 2px", borderRadius: 8, maxWidth: "85%", fontSize: 15, lineHeight: 1.2, whiteSpace: "pre-line", boxShadow: "none", touchAction: "pan-y", transform: off ? `translateX(${off}px)` : "none" } : { background: isSel ? "rgba(139,92,246,0.75)" : (isHighlighted ? "rgba(37,211,102,0.35)" : (m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)")), border: isSel ? "1px solid rgba(255,255,255,0.6)" : (isHighlighted ? "1px solid #25D366" : "1px solid rgba(255,255,255,0.25)"), padding: "10px 14px 6px", borderRadius: 16, maxWidth: "85%", fontSize: 15, lineHeight: 1.5, whiteSpace: "pre-line", touchAction: "pan-y", transform: off ? `translateX(${off}px)` : "none" }}>
                 {m.replyTo && (<div style={{ borderLeft: "3px solid #a78bfa", paddingLeft: 8, marginBottom: 6, opacity: 0.9 }}><div style={{ fontSize: 12, fontWeight: "bold", color: "#c4b5fd" }}>{m.replyTo.from === "you" ? "You" : "EVA"}</div><div style={{ fontSize: 13, opacity: 0.85, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{cleanText(m.replyTo.text)}</div></div>)}
-                {naked ? (
-                  <div key={replayMap[i] || `emoji-${m.time}-${i}`} onClick={(e) => { if (selectedIdxs.length === 0) { e.stopPropagation(); setReplayMap((prev) => ({ ...prev, [i]: Date.now() })); } }} style={{ display: "flex", gap: 2, cursor: "pointer" }}>
-                    {Array.from(cleanText(m.text)).map((ch, j) => (<span key={j} className={getEmojiAnim(ch)} style={{ fontSize: getEmojiSize(m.text), lineHeight: 1.3, textShadow: "0 2px 8px rgba(0,0,0,0.6)", display: "inline-block", animationDelay: `${j * 0.08}s` }}>{ch}</span>))}
-                  </div>
-                ) : (<div style={{ fontSize: 15, lineHeight: 1.5 }}>{cleanText(m.text)}</div>)}
-                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: naked ? 0 : 4, fontSize: 10, opacity: naked ? 0.85 : 0.75, textShadow: naked ? "0 1px 3px rgba(0,0,0,0.9)" : "none" }}>
-                  <span>{fmtTime(m.time)}</span>
-                  {m.from === "you" && (<span style={{ fontSize: 12, letterSpacing: -2 }}>{m.status === "delivered" ? "✓✓" : "✓"}</span>)}
-                </div>
+                {naked ? (<div key={replayMap[i] || `emoji-${m.time}-${i}`} onClick={(e) => { if (selectedIdxs.length === 0) { e.stopPropagation(); setReplayMap((prev) => ({ ...prev, [i]: Date.now() })); } }} style={{ display: "flex", gap: 2, cursor: "pointer" }}>{Array.from(cleanText(m.text)).map((ch, j) => (<span key={j} className={getEmojiAnim(ch)} style={{ fontSize: getEmojiSize(m.text), lineHeight: 1.3, textShadow: "0 2px 8px rgba(0,0,0,0.6)", display: "inline-block", animationDelay: `${j * 0.08}s` }}>{ch}</span>))}</div>) : (<div style={{ fontSize: 15, lineHeight: 1.5 }}>{cleanText(m.text)}</div>)}
+                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: naked ? 0 : 4, fontSize: 10, opacity: naked ? 0.85 : 0.75, textShadow: naked ? "0 1px 3px rgba(0,0,0,0.9)" : "none" }}><span>{fmtTime(m.time)}</span>{m.from === "you" && (<span style={{ fontSize: 12, letterSpacing: -2 }}>{m.status === "delivered" ? "✓✓" : "✓"}</span>)}</div>
               </div>
               {isSingle && isSel && !naked && (<button onClick={openDeleteSheet} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", top: -8, right: 2, background: "transparent", border: "none", boxShadow: "none", padding: 4, cursor: "pointer", zIndex: 25 }}><TrashIcon /></button>)}
               {isSingle && isSel && !naked && (<div style={{ position: "absolute", top: "100%", left: 0, right: 0, width: "100%", maxWidth: "85%", alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: "transparent", border: "none", boxShadow: "none", padding: "4px 4px 0", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 20, pointerEvents: "auto" }} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}><button onClick={doCopy} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 6, cursor: "pointer" }}><CopyIcon /></button><button onClick={doForward} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 6, cursor: "pointer" }}><ForwardIcon /></button></div>)}
@@ -635,9 +544,7 @@ export default function EVA() {
         <div ref={bottomRef} style={{ height: 10, flexShrink: 0 }} />
       </div>
       )}
-
       {toast && (<div style={{ position: "relative", zIndex: 40, margin: "0 auto", background: "rgba(0,0,0,0.9)", color: "white", padding: "8px 16px", borderRadius: 999, fontSize: 13, marginBottom: 6 }}>{toast}</div>)}
-
       {isMulti && !showSearch && !showMedia && (
         <div style={{ position: "relative", zIndex: 35, flexShrink: 0, display: "flex", justifyContent: "flex-start", padding: "0 16px 6px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, background: "rgba(0,0,0,0.88)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 999, padding: "7px 14px", boxShadow: "0 6px 20px rgba(0,0,0,0.5)" }}>
@@ -649,7 +556,6 @@ export default function EVA() {
           </div>
         </div>
       )}
-
       {showDeleteSheet && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={closeDeleteSheet}>
           <div style={{ width: "100%", maxWidth: 520, background: "#1a1a1a", borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: "16px 20px calc(20px + env(safe-area-inset-bottom))" }} onClick={(e) => e.stopPropagation()}>
@@ -661,7 +567,6 @@ export default function EVA() {
           </div>
         </div>
       )}
-
       {showClearSheet && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 110, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setShowClearSheet(false)}>
           <div style={{ width: "100%", maxWidth: 520, background: "#111118", borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: "12px 20px calc(20px + env(safe-area-inset-bottom))" }} onClick={(e) => e.stopPropagation()}>
@@ -669,28 +574,14 @@ export default function EVA() {
               <button onClick={() => setShowClearSheet(false)} style={{ background: "transparent", border: "none", color: "white", fontSize: 20, padding: 4 }}>✕</button>
               <b style={{ fontSize: 18, color: "white" }}>Clear chat</b>
             </div>
-            <button onClick={() => setClearMode("all")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}>
-              <span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "all" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} />
-              <span style={{ color: "white", fontSize: 15, flex: 1 }}>All messages <span style={{ color: "#aaa" }}>({totalSize})</span></span>
-            </button>
-            <button onClick={() => setClearMode("videos")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}>
-              <span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "videos" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} />
-              <span style={{ color: "white", fontSize: 15, flex: 1 }}>Videos <span style={{ color: "#aaa" }}>({videoSize})</span></span>
-            </button>
-            <button onClick={() => setClearMode("photos")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}>
-              <span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "photos" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} />
-              <span style={{ color: "white", fontSize: 15, flex: 1 }}>Photos <span style={{ color: "#aaa" }}>({photoSize})</span></span>
-            </button>
-            <div style={{ fontSize: 12, color: "#888", lineHeight: 1.4, margin: "14px 0 16px" }}>
-              Your saved files from EVA will remain in your device gallery after clearing.
-            </div>
-            <button onClick={doClearChat} style={{ width: "100%", background: "transparent", border: "none", color: "#ff5a5a", fontSize: 15, padding: "12px 0", fontWeight: "bold" }}>
-              {clearMode === "all" ? `Clear chat (${totalSize})` : clearMode === "videos" ? `Clear videos (${videoSize})` : `Clear photos (${photoSize})`}
-            </button>
+            <button onClick={() => setClearMode("all")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}><span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "all" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} /><span style={{ color: "white", fontSize: 15, flex: 1 }}>All messages <span style={{ color: "#aaa" }}>({totalSize})</span></span></button>
+            <button onClick={() => setClearMode("videos")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}><span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "videos" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} /><span style={{ color: "white", fontSize: 15, flex: 1 }}>Videos <span style={{ color: "#aaa" }}>({videoSize})</span></span></button>
+            <button onClick={() => setClearMode("photos")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "transparent", border: "none", padding: "12px 0", textAlign: "left" }}><span style={{ width: 20, height: 20, borderRadius: 999, border: clearMode === "photos" ? "6px solid #25D366" : "2px solid #666", display: "block", boxSizing: "border-box" }} /><span style={{ color: "white", fontSize: 15, flex: 1 }}>Photos <span style={{ color: "#aaa" }}>({photoSize})</span></span></button>
+            <div style={{ fontSize: 12, color: "#888", lineHeight: 1.4, margin: "14px 0 16px" }}>Your saved files from EVA will remain in your device gallery after clearing.</div>
+            <button onClick={doClearChat} style={{ width: "100%", background: "transparent", border: "none", color: "#ff5a5a", fontSize: 15, padding: "12px 0", fontWeight: "bold" }}>{clearMode === "all" ? `Clear chat (${totalSize})` : clearMode === "videos" ? `Clear videos (${videoSize})` : `Clear photos (${photoSize})`}</button>
           </div>
         </div>
       )}
-
       {showEmoji && !showSearch && !showMedia && (
         <div style={{ position: "relative", zIndex: 25, flexShrink: 0, flexGrow: 0, height: 280, minHeight: 280, maxHeight: 280, background: "rgba(0,0,0,0.95)", borderTop: "1px solid rgba(255,255,255,0.2)", padding: "10px 10px 6px", display: "flex", flexDirection: "column", overflow: "hidden", boxSizing: "border-box", transform: "translateZ(0)", willChange: "transform" }}>
           <input value={emojiSearch} onChange={(e) => setEmojiSearch(e.target.value)} placeholder="🔍 Search emoji... type car, monkey, love" style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 999, color: "white", padding: "9px 14px", fontSize: 13, outline: "none", boxSizing: "border-box", flexShrink: 0 }} />
@@ -704,7 +595,6 @@ export default function EVA() {
           <div style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.35)", padding: "2px 0 0", flexShrink: 0 }}>← Swipe sides to change gesture →</div>
         </div>
       )}
-
       {!showSearch && !showMedia && (
       <div style={{ position: "relative", zIndex: 30, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", padding: "12px 16px 12px", paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
         {replyTo && (<div style={{ maxWidth: 520, margin: "0 auto 8px", background: "rgba(139,92,246,0.25)", borderLeft: "3px solid #8b5cf6", padding: "8px 10px", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}><div style={{ minWidth: 0 }}><div style={{ fontSize: 12, fontWeight: "bold", color: "#c4b5fd" }}>Replying to {replyTo.from === "you" ? "You" : "EVA"}</div><div style={{ fontSize: 13, opacity: 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cleanText(replyTo.text)}</div></div><button onClick={() => setReplyTo(null)} style={{ background: "transparent", border: "none", color: "white", fontSize: 16 }}>✕</button></div>)}
@@ -717,4 +607,4 @@ export default function EVA() {
       )}
     </div>
   );
-                                                                                                                                                                                                                                                                                                                                                                                                      }
+  }
