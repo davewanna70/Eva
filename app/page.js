@@ -74,14 +74,13 @@ const getEmojiAnim = (e) => {
   return "eva-pop";
 };
 
-// WHATSAPP EXACT - naked, no box, no square, just the icon itself
 const CopyIcon = () => (
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))" }}>
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))", display: "block" }}>
     <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
   </svg>
 );
 const ForwardIcon = () => (
-  <svg width="30" height="30" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))" }}>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))", display: "block" }}>
     <path d="M14 9V5l7 7-7 7v-4c-5 0-8.5 1.6-11 5 1-5 4-10 11-11z" />
   </svg>
 );
@@ -331,7 +330,6 @@ export default function EVA() {
     });
   };
 
-  // SWIPE RIGHT TO REPLY
   const onMsgTouchStart = (e, idx) => {
     const t = e.touches[0];
     swipeStartX.current = t.clientX;
@@ -363,14 +361,16 @@ export default function EVA() {
     }
   };
 
-  const doCopy = async () => {
+  const doCopy = async (e) => {
+    if (e) e.stopPropagation();
     if (selectedIdx == null) return;
     const txt = cleanText(messages[selectedIdx]?.text || "");
-    try { await navigator.clipboard.writeText(txt); } catch (e) {}
+    try { await navigator.clipboard.writeText(txt); } catch (err) {}
     setSelectedIdx(null);
     showToast("Copied");
   };
-  const doForward = () => {
+  const doForward = (e) => {
+    if (e) e.stopPropagation();
     if (selectedIdx == null) return;
     const txt = cleanText(messages[selectedIdx]?.text || "");
     setText(txt);
@@ -516,6 +516,10 @@ export default function EVA() {
   return (
     <div ref={outerRef} style={{ height: "100dvh", minHeight: "100dvh", maxHeight: "100dvh", background: "#030014", color: "white", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "sans-serif", position: "fixed", inset: 0, top: 0, left: 0, right: 0, bottom: 0, overscrollBehavior: "none" }}>
       <style>{`
+        * { -webkit-tap-highlight-color: transparent; }
+        .eva-no-select { -webkit-touch-callout: none !important; -webkit-user-select: none !important; -khtml-user-select: none !important; -moz-user-select: none !important; -ms-user-select: none !important; user-select: none !important; }
+        .eva-no-select * { -webkit-touch-callout: none !important; -webkit-user-select: none !important; user-select: none !important; }
+        input, textarea { -webkit-user-select: text !important; user-select: text !important; -webkit-touch-callout: default !important; }
         @keyframes evaLaugh { 0%{transform:scale(.6) rotate(-8deg)} 25%{transform:scale(1.25) rotate(6deg) translateY(-4px)} 50%{transform:scale(1.1) rotate(-6deg) translateY(2px)} 75%{transform:scale(1.2) rotate(4deg)} 100%{transform:scale(1) rotate(0)} }
         @keyframes evaWink { 0%{transform:scale(.7)} 30%{transform:scale(1.2) rotate(-6deg) translateX(-2px)} 60%{transform:scale(1.05) rotate(4deg)} 100%{transform:scale(1) rotate(0)} }
         @keyframes evaLove { 0%{transform:scale(.6)} 30%{transform:scale(1.35)} 50%{transform:scale(1.1)} 70%{transform:scale(1.3)} 100%{transform:scale(1)} }
@@ -563,8 +567,11 @@ export default function EVA() {
 
       <div
         ref={scrollRef}
+        className="eva-no-select"
         style={{ position: "relative", zIndex: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", overscrollBehavior: "contain", overflowAnchor: "none", padding: "12px 20px 10px", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}
         onClick={hideKeyboardToRead}
+        onContextMenu={(e) => e.preventDefault()}
+        onSelectStart={(e) => e.preventDefault()}
       >
         {messages.length === 0 && (
           <div style={{ background: "rgba(0,0,0,0.65)", border: "1px solid rgba(255,255,255,0.25)", padding: 14, borderRadius: 16, maxWidth: 420, margin: "0 auto", textAlign: "center" }}>Hello, I am EVA. Ask me anything.</div>
@@ -575,7 +582,7 @@ export default function EVA() {
           const isSel = selectedIdx === i;
           const off = swipeOffset[i] || 0;
           return (
-            <div key={i} style={{ position: "relative", alignSelf: m.from === "you" ? "flex-end" : "flex-start", width: "100%", display: "flex", justifyContent: m.from === "you" ? "flex-end" : "flex-start" }}>
+            <div key={i} className="eva-no-select" style={{ position: "relative", alignSelf: m.from === "you" ? "flex-end" : "flex-start", width: "100%", display: "flex", flexDirection: "column", alignItems: m.from === "you" ? "flex-end" : "flex-start" }} onContextMenu={(e) => e.preventDefault()} onSelectStart={(e) => e.preventDefault()}>
               {off > 20 && (
                 <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", opacity: Math.min(1, off / 60), fontSize: 22 }}>↩️</div>
               )}
@@ -584,7 +591,8 @@ export default function EVA() {
                 onTouchStart={(e) => onMsgTouchStart(e, i)}
                 onTouchMove={(e) => onMsgTouchMove(e, i)}
                 onTouchEnd={(e) => onMsgTouchEnd(e, m, i)}
-                onContextMenu={(e) => { e.preventDefault(); setSelectedIdx(i); }}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedIdx(i); }}
+                onSelectStart={(e) => e.preventDefault()}
                 style={naked ? {
                   background: isSel ? "rgba(255,255,255,0.12)" : "transparent",
                   border: "none",
@@ -646,6 +654,18 @@ export default function EVA() {
                   )}
                 </div>
               </div>
+
+              {/* WHATSAPP STYLE - UNDER THAT PARTICULAR MESSAGE, NAKED, NO BOX */}
+              {isSel && (
+                <div style={{ width: "100%", maxWidth: "85%", background: "transparent", border: "none", boxShadow: "none", padding: "6px 4px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+                  <button onClick={doCopy} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 6, cursor: "pointer" }}>
+                    <CopyIcon />
+                  </button>
+                  <button onClick={doForward} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 6, cursor: "pointer" }}>
+                    <ForwardIcon />
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -704,21 +724,6 @@ export default function EVA() {
         </div>
       )}
 
-      {/* WHATSAPP STYLE - NAKED, NO BOX, NO X, NO BACKGROUND - just Copy left, Forward right */}
-      {selectedIdx != null && (
-        <div
-          style={{ position: "relative", zIndex: 35, flexShrink: 0, background: "transparent", border: "none", boxShadow: "none", padding: "10px 24px 10px 28px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button onClick={doCopy} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 8, cursor: "pointer" }}>
-            <CopyIcon />
-          </button>
-          <button onClick={doForward} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 8, cursor: "pointer" }}>
-            <ForwardIcon />
-          </button>
-        </div>
-      )}
-
       <div style={{ position: "relative", zIndex: 30, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", padding: "12px 16px 12px", paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
         {replyTo && (
           <div style={{ maxWidth: 520, margin: "0 auto 8px", background: "rgba(139,92,246,0.25)", borderLeft: "3px solid #8b5cf6", padding: "8px 10px", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -762,4 +767,4 @@ export default function EVA() {
       </div>
     </div>
   );
-  }
+                                                                                                                                                                                                                                            }
