@@ -196,15 +196,12 @@ export default function EVA() {
     if (!scrollRef.current) return;
     const c = scrollRef.current;
     const distanceFromBottom = c.scrollHeight - c.scrollTop - c.clientHeight;
-    // If user is within 120px of bottom, we consider them at bottom -> keep sticking
     stickToBottomRef.current = distanceFromBottom < 120;
   };
-  // Auto-scroll whenever messages change (new msg or EVA typing), ONLY if user was already at bottom
   const lastMsgText = messages.length ? messages[messages.length - 1]?.text : "";
   useEffect(() => {
     if (stickToBottomRef.current) scrollToBottom(false);
   }, [messages.length, lastMsgText]);
-  // Force scroll to bottom when keyboard hides / input blurs
   const handleInputBlur = () => {
     setTimeout(() => { scrollToBottom(false); }, 180);
   };
@@ -230,7 +227,6 @@ export default function EVA() {
     setShowMedia(false);
     setSearchQuery("");
     setHighlightIdx(idx);
-    // User intentionally jumped up, so don't auto-stick for a moment
     stickToBottomRef.current = false;
     setTimeout(() => {
       const el = document.getElementById(`eva-msg-${idx}`);
@@ -271,16 +267,12 @@ export default function EVA() {
     load();
   }, []);
 
-  // FIXED: Initial load -> go straight to bottom instantly
   useEffect(() => {
     if (didInitialScroll.current) return;
     if (messages.length === 0) return;
     const t1 = setTimeout(() => { scrollToBottom(true); didInitialScroll.current = true; }, 120);
     return () => { clearTimeout(t1); };
   }, [messages.length]);
-
-  // REMOVED old smoothScrollBy visualViewport logic that was fighting the scroll.
-  // VisualViewport resize now just re-sticks to bottom if we were at bottom.
 
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(""), 1500); };
   const saveToSupabase = async (sender, msgText) => {
@@ -436,7 +428,8 @@ export default function EVA() {
     };
     try {
       const history = [...messages, { from: "you", text: userText }].slice(-10).map((m) => ({ role: m.from === "you" ? "user" : "assistant", content: m.text }));
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: userText, history, userProfile: { name: myName, prefs, bestFood: prefs.food, wantToBuy: prefs.want_to_buy } }) });
+      // ===== TIMEZONE FIX: Send browser timezone to brain so London user gets London time, Lagos gets Lagos time =====
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: userText, history, userProfile: { name: myName, prefs, bestFood: prefs.food, wantToBuy: prefs.want_to_buy, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Lagos" } }) });
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
         const data = await res.json(); const reply = data.reply || "I dey here Boss, try again."; await typeOut(reply); saveToSupabase("eva", reply);
@@ -458,7 +451,6 @@ export default function EVA() {
     if (selectedIdxs.length > 0) { const st = scrollRef.current ? scrollRef.current.scrollTop : 0; setSelectedIdxs([]); requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = st; }); return; }
     if (showEmojiRef.current) setShowEmoji(false);
     if (document.activeElement) document.activeElement.blur();
-    // FIX: When you tap background to hide keyboard, stay at bottom if you were at bottom
     if (stickToBottomRef.current) setTimeout(() => scrollToBottom(false), 120);
   };
   const selectedHasYou = selectedIdxs.some((i) => messages[i]?.from === "you");
@@ -725,4 +717,4 @@ export default function EVA() {
       )}
     </div>
   );
-                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                      }
