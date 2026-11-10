@@ -100,6 +100,7 @@ const isMediaMsg = (m) => {
   return false;
 };
 const isLinkMsg = (m) => extractLinks(m.text).length > 0;
+// NEW: EVA own size - separate Videos / Photos, no WhatsApp numbers
 const isVideoMsg = (m) => {
   if (m.type === "video") return true;
   const t = (m.text || "").toLowerCase();
@@ -129,24 +130,6 @@ const getSizeFor = (msgs, kind) => {
   if (bytes < 1024) return "0.0 MB";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
   return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-};
-
-// === ADDED ONLY: Discover + Chat - very transparent, NOT blue ===
-const EvaBottomBar = () => {
-  const pill = {
-    display: "flex", alignItems: "center", gap: 6,
-    padding: "10px 18px", borderRadius: 999,
-    background: "rgba(0,0,0,0.22)",
-    border: "1px solid rgba(255,255,255,0.28)",
-    backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-    color: "white", fontSize: 14, fontWeight: 500, textDecoration: "none",
-  };
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", maxWidth: 520, margin: "10px auto 0", gap: 12 }}>
-      <a href="/discover" style={pill}><span>✨</span><span>Discover</span></a>
-      <a href="/chat" style={pill}><span>💬</span><span>Chat</span></a>
-    </div>
-  );
 };
 
 export default function EVA() {
@@ -730,10 +713,8 @@ export default function EVA() {
           <textarea ref={textareaRef} value={text} onChange={(e) => setText(e.target.value)} onTouchStart={onInputTouchStart} onFocus={onInputFocus} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askEVA(); } }} placeholder="Ask EVA..." rows={1} enterKeyHint="send" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} readOnly={showEmoji} data-lpignore="true" data-1p-ignore="true" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "white", padding: "10px 6px", fontSize: 15, resize: "none", maxHeight: 100, fontFamily: "sans-serif" }} />
           <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={askEVA} style={{ background: "#8b5cf6", border: "none", color: "white", padding: "10px 18px", borderRadius: 999, fontWeight: "bold", flexShrink: 0, touchAction: "manipulation" }}>Ask →</button>
         </div>
-        {/* ADDED ONLY: Discover + Chat under Ask EVA */}
-        <EvaBottomBar />
       </div>
       )}
     </div>
   );
-                                                                                                                                                                                                                                                                                                                                               }
+    }
