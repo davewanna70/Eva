@@ -41,19 +41,17 @@ const fmtTime = (ts) => {
   return `${h}:${m} ${ap}`;
 };
 
-// MESSAGE 15px, ONLY EMOJI GO BIG
 const getEmojiSize = (t) => {
   const cleaned = (t || "").replace("▍", "").trim().replace(/\s/g, "");
   if (!cleaned) return 15;
   const chars = Array.from(cleaned);
   const isOnlyEmoji = chars.every((c) => /\p{Extended_Pictographic}/u.test(c));
-  if (!isOnlyEmoji) return 15; // message + emoji mix = normal 15px
-  if (chars.length === 1) return 50; // 1 emoji
-  if (chars.length === 2) return 45; // 2 emoji
-  return 40; // 3 emoji and rest = 40px
+  if (!isOnlyEmoji) return 15;
+  if (chars.length === 1) return 50;
+  if (chars.length === 2) return 45;
+  return 40;
 };
 
-// WHATSAPP NAKED: true if message na only emoji, no text
 const isOnlyEmojiMsg = (t) => {
   const cleaned = (t || "").replace("▍", "").trim().replace(/\s/g, "");
   if (!cleaned) return false;
@@ -61,7 +59,6 @@ const isOnlyEmojiMsg = (t) => {
   return chars.length > 0 && chars.every((c) => /\p{Extended_Pictographic}/u.test(c));
 };
 
-// EVERY EMOJI GET HIM OWN TRUE REACTION LIKE WHATSAPP
 const getEmojiAnim = (e) => {
   if (["😂","🤣","😆","😁"].includes(e)) return "eva-laugh";
   if (["😌","😉","😏","😜","😋"].includes(e)) return "eva-wink";
@@ -76,6 +73,24 @@ const getEmojiAnim = (e) => {
   if (["👍","👏","🙏","🙌","👋","🤘","🤙","✌️","👌","💪"].includes(e)) return "eva-hand";
   return "eva-pop";
 };
+
+// WhatsApp exact icons from your photo
+const CopyIcon = () => (
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#e5e5e5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="12" height="12" rx="2" />
+    <path d="M5 15V4a1 1 0 0 1 1-1h11" />
+  </svg>
+);
+const ForwardIcon = () => (
+  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#e5e5e5" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 12c4-1 7-3 8-7" />
+    <path d="M11 5l4 0" />
+    <path d="M7 12h6l-2-3" />
+    <path d="M13 9l4 0" />
+    <path d="M17 9l-2-3" />
+    <path d="M17 9l-2 3" />
+  </svg>
+);
 
 export default function EVA() {
   const [text, setText] = useState("");
@@ -94,6 +109,10 @@ export default function EVA() {
   const [myName, setMyName] = useState("");
   const [prefs, setPrefs] = useState({});
   const [replayMap, setReplayMap] = useState({});
+  const [replyTo, setReplyTo] = useState(null);
+  const [selectedIdx, setSelectedIdx] = useState(null);
+  const [toast, setToast] = useState("");
+  const [swipeOffset, setSwipeOffset] = useState({}); // idx -> px
 
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
@@ -102,6 +121,9 @@ export default function EVA() {
   const smoothAnimRef = useRef(null);
   const lastUserMsgRef = useRef(null);
   const outerRef = useRef(null);
+  const swipeStartX = useRef(null);
+  const swipeStartY = useRef(null);
+  const longPressTimer = useRef(null);
 
   const emojiGridRef = useRef(null);
   const emojiScrollPosRef = useRef(0);
@@ -111,7 +133,6 @@ export default function EVA() {
   const showEmojiRef = useRef(false);
   showEmojiRef.current = showEmoji;
 
-  // Outer height follows keyboard, NO lock - lock na why panel dey jump go top before
   useEffect(() => {
     if (!window.visualViewport) return;
     const setH = () => {
@@ -200,6 +221,11 @@ export default function EVA() {
     return () => window.visualViewport.removeEventListener("resize", onResize);
   }, []);
 
+  const showToast = (t) => {
+    setToast(t);
+    setTimeout(() => setToast(""), 1500);
+  };
+
   const saveToSupabase = async (sender, msgText) => {
     try {
       const { error } = await supabase.from("messages").insert([{ chat_id: CHAT_ID, sender, text: msgText }]);
@@ -230,7 +256,6 @@ export default function EVA() {
     }
   };
 
-  // WHATSAPP: Tap Ask box while emoji open - emoji close FIRST, keyboard after. Never both.
   const onInputTouchStart = (e) => {
     if (showEmojiRef.current) {
       e.preventDefault();
@@ -280,7 +305,6 @@ export default function EVA() {
     if (dx > 0 && idx > 0) switchEmojiCat(EMOJI_CAT_LIST[idx - 1]);
   };
 
-  // STABLE PICK: No focus, no keyboard, stay for bottom
   const addEmoji = (emoji) => {
     if (emojiGridRef.current) emojiScrollPosRef.current = emojiGridRef.current.scrollTop;
     setText((prev) => prev + emoji);
@@ -313,10 +337,60 @@ export default function EVA() {
     });
   };
 
+  // SWIPE RIGHT TO REPLY - with drag visual like WhatsApp
+  const onMsgTouchStart = (e, idx) => {
+    const t = e.touches[0];
+    swipeStartX.current = t.clientX;
+    swipeStartY.current = t.clientY;
+    longPressTimer.current = setTimeout(() => { setSelectedIdx(idx); setSwipeOffset({}); }, 500);
+  };
+  const onMsgTouchMove = (e, idx) => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    if (swipeStartX.current == null) return;
+    const t = e.touches[0];
+    const dx = t.clientX - swipeStartX.current;
+    const dy = t.clientY - swipeStartY.current;
+    if (dx > 0 && dx < 90 && Math.abs(dy) < 30) {
+      setSwipeOffset({ [idx]: dx });
+    }
+  };
+  const onMsgTouchEnd = (e, m, idx) => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    if (swipeStartX.current == null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - swipeStartX.current;
+    const dy = t.clientY - swipeStartY.current;
+    swipeStartX.current = null;
+    swipeStartY.current = null;
+    setSwipeOffset({});
+    if (dx > 60 && Math.abs(dy) < 40) {
+      setReplyTo({ from: m.from, text: m.text });
+      setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 50);
+    }
+  };
+
+  const doCopy = async () => {
+    if (selectedIdx == null) return;
+    const txt = cleanText(messages[selectedIdx]?.text || "");
+    try { await navigator.clipboard.writeText(txt); } catch (e) {}
+    setSelectedIdx(null);
+    showToast("Copied");
+  };
+  const doForward = () => {
+    if (selectedIdx == null) return;
+    const txt = cleanText(messages[selectedIdx]?.text || "");
+    setText(txt);
+    setSelectedIdx(null);
+    showToast("Forward — tap Ask to send");
+    setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 50);
+  };
+
   const askEVA = async () => {
     if (!text.trim() || isThinking) return;
     const userText = text.trim();
+    const curReply = replyTo;
     setText("");
+    setReplyTo(null);
     setShowEmoji(false);
     setEmojiSearch("");
     const nowTs = Date.now();
@@ -345,7 +419,7 @@ export default function EVA() {
 
     setIsThinking(true);
     setMessages((prev) => {
-      const next = [...prev, { from: "you", text: userText, time: nowTs, status: "sending" }, { from: "eva", text: "▍", time: nowTs }];
+      const next = [...prev, { from: "you", text: userText, time: nowTs, status: "sending", replyTo: curReply }, { from: "eva", text: "▍", time: nowTs }];
       try { localStorage.setItem("eva_messages_cache", JSON.stringify(next)); } catch (e) {}
       return next;
     });
@@ -441,6 +515,7 @@ export default function EVA() {
 
   const hideKeyboardToRead = () => {
     setShowMenu(false);
+    setSelectedIdx(null);
     if (showEmojiRef.current) setShowEmoji(false);
     if (document.activeElement) document.activeElement.blur();
   };
@@ -504,65 +579,89 @@ export default function EVA() {
         {messages.map((m, i) => {
           const isLastUser = m.from === "you" && messages.slice(i + 1).every((x) => x.from !== "you");
           const naked = isOnlyEmojiMsg(m.text);
+          const isSel = selectedIdx === i;
+          const off = swipeOffset[i] || 0;
           return (
-            <div
-              key={i}
-              ref={isLastUser ? lastUserMsgRef : null}
-              style={naked ? {
-                alignSelf: m.from === "you" ? "flex-end" : "flex-start",
-                background: "transparent",
-                border: "none",
-                padding: "2px 2px 2px",
-                borderRadius: 0,
-                maxWidth: "85%",
-                fontSize: 15,
-                lineHeight: 1.2,
-                whiteSpace: "pre-line",
-                boxShadow: "none"
-              } : {
-                alignSelf: m.from === "you" ? "flex-end" : "flex-start",
-                background: m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)",
-                border: "1px solid rgba(255,255,255,0.25)",
-                padding: "10px 14px 6px",
-                borderRadius: 16,
-                maxWidth: "85%",
-                fontSize: 15,
-                lineHeight: 1.5,
-                whiteSpace: "pre-line"
-              }}
-            >
-              {naked ? (
-                <div
-                  key={replayMap[i] || `emoji-${m.time}-${i}`}
-                  onClick={(e) => { e.stopPropagation(); setReplayMap((prev) => ({ ...prev, [i]: Date.now() })); }}
-                  style={{ display: "flex", gap: 2, cursor: "pointer" }}
-                >
-                  {Array.from(cleanText(m.text)).map((ch, j) => (
-                    <span
-                      key={j}
-                      className={getEmojiAnim(ch)}
-                      style={{ fontSize: getEmojiSize(m.text), lineHeight: 1.3, textShadow: "0 2px 8px rgba(0,0,0,0.6)", display: "inline-block", animationDelay: `${j * 0.08}s` }}
-                    >
-                      {ch}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ fontSize: 15, lineHeight: 1.5 }}>{cleanText(m.text)}</div>
+            <div key={i} style={{ position: "relative", alignSelf: m.from === "you" ? "flex-end" : "flex-start", width: "100%", display: "flex", justifyContent: m.from === "you" ? "flex-end" : "flex-start" }}>
+              {off > 20 && (
+                <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", opacity: Math.min(1, off / 60), fontSize: 22 }}>↩️</div>
               )}
-              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: naked ? 0 : 4, fontSize: 10, opacity: naked ? 0.85 : 0.75, textShadow: naked ? "0 1px 3px rgba(0,0,0,0.9)" : "none" }}>
-                <span>{fmtTime(m.time)}</span>
-                {m.from === "you" && (
-                  <span style={{ fontSize: 12, letterSpacing: -2 }}>
-                    {m.status === "delivered" ? "✓✓" : "✓"}
-                  </span>
+              <div
+                ref={isLastUser ? lastUserMsgRef : null}
+                onTouchStart={(e) => onMsgTouchStart(e, i)}
+                onTouchMove={(e) => onMsgTouchMove(e, i)}
+                onTouchEnd={(e) => onMsgTouchEnd(e, m, i)}
+                onContextMenu={(e) => { e.preventDefault(); setSelectedIdx(i); }}
+                style={naked ? {
+                  background: isSel ? "rgba(139,92,246,0.35)" : "transparent",
+                  border: isSel ? "1px solid rgba(139,92,246,0.6)" : "none",
+                  padding: "2px 6px 2px",
+                  borderRadius: 8,
+                  maxWidth: "85%",
+                  fontSize: 15,
+                  lineHeight: 1.2,
+                  whiteSpace: "pre-line",
+                  boxShadow: "none",
+                  touchAction: "pan-y",
+                  transform: `translateX(${off}px)`,
+                  transition: off ? "none" : "transform 0.2s"
+                } : {
+                  background: isSel ? "rgba(139,92,246,0.85)" : (m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)"),
+                  border: isSel ? "1px solid white" : "1px solid rgba(255,255,255,0.25)",
+                  padding: "10px 14px 6px",
+                  borderRadius: 16,
+                  maxWidth: "85%",
+                  fontSize: 15,
+                  lineHeight: 1.5,
+                  whiteSpace: "pre-line",
+                  touchAction: "pan-y",
+                  transform: `translateX(${off}px)`,
+                  transition: off ? "none" : "transform 0.2s"
+                }}
+              >
+                {m.replyTo && (
+                  <div style={{ borderLeft: "3px solid #a78bfa", paddingLeft: 8, marginBottom: 6, opacity: 0.9 }}>
+                    <div style={{ fontSize: 12, fontWeight: "bold", color: "#c4b5fd" }}>{m.replyTo.from === "you" ? "You" : "EVA"}</div>
+                    <div style={{ fontSize: 13, opacity: 0.85, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{cleanText(m.replyTo.text)}</div>
+                  </div>
                 )}
+                {naked ? (
+                  <div
+                    key={replayMap[i] || `emoji-${m.time}-${i}`}
+                    onClick={(e) => { e.stopPropagation(); setReplayMap((prev) => ({ ...prev, [i]: Date.now() })); }}
+                    style={{ display: "flex", gap: 2, cursor: "pointer" }}
+                  >
+                    {Array.from(cleanText(m.text)).map((ch, j) => (
+                      <span
+                        key={j}
+                        className={getEmojiAnim(ch)}
+                        style={{ fontSize: getEmojiSize(m.text), lineHeight: 1.3, textShadow: "0 2px 8px rgba(0,0,0,0.6)", display: "inline-block", animationDelay: `${j * 0.08}s` }}
+                      >
+                        {ch}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 15, lineHeight: 1.5 }}>{cleanText(m.text)}</div>
+                )}
+                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, marginTop: naked ? 0 : 4, fontSize: 10, opacity: naked ? 0.85 : 0.75, textShadow: naked ? "0 1px 3px rgba(0,0,0,0.9)" : "none" }}>
+                  <span>{fmtTime(m.time)}</span>
+                  {m.from === "you" && (
+                    <span style={{ fontSize: 12, letterSpacing: -2 }}>
+                      {m.status === "delivered" ? "✓✓" : "✓"}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           );
         })}
         <div ref={bottomRef} style={{ height: 10, flexShrink: 0 }} />
       </div>
+
+      {toast && (
+        <div style={{ position: "relative", zIndex: 40, margin: "0 auto", background: "rgba(0,0,0,0.9)", color: "white", padding: "8px 16px", borderRadius: 999, fontSize: 13, marginBottom: 6 }}>{toast}</div>
+      )}
 
       {showEmoji && (
         <div style={{ position: "relative", zIndex: 25, flexShrink: 0, flexGrow: 0, height: 280, minHeight: 280, maxHeight: 280, background: "rgba(0,0,0,0.95)", borderTop: "1px solid rgba(255,255,255,0.2)", padding: "10px 10px 6px", display: "flex", flexDirection: "column", overflow: "hidden", boxSizing: "border-box", transform: "translateZ(0)", willChange: "transform" }}>
@@ -612,7 +711,28 @@ export default function EVA() {
         </div>
       )}
 
+      {selectedIdx != null && (
+        <div style={{ position: "relative", zIndex: 35, flexShrink: 0, background: "#111111", borderTop: "1px solid rgba(255,255,255,0.15)", padding: "16px 22px 16px 22px", paddingBottom: "calc(16px + env(safe-area-inset-bottom))", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button onClick={doCopy} style={{ background: "transparent", border: "none", padding: 6 }}>
+            <CopyIcon />
+          </button>
+          <button onClick={() => setSelectedIdx(null)} style={{ background: "transparent", border: "none", color: "#aaa", fontSize: 13 }}>✕</button>
+          <button onClick={doForward} style={{ background: "transparent", border: "none", padding: 6 }}>
+            <ForwardIcon />
+          </button>
+        </div>
+      )}
+
       <div style={{ position: "relative", zIndex: 30, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", padding: "12px 16px 12px", paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
+        {replyTo && (
+          <div style={{ maxWidth: 520, margin: "0 auto 8px", background: "rgba(139,92,246,0.25)", borderLeft: "3px solid #8b5cf6", padding: "8px 10px", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: "bold", color: "#c4b5fd" }}>Replying to {replyTo.from === "you" ? "You" : "EVA"}</div>
+              <div style={{ fontSize: 13, opacity: 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cleanText(replyTo.text)}</div>
+            </div>
+            <button onClick={() => setReplyTo(null)} style={{ background: "transparent", border: "none", color: "white", fontSize: 16 }}>✕</button>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 6, maxWidth: 520, margin: "0 auto", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", padding: 8, borderRadius: 999, alignItems: "center" }}>
           <button onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={toggleEmoji} style={{ background: showEmoji ? "#8b5cf6" : "transparent", border: "none", fontSize: 24, padding: "2px 4px", flexShrink: 0, borderRadius: 999 }}>😊</button>
           <textarea
