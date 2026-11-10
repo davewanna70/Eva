@@ -84,7 +84,6 @@ const ForwardIcon = () => (
     <path d="M14 9V5l7 7-7 7v-4c-5 0-8.5 1.6-11 5 1-5 4-10 11-11z" />
   </svg>
 );
-// WHATSAPP EXACT TRASH - naked, no box
 const TrashIcon = () => (
   <svg width="26" height="26" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 5px rgba(0,0,0,0.95))", display: "block" }}>
     <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
@@ -125,6 +124,8 @@ export default function EVA() {
   const swipeStartY = useRef(null);
   const longPressTimer = useRef(null);
   const savedScrollTop = useRef(0);
+  const justSelectedAt = useRef(0);
+  const isLongPress = useRef(false);
 
   const emojiGridRef = useRef(null);
   const emojiScrollPosRef = useRef(0);
@@ -135,7 +136,6 @@ export default function EVA() {
   showEmojiRef.current = showEmoji;
 
   const selectedIdx = selectedIdxs.length > 0 ? selectedIdxs[0] : null;
-  const isSelecting = selectedIdxs.length > 0;
 
   useEffect(() => {
     if (!window.visualViewport) return;
@@ -341,13 +341,9 @@ export default function EVA() {
     });
   };
 
-  // SELECTION - long press = select, tap other = add/remove, like WhatsApp
   const toggleSelect = (idx) => {
     setSelectedIdxs((prev) => {
-      if (prev.includes(idx)) {
-        const next = prev.filter((x) => x !== idx);
-        return next;
-      }
+      if (prev.includes(idx)) return prev.filter((x) => x !== idx);
       return [...prev, idx];
     });
   };
@@ -356,14 +352,17 @@ export default function EVA() {
     const t = e.touches[0];
     swipeStartX.current = t.clientX;
     swipeStartY.current = t.clientY;
+    isLongPress.current = false;
     if (scrollRef.current) savedScrollTop.current = scrollRef.current.scrollTop;
     longPressTimer.current = setTimeout(() => {
-      if (!selectedIdxs.includes(idx)) setSelectedIdxs((prev) => [...prev, idx]);
+      isLongPress.current = true;
+      justSelectedAt.current = Date.now();
+      setSelectedIdxs((prev) => prev.includes(idx) ? prev : [...prev, idx]);
       setSwipeOffset({});
       requestAnimationFrame(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = savedScrollTop.current;
       });
-    }, 500);
+    }, 450);
   };
   const onMsgTouchMove = (e, idx) => {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
@@ -371,6 +370,9 @@ export default function EVA() {
     const t = e.touches[0];
     const dx = t.clientX - swipeStartX.current;
     const dy = t.clientY - swipeStartY.current;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    }
     if (dx > 0 && dx < 90 && Math.abs(dy) < 30 && selectedIdxs.length === 0) {
       setSwipeOffset({ [idx]: dx });
     }
@@ -384,12 +386,11 @@ export default function EVA() {
     swipeStartX.current = null;
     swipeStartY.current = null;
     setSwipeOffset({});
-    // If we are in selection mode, tap = toggle, not swipe reply
-    if (selectedIdxs.length > 0) {
-      // tap (not swipe) toggles
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) toggleSelect(idx);
+    if (isLongPress.current) {
+      isLongPress.current = false;
       return;
     }
+    if (selectedIdxs.length > 0) return;
     if (dx > 60 && Math.abs(dy) < 40) {
       setReplyTo({ from: m.from, text: m.text });
       setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 50);
@@ -397,9 +398,11 @@ export default function EVA() {
   };
 
   const onMsgClick = (e, idx) => {
+    e.stopPropagation();
+    if (Date.now() - justSelectedAt.current < 300) return;
     if (selectedIdxs.length > 0) {
-      e.stopPropagation();
       toggleSelect(idx);
+      return;
     }
   };
 
@@ -422,9 +425,8 @@ export default function EVA() {
     setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 50);
   };
 
-  // DELETE LOGIC
   const openDeleteSheet = (e) => {
-    if (e) e.stopPropagation();
+    if (e) { e.stopPropagation(); e.preventDefault(); }
     setShowDeleteSheet(true);
   };
   const closeDeleteSheet = () => setShowDeleteSheet(false);
@@ -444,11 +446,9 @@ export default function EVA() {
   };
 
   const doDeleteForEveryone = async () => {
-    // In EVA AI: your messages delete from Supabase too (everyone), EVA messages only delete for me
     const st = scrollRef.current ? scrollRef.current.scrollTop : 0;
     const toDelete = new Set(selectedIdxs);
     const yourMsgs = selectedIdxs.filter((i) => messages[i]?.from === "you");
-    // Delete your messages from Supabase (best effort - by text + time)
     for (const i of yourMsgs) {
       try {
         const txt = messages[i]?.text;
@@ -594,7 +594,8 @@ export default function EVA() {
     if (textareaRef.current) textareaRef.current.focus();
   };
 
-  const hideKeyboardToRead = () => {
+  const hideKeyboardToRead = (e) => {
+    if (e && e.target !== e.currentTarget) return;
     setShowMenu(false);
     if (selectedIdxs.length > 0) {
       const st = scrollRef.current ? scrollRef.current.scrollTop : 0;
@@ -614,7 +615,7 @@ export default function EVA() {
   return (
     <div ref={outerRef} style={{ height: "100dvh", minHeight: "100dvh", maxHeight: "100dvh", background: "#030014", color: "white", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "sans-serif", position: "fixed", inset: 0, top: 0, left: 0, right: 0, bottom: 0, overscrollBehavior: "none" }}>
       <style>{`
-                * { -webkit-tap-highlight-color: transparent; }
+        * { -webkit-tap-highlight-color: transparent; }
         .eva-no-select { -webkit-touch-callout: none !important; -webkit-user-select: none !important; -khtml-user-select: none !important; -moz-user-select: none !important; -ms-user-select: none !important; user-select: none !important; }
         .eva-no-select * { -webkit-touch-callout: none !important; -webkit-user-select: none !important; user-select: none !important; }
         input, textarea { -webkit-user-select: text !important; user-select: text !important; -webkit-touch-callout: default !important; }
@@ -690,7 +691,7 @@ export default function EVA() {
                 onTouchMove={(e) => onMsgTouchMove(e, i)}
                 onTouchEnd={(e) => onMsgTouchEnd(e, m, i)}
                 onClick={(e) => onMsgClick(e, i)}
-                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); if (!selectedIdxs.includes(i)) setSelectedIdxs((prev) => [...prev, i]); }}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); if (!selectedIdxs.includes(i)) { justSelectedAt.current = Date.now(); setSelectedIdxs((prev) => [...prev, i]); } }}
                 onSelectStart={(e) => e.preventDefault()}
                 style={naked ? {
                   background: isSel ? "rgba(139,92,246,0.45)" : "transparent",
@@ -752,7 +753,6 @@ export default function EVA() {
                 </div>
               </div>
 
-              {/* DELETE ICON - TOP EDGE RIGHT, NAKED, OVERLAY, NO PUSH, NO SHAKE */}
               {isSel && (
                 <button
                   onClick={openDeleteSheet}
@@ -763,7 +763,6 @@ export default function EVA() {
                 </button>
               )}
 
-              {/* COPY + FORWARD - UNDER FIRST SELECTED ONLY, OVERLAY, NO PUSH */}
               {isSel && selectedIdx === i && selectedIdxs.length === 1 && (
                 <div style={{ position: "absolute", top: "100%", left: 0, right: 0, width: "100%", maxWidth: "85%", alignSelf: m.from === "you" ? "flex-end" : "flex-start", background: "transparent", border: "none", boxShadow: "none", padding: "4px 4px 0", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 20, pointerEvents: "auto" }} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
                   <button onClick={doCopy} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 6, cursor: "pointer" }}>
@@ -784,7 +783,6 @@ export default function EVA() {
         <div style={{ position: "relative", zIndex: 40, margin: "0 auto", background: "rgba(0,0,0,0.9)", color: "white", padding: "8px 16px", borderRadius: 999, fontSize: 13, marginBottom: 6 }}>{toast}</div>
       )}
 
-      {/* WHATSAPP DELETE SHEET */}
       {showDeleteSheet && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={closeDeleteSheet}>
           <div style={{ width: "100%", maxWidth: 520, background: "#1a1a1a", borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: "16px 20px calc(20px + env(safe-area-inset-bottom))" }} onClick={(e) => e.stopPropagation()}>
@@ -892,4 +890,4 @@ export default function EVA() {
       </div>
     </div>
   );
-      }
+  }
