@@ -74,21 +74,15 @@ const getEmojiAnim = (e) => {
   return "eva-pop";
 };
 
-// WhatsApp exact icons from your photo
+// WHATSAPP EXACT - naked, no box, no square, just the icon itself
 const CopyIcon = () => (
-  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#e5e5e5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="9" y="9" width="12" height="12" rx="2" />
-    <path d="M5 15V4a1 1 0 0 1 1-1h11" />
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))" }}>
+    <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
   </svg>
 );
 const ForwardIcon = () => (
-  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#e5e5e5" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 12c4-1 7-3 8-7" />
-    <path d="M11 5l4 0" />
-    <path d="M7 12h6l-2-3" />
-    <path d="M13 9l4 0" />
-    <path d="M17 9l-2-3" />
-    <path d="M17 9l-2 3" />
+  <svg width="30" height="30" viewBox="0 0 24 24" fill="#f0f0f0" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.9))" }}>
+    <path d="M14 9V5l7 7-7 7v-4c-5 0-8.5 1.6-11 5 1-5 4-10 11-11z" />
   </svg>
 );
 
@@ -112,7 +106,7 @@ export default function EVA() {
   const [replyTo, setReplyTo] = useState(null);
   const [selectedIdx, setSelectedIdx] = useState(null);
   const [toast, setToast] = useState("");
-  const [swipeOffset, setSwipeOffset] = useState({}); // idx -> px
+  const [swipeOffset, setSwipeOffset] = useState({});
 
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
@@ -337,7 +331,7 @@ export default function EVA() {
     });
   };
 
-  // SWIPE RIGHT TO REPLY - with drag visual like WhatsApp
+  // SWIPE RIGHT TO REPLY
   const onMsgTouchStart = (e, idx) => {
     const t = e.touches[0];
     swipeStartX.current = t.clientX;
@@ -381,7 +375,6 @@ export default function EVA() {
     const txt = cleanText(messages[selectedIdx]?.text || "");
     setText(txt);
     setSelectedIdx(null);
-    showToast("Forward — tap Ask to send");
     setTimeout(() => { if (textareaRef.current) textareaRef.current.focus(); }, 50);
   };
 
@@ -593,8 +586,8 @@ export default function EVA() {
                 onTouchEnd={(e) => onMsgTouchEnd(e, m, i)}
                 onContextMenu={(e) => { e.preventDefault(); setSelectedIdx(i); }}
                 style={naked ? {
-                  background: isSel ? "rgba(139,92,246,0.35)" : "transparent",
-                  border: isSel ? "1px solid rgba(139,92,246,0.6)" : "none",
+                  background: isSel ? "rgba(255,255,255,0.12)" : "transparent",
+                  border: "none",
                   padding: "2px 6px 2px",
                   borderRadius: 8,
                   maxWidth: "85%",
@@ -606,8 +599,8 @@ export default function EVA() {
                   transform: `translateX(${off}px)`,
                   transition: off ? "none" : "transform 0.2s"
                 } : {
-                  background: isSel ? "rgba(139,92,246,0.85)" : (m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)"),
-                  border: isSel ? "1px solid white" : "1px solid rgba(255,255,255,0.25)",
+                  background: isSel ? "rgba(139,92,246,0.75)" : (m.from === "you" ? "#8b5cf6" : "rgba(0,0,0,0.65)"),
+                  border: "1px solid rgba(255,255,255,0.25)",
                   padding: "10px 14px 6px",
                   borderRadius: 16,
                   maxWidth: "85%",
@@ -711,13 +704,16 @@ export default function EVA() {
         </div>
       )}
 
+      {/* WHATSAPP STYLE - NAKED, NO BOX, NO X, NO BACKGROUND - just Copy left, Forward right */}
       {selectedIdx != null && (
-        <div style={{ position: "relative", zIndex: 35, flexShrink: 0, background: "#111111", borderTop: "1px solid rgba(255,255,255,0.15)", padding: "16px 22px 16px 22px", paddingBottom: "calc(16px + env(safe-area-inset-bottom))", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <button onClick={doCopy} style={{ background: "transparent", border: "none", padding: 6 }}>
+        <div
+          style={{ position: "relative", zIndex: 35, flexShrink: 0, background: "transparent", border: "none", boxShadow: "none", padding: "10px 24px 10px 28px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button onClick={doCopy} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 8, cursor: "pointer" }}>
             <CopyIcon />
           </button>
-          <button onClick={() => setSelectedIdx(null)} style={{ background: "transparent", border: "none", color: "#aaa", fontSize: 13 }}>✕</button>
-          <button onClick={doForward} style={{ background: "transparent", border: "none", padding: 6 }}>
+          <button onClick={doForward} style={{ background: "transparent", border: "none", boxShadow: "none", padding: 8, cursor: "pointer" }}>
             <ForwardIcon />
           </button>
         </div>
@@ -766,4 +762,4 @@ export default function EVA() {
       </div>
     </div>
   );
-    }
+  }
