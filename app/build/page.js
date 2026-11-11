@@ -1,8 +1,9 @@
 "use client";
 import { useState, useRef } from "react";
 
-// V17.1 FULL - GENERIC: No hard-coded list. EVA reads YOUR products comma-by-comma.
-// Works for Phone, Sneaker, Hair, Food, Anything. Smart brain will come later, this one works without it.
+// V18.0 - GALLERY + PER-IMAGE DETAILS
+// User selects many images -> gallery shows them -> click one -> write Name/Price/Desc -> Done (marked) -> next -> Overall Done uploads all.
+// Same for Video. Same rules: max 20MB per file, safety check, no nudity / bank docs / children models.
 
 function extractWhatsApp(text) {
   if (!text) return null;
@@ -29,7 +30,6 @@ function makeShortTitle(prompt,aiTitle){
   if(aiTitle && aiTitle.length<=30 && !aiTitle.toLowerCase().includes("modern called")) return aiTitle;
   return "My Store";
 }
-// V17.1 FIX - Read products comma-by-comma
 function parseProductsFromPrompt(prompt){
   const full = prompt || "";
   let after = full;
@@ -56,12 +56,7 @@ function parseProductsFromPrompt(prompt){
     if(name.toLowerCase().includes("whatsapp")) continue;
     if(name.toLowerCase().includes("price")) continue;
     name = name.replace(/^\d+\s+products:\s*/i,"").trim();
-    items.push({
-      name: name.charAt(0).toUpperCase()+name.slice(1),
-      price: `$${price}`,
-      img: `https://loremflickr.com/800/600/${encodeURIComponent(name)}?lock=${Math.floor(Math.random()*1000)}`,
-      desc: `${name} - Quality product. Fast delivery. In Stock.`
-    });
+    items.push({ name: name.charAt(0).toUpperCase()+name.slice(1), price: `$${price}`, img: `https://loremflickr.com/800/600/${encodeURIComponent(name)}?lock=${Math.floor(Math.random()*1000)}`, desc: `${name} - Quality product. Fast delivery. In Stock.` });
   }
   if(items.length >= 2) return items.slice(0,6);
   return null;
@@ -95,7 +90,6 @@ function colorFor(name){
   if(n.includes("wig")||n.includes("hair")) return "#fce7f3";
   return "#e5e7eb";
 }
-
 const BLOCKED_TEXT = ["nude","naked","porn","xxx","onlyfans","escort","prostitut","child porn","kid nude","sex with minor","minor sex","school girl","schoolgirl","clone","copy exactly","exact copy","replica","pirate","crack","fake bank","phishing","fake login","steal password","fake paypal","fake crypto","scam","fake shop","bomb","hack","ddos","fake id","fake passport","drugs","how to steal","weapon","kill","murder","terror","hate","bank card","bank account","credit card number","password","otp","pin code"];
 const BLOCKED_CHILD_MODEL = ["child","kid","pikin","teen","minor","baby","toddler","school"];
 const BLOCKED_FILE = ["nude","naked","porn","xxx","onlyfans","escort","bank","password","otp","pin","passport","id card","credit card","nudes"];
@@ -118,6 +112,7 @@ export default function Build(){
   const [liveMode,setLiveMode]=useState(false);
   const [uploadedImages,setUploadedImages]=useState([]);
   const [uploadedVideo,setUploadedVideo]=useState(null);
+  const [uploadedVideoMeta,setUploadedVideoMeta]=useState(null);
   const [generatedImage,setGeneratedImage]=useState(null);
   const [generatedVideoMsg,setGeneratedVideoMsg]=useState("");
   const [confirmedSafe,setConfirmedSafe]=useState(false);
@@ -126,6 +121,17 @@ export default function Build(){
   const [showSafety,setShowSafety]=useState(false);
   const [failedImgs,setFailedImgs]=useState({});
   const modelRef=useRef(null);
+
+  // V18 - Gallery staging
+  const [pendingImages,setPendingImages]=useState([]); // {id, url, file, fileName, productName, price, desc, done}
+  const [pendingVideos,setPendingVideos]=useState([]); // same for video
+  const [editingImageId,setEditingImageId]=useState(null);
+  const [editingVideoId,setEditingVideoId]=useState(null);
+  const [editName,setEditName]=useState("");
+  const [editPrice,setEditPrice]=useState("");
+  const [editDesc,setEditDesc]=useState("");
+  const [uploadingAll,setUploadingAll]=useState(false);
+  const [uploadProgress,setUploadProgress]=useState("");
 
   const getPriceNum=(p)=>{ const n=parseFloat(String(p||"").replace(/[^0-9.]/g,"")); return isNaN(n)?0:n; };
   const cartTotal=cart.reduce((s,c)=>s+getPriceNum(c.price),0);
@@ -144,32 +150,104 @@ export default function Build(){
   const checkTextWithOCR=async(u)=>{ try{ await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"); const w=await window.Tesseract.createWorker("eng"); const r=await w.recognize(u); await w.terminate(); const t=(r.data.text||"").toLowerCase(); const f=BLOCKED_OCR.find(x=>t.includes(x)); if(f) return {blocked:true,reason:`Document text detected: "${f}"`}; return {blocked:false,reason:""}; }catch(e){ return {blocked:false,reason:""}; } };
   const isChildModelRequest=(t)=>{ const s=(t||"").toLowerCase(); const hc=BLOCKED_CHILD_MODEL.some(w=>s.includes(w)); const hu=LINGERIE_WORDS.some(w=>s.includes(w))||s.includes("model")||s.includes("showroom")||s.includes("wearing"); return hc&&hu; };
 
-  const handleImageUpload=async(e)=>{
+  // V18 - Step 1: Select from gallery, do NOT upload yet. Just stage them.
+  const handleSelectImages=(e)=>{
     const files=Array.from(e.target.files||[]);
+    const newItems=[];
     for(const f of files){
       if(!f.type.startsWith("image/")){ alert("Please select an image file only."); continue; }
-      if(f.size>20*1024*1024){ alert("File is too large. Maximum size is 20MB."); continue; }
+      if(f.size>20*1024*1024){ alert(`"${f.name}" is too large. Maximum is 20MB per file. This one was skipped.`); continue; }
       const fname=f.name.toLowerCase(); const bad=BLOCKED_FILE.find(w=>fname.includes(w));
-      if(bad){ alert(`This file cannot be uploaded. File name contains a blocked word: "${bad}".`); continue; }
-      if(!confirmedSafe){ alert("Please confirm that this is your own product image and it follows the safety rules."); continue; }
-      const url=URL.createObjectURL(f); setChecking(true); setCheckStatus("Checking your image. Please wait...");
-      const ai=await checkImageWithAI(url); if(ai.blocked){ setChecking(false); setCheckStatus(""); alert(`This image was rejected by safety check. Reason: ${ai.reason}. Please upload a clean product image.`); URL.revokeObjectURL(url); continue; }
-      const ocr=await checkTextWithOCR(url); if(ocr.blocked){ setChecking(false); setCheckStatus(""); alert(`This image was rejected. Reason: ${ocr.reason}. Do not upload bank documents or personal records.`); URL.revokeObjectURL(url); continue; }
-      setUploadedImages(p=>[...p,{url,name:f.name}]); setCheckStatus("Image approved."); setChat("Your image passed the safety check and has been uploaded.");
+      if(bad){ alert(`"${f.name}" cannot be used. File name contains blocked word: "${bad}".`); continue; }
+      const url=URL.createObjectURL(f);
+      newItems.push({ id: Date.now()+"-"+Math.random(), url, file: f, fileName: f.name, productName:"", price:"", desc:"", done:false });
     }
-    setChecking(false); e.target.value="";
+    if(newItems.length>0) setPendingImages(p=>[...p,...newItems]);
+    e.target.value="";
   };
-  const handleVideoUpload=async(e)=>{
-    const f=e.target.files?.[0]; if(!f) return;
-    if(!f.type.startsWith("video/")){ alert("Please select a video file only."); e.target.value=""; return; }
-    if(f.size>20*1024*1024){ alert("File is too large. Maximum size is 20MB."); e.target.value=""; return; }
-    const fname=f.name.toLowerCase(); const bad=BLOCKED_FILE.find(w=>fname.includes(w));
-    if(bad){ alert(`This file cannot be uploaded. File name contains a blocked word: "${bad}".`); e.target.value=""; return; }
-    if(!confirmedSafe){ alert("Please confirm that this is your own product video and it follows the safety rules."); e.target.value=""; return; }
-    const url=URL.createObjectURL(f); setChecking(true); setCheckStatus("Checking your video. AI is checking 3 frames. Please wait...");
-    const ai=await checkVideoWithAI(url); if(ai.blocked){ setChecking(false); setCheckStatus(""); alert(`This video was rejected by safety check. Reason: ${ai.reason}. Please upload a clean product video.`); URL.revokeObjectURL(url); e.target.value=""; return; }
-    setUploadedVideo(url); setChecking(false); setCheckStatus("Video approved."); setChat("Your video passed the safety check and has been uploaded."); e.target.value="";
+  const handleSelectVideos=(e)=>{
+    const files=Array.from(e.target.files||[]);
+    const newItems=[];
+    for(const f of files){
+      if(!f.type.startsWith("video/")){ alert("Please select a video file only."); continue; }
+      if(f.size>20*1024*1024){ alert(`"${f.name}" is too large. Maximum is 20MB per file. This one was skipped.`); continue; }
+      const fname=f.name.toLowerCase(); const bad=BLOCKED_FILE.find(w=>fname.includes(w));
+      if(bad){ alert(`"${f.name}" cannot be used. File name contains blocked word: "${bad}".`); continue; }
+      const url=URL.createObjectURL(f);
+      newItems.push({ id: Date.now()+"-"+Math.random(), url, file: f, fileName: f.name, productName:"", price:"", desc:"", done:false });
+    }
+    if(newItems.length>0) setPendingVideos(p=>[...p,...newItems]);
+    e.target.value="";
   };
+  // V18 - Step 2: Click one image -> open small box
+  const openImageEditor=(item)=>{
+    setEditingImageId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||"");
+  };
+  const openVideoEditor=(item)=>{
+    setEditingVideoId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||"");
+  };
+  // V18 - Step 3: Press Done for that one -> mark it
+  const saveImageDetail=()=>{
+    if(!editName.trim()){ alert("Please write Product Name, e.g. iPhone 13 or Red Dress."); return; }
+    if(!editPrice.trim()){ alert("Please write Price, e.g. $400 or 400."); return; }
+    setPendingImages(p=>p.map(it=> it.id===editingImageId ? {...it, productName: editName.trim(), price: editPrice.trim().startsWith("$")?editPrice.trim():`$${editPrice.trim()}`, desc: editDesc.trim()||`${editName.trim()} - Quality product. Fast delivery.`, done:true} : it));
+    setEditingImageId(null); setEditName(""); setEditPrice(""); setEditDesc("");
+  };
+  const saveVideoDetail=()=>{
+    if(!editName.trim()){ alert("Please write Video Title, e.g. iPhone 13 Promo."); return; }
+    if(!editPrice.trim()){ alert("Please write Price, e.g. $400."); return; }
+    setPendingVideos(p=>p.map(it=> it.id===editingVideoId ? {...it, productName: editName.trim(), price: editPrice.trim().startsWith("$")?editPrice.trim():`$${editPrice.trim()}`, desc: editDesc.trim()||`${editName.trim()} - Watch this product video.`, done:true} : it));
+    setEditingVideoId(null); setEditName(""); setEditPrice(""); setEditDesc("");
+  };
+  // V18 - Step 4: Overall Done -> start uploading all, with safety check
+  const uploadAllImages=async()=>{
+    if(pendingImages.length===0) return alert("No images selected yet. Select images from gallery first.");
+    if(!confirmedSafe) return alert("Please confirm that these are your own product images and they follow the safety rules.");
+    const notDone = pendingImages.filter(p=>!p.done);
+    if(notDone.length>0){
+      const go = window.confirm(`${notDone.length} image(s) have no details yet. Do you want to upload them with auto name? Press OK to continue, or Cancel to add details first.`);
+      if(!go) return;
+    }
+    setUploadingAll(true); setChecking(true);
+    for(let i=0;i<pendingImages.length;i++){
+      const it = pendingImages[i];
+      setUploadProgress(`Checking image ${i+1} of ${pendingImages.length}...`);
+      setCheckStatus(`Checking image ${i+1} of ${pendingImages.length}. Please wait...`);
+      const ai=await checkImageWithAI(it.url);
+      if(ai.blocked){ alert(`"${it.productName||it.fileName}" was rejected. Reason: ${ai.reason}. It was skipped.`); continue; }
+      const ocr=await checkTextWithOCR(it.url);
+      if(ocr.blocked){ alert(`"${it.productName||it.fileName}" was rejected. Reason: ${ocr.reason}. It was skipped.`); continue; }
+      const name = it.productName || `Product ${uploadedImages.length+i+1}`;
+      const price = it.price || "$35";
+      const desc = it.desc || `${name} - Quality product. Fast delivery.`;
+      setUploadedImages(p=>[...p,{url:it.url, name: it.fileName, productName:name, price, desc}]);
+    }
+    setPendingImages([]); setUploadingAll(false); setChecking(false); setCheckStatus("All images uploaded."); setUploadProgress("");
+    setChat("All your images have been uploaded with their details. Now press Create Website.");
+  };
+  const uploadAllVideos=async()=>{
+    if(pendingVideos.length===0) return alert("No video selected yet.");
+    if(!confirmedSafe) return alert("Please confirm that this is your own product video and it follows the safety rules.");
+    const notDone = pendingVideos.filter(p=>!p.done);
+    if(notDone.length>0){
+      const go = window.confirm(`${notDone.length} video(s) have no details yet. Do you want to upload with auto name? Press OK to continue, or Cancel to add details first.`);
+      if(!go) return;
+    }
+    setUploadingAll(true); setChecking(true);
+    for(let i=0;i<pendingVideos.length;i++){
+      const it = pendingVideos[i];
+      setUploadProgress(`Checking video ${i+1} of ${pendingVideos.length}...`);
+      setCheckStatus(`Checking video ${i+1} of ${pendingVideos.length}. AI is checking 3 frames. Please wait...`);
+      const ai=await checkVideoWithAI(it.url);
+      if(ai.blocked){ alert(`Video "${it.productName||it.fileName}" was rejected. Reason: ${ai.reason}. It was skipped.`); continue; }
+      // Use first video as main shop video, with its details
+      setUploadedVideo(it.url);
+      setUploadedVideoMeta({ productName: it.productName||"Product Video", price: it.price||"$35", desc: it.desc||"Watch this product video." });
+    }
+    setPendingVideos([]); setUploadingAll(false); setChecking(false); setCheckStatus("Video uploaded."); setUploadProgress("");
+    setChat("Your video has been uploaded with its details.");
+  };
+
   const handleGenerateAI=async()=>{
     if(!prompt.trim()) return alert("Please type what you want AI to create first.");
     if(isChildModelRequest(prompt)){ setChat("This request cannot be completed. Children cannot be used as models for underwear, swimwear, or bikini."); return; }
@@ -180,30 +258,26 @@ export default function Build(){
   };
 
   const makeSmartSite=async()=>{
-    if(!prompt.trim()) return alert("Please describe what you want EVA to build.");
+    if(!prompt.trim() && uploadedImages.length===0) return alert("Please describe what you want EVA to build, or upload images with details.");
     const allText=(prompt+" "+inspiredBy+" "+changes).toLowerCase();
     if(isChildModelRequest(allText)){ setChat("This request cannot be completed. Children cannot be used as models for underwear, swimwear, or bikini."); return; }
     const found=BLOCKED_TEXT.find(w=>allText.includes(w));
     if(found){ setChat(`This request cannot be completed. It may contain restricted content: "${found}".`); return; }
     setBuilding(true); setBuilt(null); setChat(""); setSelectedItem(null); setCart([]); setFailedImgs({});
-    let myProducts = parseProductsFromPrompt(prompt+" "+changes);
+    // V18 PRIORITY: If user detailed images in gallery, use THOSE names/prices/descs - no guessing
+    let myProducts = null;
+    if(uploadedImages.length>0){
+      myProducts = uploadedImages.map(up=>({ name: up.productName||up.name||"Product", price: up.price||"$35", img: up.url, desc: up.desc||"Quality product. Fast delivery." }));
+    } else {
+      myProducts = parseProductsFromPrompt(prompt+" "+changes) || genericFallback(prompt);
+    }
     const priceRange=parsePriceRange(prompt+" "+changes);
     const waInfo=extractWhatsApp(prompt)||extractWhatsApp(inspiredBy+" "+changes);
-    if(!myProducts) myProducts = genericFallback(prompt);
-    let items = myProducts;
     const title = makeShortTitle(prompt,"");
     const heroKeyword = encodeURIComponent(title || "store");
-    const heroImage = `https://loremflickr.com/1200/600/${heroKeyword}?lock=999`;
-    const site = { title, desc:"Quality products for modern customers. Free Delivery • Easy Returns • Quality You Can Trust.", color:"#a78bfa", heroImage, items, cta:"Shop Now", extra:"Your website is ready.", video: uploadedVideo || null };
+    const heroImage = uploadedImages.length>0 ? uploadedImages[0].url : `https://loremflickr.com/1200/600/${heroKeyword}?lock=999`;
+    const site = { title, desc:"Quality products for modern customers. Free Delivery • Easy Returns • Quality You Can Trust.", color:"#a78bfa", heroImage, items: myProducts, cta:"Shop Now", extra:"Your website is ready with your product details.", video: uploadedVideo || null, videoMeta: uploadedVideoMeta || null };
     if(waInfo){ site.whatsapp=waInfo; site.extra=`WhatsApp contact added: ${maskNumber(waInfo.display)}. Customers can order on WhatsApp.`; }
-    if(uploadedImages.length>0){
-      site.items = uploadedImages.map((up,i)=>{ const orig=site.items[i] || site.items[0]; return { name: orig.name, price: orig.price, img: up.url, desc: orig.desc + " - Your product photo." }; });
-      if(uploadedImages.length < myProducts.length){
-        const remaining = myProducts.slice(uploadedImages.length);
-        site.items = [...site.items, ...remaining];
-      }
-      site.extra=(site.extra||"")+" Your website is ready with your uploaded images.";
-    }
     try{
       const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:`Write a short 1-sentence store description for: "${prompt}". Return ONLY JSON: {"desc":"..."}` ,history:[]})});
       const data=await res.json(); let text=data.reply||data.text||""; const s=text.indexOf("{"); const e=text.lastIndexOf("}");
@@ -222,7 +296,7 @@ export default function Build(){
             <button onClick={()=>setLiveMode(false)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12}}>Owner: Back to Builder</button>
           </div>
         </div>
-        {built.video?<video src={built.video} controls style={{width:"100%",maxHeight:320,objectFit:"cover",display:"block",background:"black"}}/>:<img src={built.heroImage} alt="" style={{width:"100%",height:220,objectFit:"cover",display:"block"}} onError={(e)=>{e.target.style.display="none";}}/>}
+        {built.video?<div><video src={built.video} controls style={{width:"100%",maxHeight:320,objectFit:"cover",display:"block",background:"black"}}/>{built.videoMeta&&<div style={{padding:"12px 16px",background:"#f8fafc"}}><b>{built.videoMeta.productName}</b> — <b>{built.videoMeta.price}</b><p style={{margin:"4px 0 0",fontSize:13}}>{built.videoMeta.desc}</p></div>}</div>:<img src={built.heroImage} alt="" style={{width:"100%",height:220,objectFit:"cover",display:"block"}} onError={(e)=>{e.target.style.display="none";}}/>}
         <div style={{background:built.color,color:"white",padding:20}}><b style={{fontSize:26}}>{built.title}</b><p style={{margin:"6px 0 0",lineHeight:1.5}}>{built.desc}</p><p style={{fontSize:13,marginTop:8}}>Free Delivery • Easy Returns • Quality You Can Trust</p>
         {built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:12}}>Chat on WhatsApp — Order Now</a>}
         </div>
@@ -243,23 +317,61 @@ export default function Build(){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><b style={{fontSize:22}}>EVA</b><button onClick={()=>window.location.href='/'} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",padding:"8px 14px",borderRadius:999}}>Back</button></div>
       <h1 style={{color:"#c084fc",fontSize:28,lineHeight:1.2,marginTop:30}}>What should EVA create<br/>for you today?</h1>
       <p style={{marginTop:20,fontWeight:"bold"}}>1. Describe what you want</p>
-      <textarea value={prompt} onChange={(e)=>setPrompt(e.target.value)} placeholder="Example: Create store called Lagos Phone Hub, Sell 4 products: iPhone 13 $400, Samsung S24 $500, Tecno Spark $150, Infinix Note $180. WhatsApp 090... for contact" style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:16,color:"white",padding:14,fontSize:15,minHeight:90}} />
-      <p style={{fontSize:12,opacity:0.7,marginTop:4}}>Tip: List your products like this: Sell 4 products: Name $Price, Name $Price. EVA will use YOUR list.</p>
+      <textarea value={prompt} onChange={(e)=>setPrompt(e.target.value)} placeholder="Example: Create store called Lagos Phone Hub. WhatsApp 090... for contact. Or just upload your images with details below." style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:16,color:"white",padding:14,fontSize:15,minHeight:90}} />
+      <p style={{fontSize:12,opacity:0.7,marginTop:4}}>Tip: You can now skip long description. Just upload images, detail each one in gallery, EVA will use your details.</p>
       {mode==="Website"&&(
         <div style={{marginTop:16,background:"rgba(255,255,255,0.08)",padding:14,borderRadius:16}}>
-          <label style={{display:"block",background:"white",color:"black",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Upload your image<input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{display:"none"}}/></label>
-          {uploadedImages.length>0&&(<div><p style={{fontSize:12,margin:"10px 0 6px",opacity:0.8}}>{uploadedImages.length} image(s) uploaded</p><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{uploadedImages.map((im,i)=>(<div key={i} style={{position:"relative"}}><img src={im.url} alt="" style={{width:56,height:56,borderRadius:10,objectFit:"cover"}}/><button onClick={()=>setUploadedImages(uploadedImages.filter((_,idx)=>idx!==i))} style={{position:"absolute",top:-6,right:-6,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button></div>))}</div></div>)}
-          <label style={{display:"block",background:"#c084fc",color:"black",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer",marginTop:10}}>Upload your video<input type="file" accept="video/*" onChange={handleVideoUpload} style={{display:"none"}}/></label>
-          {uploadedVideo&&<video src={uploadedVideo} controls style={{width:"100%",height:140,objectFit:"cover",borderRadius:12,marginTop:10}}/>}
+          {/* V18 IMAGE GALLERY */}
+          <p style={{fontWeight:"bold",margin:"0 0 8px"}}>📸 Your Product Images — Tap each to add details</p>
+          <label style={{display:"block",background:"white",color:"black",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Select Images From Gallery<input type="file" accept="image/*" multiple onChange={handleSelectImages} style={{display:"none"}}/></label>
+          <p style={{fontSize:11,opacity:0.7,margin:"6px 0 0"}}>Max 20MB per image. Tap an image to write its Name, Price, Description.</p>
+          {pendingImages.length>0&&(<div style={{marginTop:12}}>
+            <p style={{fontSize:12,opacity:0.8}}>{pendingImages.filter(p=>p.done).length} of {pendingImages.length} detailed ✅</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              {pendingImages.map((im)=>(
+                <div key={im.id} onClick={()=>openImageEditor(im)} style={{position:"relative",cursor:"pointer",border: im.done ? "2px solid #22c55e" : "2px solid #facc15", borderRadius:12, overflow:"hidden"}}>
+                  <img src={im.url} alt="" style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/>
+                  <div style={{background: im.done ? "#22c55e" : "#facc15", color: im.done ? "white" : "black", fontSize:10, fontWeight:"bold", textAlign:"center", padding:"3px"}}>{im.done ? "Done ✅" : "Tap to add details"}</div>
+                  {im.done&&<div style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,0.6)",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999}}>{im.productName} — {im.price}</div>}
+                  <button onClick={(e)=>{e.stopPropagation(); setPendingImages(pendingImages.filter(x=>x.id!==im.id));}} style={{position:"absolute",top:4,right:4,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={uploadAllImages} disabled={uploadingAll} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:13,borderRadius:12,fontWeight:"bold",marginTop:10}}>{uploadingAll?"Uploading... Please wait.":"Overall Done — Upload All Images"}</button>
+            {uploadProgress&&<p style={{fontSize:12,color:"#facc15",fontWeight:"bold",marginTop:6}}>{uploadProgress}</p>}
+          </div>)}
+          {uploadedImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12,margin:"0 0 6px",opacity:0.8}}>{uploadedImages.length} uploaded ✅</p><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{uploadedImages.map((im,i)=>(<div key={i} style={{position:"relative",background:"rgba(255,255,255,0.1)",padding:6,borderRadius:10,maxWidth:120}}><img src={im.url} alt="" style={{width:"100%",height:56,borderRadius:8,objectFit:"cover"}}/><div style={{fontSize:11,fontWeight:"bold",marginTop:4}}>{im.productName} — {im.price}</div><div style={{fontSize:10,opacity:0.8}}>{im.desc?.slice(0,40)}</div><button onClick={()=>setUploadedImages(uploadedImages.filter((_,idx)=>idx!==i))} style={{position:"absolute",top:-6,right:-6,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button></div>))}</div></div>)}
+
+          {/* V18 VIDEO GALLERY */}
+          <p style={{fontWeight:"bold",margin:"18px 0 8px"}}>🎥 Your Product Videos — Same way, tap to add details</p>
+          <label style={{display:"block",background:"#c084fc",color:"black",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Select Videos From Gallery<input type="file" accept="video/*" multiple onChange={handleSelectVideos} style={{display:"none"}}/></label>
+          <p style={{fontSize:11,opacity:0.7,margin:"6px 0 0"}}>Max 20MB per video. Tap a video to write its Title, Price, Description.</p>
+          {pendingVideos.length>0&&(<div style={{marginTop:12}}>
+            <p style={{fontSize:12,opacity:0.8}}>{pendingVideos.filter(p=>p.done).length} of {pendingVideos.length} detailed ✅</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {pendingVideos.map((vd)=>(
+                <div key={vd.id} onClick={()=>openVideoEditor(vd)} style={{position:"relative",cursor:"pointer",border: vd.done ? "2px solid #22c55e" : "2px solid #facc15", borderRadius:12, overflow:"hidden"}}>
+                  <video src={vd.url} style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/>
+                  <div style={{background: vd.done ? "#22c55e" : "#facc15", color: vd.done ? "white" : "black", fontSize:10, fontWeight:"bold", textAlign:"center", padding:"3px"}}>{vd.done ? "Done ✅" : "Tap to add details"}</div>
+                  {vd.done&&<div style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,0.6)",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999}}>{vd.productName} — {vd.price}</div>}
+                  <button onClick={(e)=>{e.stopPropagation(); setPendingVideos(pendingVideos.filter(x=>x.id!==vd.id));}} style={{position:"absolute",top:4,right:4,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={uploadAllVideos} disabled={uploadingAll} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:13,borderRadius:12,fontWeight:"bold",marginTop:10}}>{uploadingAll?"Uploading... Please wait.":"Overall Done — Upload All Videos"}</button>
+          </div>)}
+          {uploadedVideo&&<div style={{marginTop:12}}><video src={uploadedVideo} controls style={{width:"100%",height:140,objectFit:"cover",borderRadius:12}}/><p style={{fontSize:12,marginTop:4}}>{uploadedVideoMeta?.productName} — {uploadedVideoMeta?.price} ✅</p></div>}
+
           <div style={{marginTop:12}}>
             <button onClick={()=>setShowSafety(!showSafety)} style={{width:"100%",background:"transparent",border:"none",color:"white",textAlign:"left",padding:"6px 0",fontSize:13,display:"flex",justifyContent:"space-between",cursor:"pointer"}}><span>Safety Rules for Uploads</span><span>{showSafety?"▲":"▼"}</span></button>
-            {showSafety&&(<div style={{background:"rgba(255,255,255,0.08)",padding:10,borderRadius:10,fontSize:12,lineHeight:1.5}}>Do not upload nudity, sexual content, images of children, or bank documents, ID cards, passwords, or personal records. Only upload images and videos of your own products.</div>)}
+            {showSafety&&(<div style={{background:"rgba(255,255,255,0.08)",padding:10,borderRadius:10,fontSize:12,lineHeight:1.5}}>Do not upload nudity, sexual content, images of children, or bank documents, ID cards, passwords, or personal records. Only upload images and videos of your own products. Max 20MB per file. EVA will scan the content inside your image and video, not only the file name. For kids products, do not use children as models for underwear, swimwear, or bikini. Use flat lay photos or a mannequin instead.</div>)}
             <label style={{display:"flex",gap:8,marginTop:8,fontSize:13,lineHeight:1.4,cursor:"pointer"}}><input type="checkbox" checked={confirmedSafe} onChange={(e)=>setConfirmedSafe(e.target.checked)} style={{marginTop:2}}/> I confirm this is my own product image/video and it follows the safety rules.</label>
             {checking&&<p style={{color:"#facc15",fontSize:13,fontWeight:"bold"}}>{checkStatus}</p>}
             {!checking&&checkStatus&&<p style={{fontSize:12,color:"#22c55e"}}>{checkStatus}</p>}
           </div>
         </div>
       )}
+      {mode!=="Website"&&<p style={{fontSize:13,opacity:0.7,marginTop:12}}>{mode==="Image"?"Image mode: AI will generate a new image from your description.":"Video mode: AI will generate a new video from your description. This requires a paid video API."}</p>}
       <p style={{marginTop:18,fontWeight:"bold"}}>2. Inspired by? (Optional)</p>
       <input value={inspiredBy} onChange={(e)=>setInspiredBy(e.target.value)} placeholder="Enter a website name or link" style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:14,color:"white",padding:13}}/>
       <p style={{marginTop:18,fontWeight:"bold"}}>3. What would you like to change? (Optional)</p>
@@ -269,7 +381,7 @@ export default function Build(){
       {mode==="Website"?<button onClick={makeSmartSite} style={{width:"100%",background:"#c084fc",border:"none",color:"black",padding:14,borderRadius:999,fontWeight:"bold",marginTop:20,fontSize:16}}>{building?"EVA is building. Please wait.":"Create Website"}</button>
       :<button onClick={handleGenerateAI} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",marginTop:20,fontSize:16}}>{building?"AI is creating. Please wait.":mode==="Image"?"Generate AI Image":"Generate AI Video"}</button>}
       {chat&&<div style={{marginTop:14,background:"rgba(167,139,250,0.2)",padding:12,borderRadius:12,fontSize:14}}>EVA: {chat}</div>}
-      {mode==="Image"&&generatedImage&&(<div style={{marginTop:16,background:"white",color:"black",borderRadius:16,padding:14}}><b>AI Generated Image</b><img src={generatedImage} alt="" style={{width:"100%",height:300,objectFit:"cover",borderRadius:12,marginTop:10}}/><button onClick={()=>{setUploadedImages([{url:generatedImage,name:"AI Image"}]); setMode("Website"); setChat("This AI image has been moved to Website Upload.");}} style={{width:"100%",background:"black",border:"none",color:"white",padding:12,borderRadius:999,fontWeight:"bold",marginTop:10}}>Use This Image For Website</button></div>)}
+      {mode==="Image"&&generatedImage&&(<div style={{marginTop:16,background:"white",color:"black",borderRadius:16,padding:14}}><b>AI Generated Image</b><img src={generatedImage} alt="" style={{width:"100%",height:300,objectFit:"cover",borderRadius:12,marginTop:10}}/><button onClick={()=>{setUploadedImages([{url:generatedImage,name:"AI Image",productName:"AI Image",price:"$35",desc:"AI generated image."}]); setMode("Website"); setChat("This AI image has been moved to Website Upload.");}} style={{width:"100%",background:"black",border:"none",color:"white",padding:12,borderRadius:999,fontWeight:"bold",marginTop:10}}>Use This Image For Website</button></div>)}
       {mode==="Video"&&generatedVideoMsg&&<div style={{marginTop:14,background:"rgba(255,255,255,0.1)",padding:12,borderRadius:12,fontSize:14}}>{generatedVideoMsg}</div>}
       {built&&mode==="Website"&&(
         <div style={{marginTop:16,background:"white",color:"black",borderRadius:16,overflow:"hidden"}}>
@@ -278,12 +390,45 @@ export default function Build(){
           <div style={{padding:16}}>
             {built.items?.map((it,i)=>(<div key={i} onClick={()=>{setSelectedItem(it); setSelectedSize("M");}} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #eee",alignItems:"center",cursor:"pointer"}}><ProductImg item={it} idx={i} size="small"/><div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13,opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
             <button onClick={()=>setLiveMode(true)} style={{width:"100%",background:"black",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",marginTop:14}}>View Live Shop</button>
-            <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:10}}>V17.1 — Generic: Works for Phone, Sneaker, Hair, Food, Anything</p>
+            <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:10}}>V18.0 — Gallery Details: Tap each image/video, write details, Done, Upload All</p>
           </div>
         </div>
       )}
       {selectedItem&&!liveMode&&built&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",color:"black",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><button onClick={()=>setSelectedItem(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Back to Shop</button><ProductImg item={selectedItem} idx={999} size="large"/><h2>{selectedItem.name}</h2><b style={{color:built.color,fontSize:22}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><button onClick={()=>{setCart([...cart,{...selectedItem,size:selectedSize}]); setSelectedItem(null);}} style={{width:"100%",background:built.color,border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold",marginTop:12}}>Add to Cart — {selectedItem.price}</button></div></div>)}
+
+      {/* V18 - Small box for Image details */}
+      {editingImageId&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"white",color:"black",width:"100%",borderRadius:"20px 20px 0 0",padding:16,maxHeight:"92vh",overflow:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{margin:0}}>Add details for this image</h3><button onClick={()=>setEditingImageId(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>
+            <p style={{fontSize:12,opacity:0.6}}>Write what this product is. EVA will use this exact name, price, description.</p>
+            <label style={{fontWeight:"bold",fontSize:13}}>Product Name *</label>
+            <input value={editName} onChange={(e)=>setEditName(e.target.value)} placeholder="e.g. iPhone 13, Red Dress, White Sneakers" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Price *</label>
+            <input value={editPrice} onChange={(e)=>setEditPrice(e.target.value)} placeholder="e.g. $400 or 400" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Description / Anything you want</label>
+            <textarea value={editDesc} onChange={(e)=>setEditDesc(e.target.value)} placeholder="e.g. UK used, battery 92%, clean, no scratch. Size M, L, XL available." style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15,minHeight:80}}/>
+            <button onClick={saveImageDetail} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",fontSize:16}}>Done ✅ — Mark this image</button>
+          </div>
+        </div>
+      )}
+      {/* V18 - Small box for Video details */}
+      {editingVideoId&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"white",color:"black",width:"100%",borderRadius:"20px 20px 0 0",padding:16,maxHeight:"92vh",overflow:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{margin:0}}>Add details for this video</h3><button onClick={()=>setEditingVideoId(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>
+            <p style={{fontSize:12,opacity:0.6}}>Write what this video is about. Same rules: max 20MB.</p>
+            <label style={{fontWeight:"bold",fontSize:13}}>Video Title *</label>
+            <input value={editName} onChange={(e)=>setEditName(e.target.value)} placeholder="e.g. iPhone 13 Promo Video" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Price *</label>
+            <input value={editPrice} onChange={(e)=>setEditPrice(e.target.value)} placeholder="e.g. $400 or 400" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Description</label>
+            <textarea value={editDesc} onChange={(e)=>setEditDesc(e.target.value)} placeholder="e.g. This video shows the phone working, camera test, etc." style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15,minHeight:80}}/>
+            <button onClick={saveVideoDetail} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",fontSize:16}}>Done ✅ — Mark this video</button>
+          </div>
+        </div>
+      )}
       <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
     </div>
   );
-       }
+    }
