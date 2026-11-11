@@ -431,4 +431,4 @@ export default function Build(){
       <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
     </div>
   );
-    }
+}
