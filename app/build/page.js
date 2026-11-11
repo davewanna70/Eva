@@ -4,6 +4,28 @@ import { useState } from "react";
 export default function Build() {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState("Website");
+  const [building, setBuilding] = useState(false);
+  const [built, setBuilt] = useState(null);
+
+  const makeSite = () => {
+    if (!prompt.trim()) return alert("Tell EVA wetin to build first");
+    setBuilding(true);
+    setTimeout(() => {
+      const p = prompt.toLowerCase();
+      let title = "My New Website";
+      let desc = prompt;
+      let color = "#a78bfa";
+      let items = ["Welcome to my site", "About Us", "Our Services", "Contact Us"];
+
+      if (p.includes("fashion")) { title = "ZEE Fashion Store"; desc = "Fresh styles, affordable prices. Shop the latest drops."; color = "#ec4899"; items = ["New Arrivals - ₦15,000", "Dresses - ₦12,000", "Shoes - ₦20,000", "Order on WhatsApp"]; }
+      if (p.includes("restaurant") || p.includes("food")) { title = "Bella Food House"; desc = "Authentic food, fresh daily. Order now."; color = "#f59e0b"; items = ["Jollof Rice - ₦3,500", "Pounded Yam - ₦4,000", "Pepper Soup - ₦2,500", "Book a Table"]; }
+      if (p.includes("church")) { title = "Grace Chapel"; desc = "Join us every Sunday 9AM. You are welcome."; color = "#22c55e"; items = ["Sunday Service - 9AM", "Midweek - Wed 5PM", "Youth Meeting - Sat 4PM", "Watch Online"]; }
+      if (p.includes("portfolio")) { title = "My Portfolio"; desc = "I build beautiful things. See my work."; color = "#06b6d4"; items = ["My Projects", "My Skills", "My Experience", "Hire Me"]; }
+
+      setBuilt({ title, desc, color, items });
+      setBuilding(false);
+    }, 1200);
+  };
 
   return (
     <div style={{minHeight:"100dvh", background:"#030014", color:"white", padding:20, fontFamily:"sans-serif"}}>
@@ -35,11 +57,27 @@ export default function Build() {
         ))}
       </div>
 
-      <button onClick={()=> alert(`EVA go build ${mode}: ${prompt}`)} style={{width:"100%", background:"#c084fc", border:"none", color:"black", padding:14, borderRadius:999, fontWeight:"bold", marginTop:20, fontSize:16}}>
-        Create {mode} →
+      <button onClick={makeSite} style={{width:"100%", background:"#c084fc", border:"none", color:"black", padding:14, borderRadius:999, fontWeight:"bold", marginTop:20, fontSize:16}}>
+        {building ? "EVA dey build... ⏳" : `Create ${mode} →`}
       </button>
+
+      {built && (
+        <div style={{marginTop:24, background:"white", color:"black", borderRadius:16, overflow:"hidden"}}>
+          <div style={{background:built.color, color:"white", padding:18}}>
+            <b style={{fontSize:22}}>{built.title}</b>
+            <p style={{margin:"6px 0 0", opacity:0.9}}>{built.desc}</p>
+          </div>
+          <div style={{padding:16}}>
+            {built.items.map((it,i)=>(
+              <div key={i} style={{padding:"12px 0", borderBottom:"1px solid #eee", display:"flex", justifyContent:"space-between"}}><span>{it}</span><span>→</span></div>
+            ))}
+            <button style={{width:"100%", background:built.color, border:"none", color:"white", padding:12, borderRadius:999, fontWeight:"bold", marginTop:14}}>Contact / Order Now</button>
+            <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:10}}>Preview by EVA — you fit edit this later</p>
+          </div>
+        </div>
+      )}
 
       <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:12}}>EVA will generate and you can edit anytime</p>
     </div>
   );
-}
+          }
