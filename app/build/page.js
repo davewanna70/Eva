@@ -1,9 +1,10 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 
-// V20.2 CLEAN - Auto Options + No Extra Talk
+// V20.3 FULL - CLEAN + AUTO OPTIONS + BIO LINK + DOWNLOAD + SHARE
 // Phone = Storage auto, Hair = Short/Medium/Long auto, Cloth = S/M/L/XL auto, Shoe = 38-44 auto
-// No explanatory banners. My Saved Shops alone is enough. Back button just works.
+// Bio Link: ?shop=ID opens shop direct. Download: Single HTML file. Share: WhatsApp + Copy for Instagram/TikTok
+// No extra explanatory banners. Clean like real website.
 
 function extractWhatsApp(text) {
   if (!text) return null;
@@ -79,7 +80,6 @@ function colorFor(name){
   if(n.includes("wig")||n.includes("hair")) return "#fce7f3";
   return "#e5e7eb";
 }
-// V20.2 CLEAN - Auto Options: Name + Desc + Store Title
 function getOptionsFor(name, desc, storeTitle){
   const onlyName = (name||"").toLowerCase();
   const onlyDesc = (desc||"").toLowerCase();
@@ -157,6 +157,7 @@ export default function Build(){
   const [editDesc,setEditDesc]=useState("");
   const [uploadingAll,setUploadingAll]=useState(false);
   const [uploadProgress,setUploadProgress]=useState("");
+  const [showShare,setShowShare]=useState(false);
 
   useEffect(()=>{
     try{
@@ -165,6 +166,20 @@ export default function Build(){
       if(valid.length!==saved.length) localStorage.setItem("eva_my_shops", JSON.stringify(valid));
       setMyShops(valid);
       if(valid.length>0) setShowMyShops(true);
+    }catch(e){}
+  },[]);
+  // V20.3 - If person open ?shop=ID, open that shop direct, no builder
+  useEffect(()=>{
+    try{
+      const params = new URLSearchParams(window.location.search);
+      const shopId = params.get("shop");
+      if(shopId){
+        const saved = JSON.parse(localStorage.getItem("eva_my_shops")||"[]");
+        const found = saved.find(s=>String(s.id)===String(shopId));
+        if(found){ setBuilt(found); setLiveMode(true); setIsOwner(false); }
+        // If shop is not on this phone (different phone), show message - needs real hosting for cross-phone
+        else { setChat("This shop link was created on another phone. Ask owner to send you the Downloaded Shop file, or open it on the same phone where it was created. For real cross-phone links, host the downloaded file on Netlify Drop."); }
+      }
     }catch(e){}
   },[]);
   useEffect(()=>{
@@ -177,11 +192,12 @@ export default function Build(){
       if(editingImageId){ setEditingImageId(null); return; }
       if(editingVideoId){ setEditingVideoId(null); return; }
       if(showOwnerLogin){ setShowOwnerLogin(false); return; }
+      if(showShare){ setShowShare(false); return; }
       if(liveMode){ setLiveMode(false); return; }
     };
     window.addEventListener("popstate", onPop);
     return ()=>window.removeEventListener("popstate", onPop);
-  },[selectedItem,showCart,showAddProduct,showEditStore,editingProduct,editingImageId,editingVideoId,showOwnerLogin,liveMode]);
+  },[selectedItem,showCart,showAddProduct,showEditStore,editingProduct,editingImageId,editingVideoId,showOwnerLogin,showShare,liveMode]);
   const pushHistory=(label)=>{ try{ window.history.pushState({v20:label}, "", "#"+label); }catch(e){} };
 
   const saveShopToStorage=(site)=>{
@@ -212,6 +228,61 @@ export default function Build(){
     pushHistory("product");
   };
   const closeProduct=()=>{ setSelectedItem(null); };
+
+  // V20.3 - BIO LINK + SHARE + DOWNLOAD
+  const getBioLink = () => {
+    if(!built) return "";
+    return `${window.location.origin}${window.location.pathname}?shop=${built.id}`;
+  };
+  const copyBioLink = async () => {
+    const link = getBioLink();
+    try { await navigator.clipboard.writeText(link); alert("Bio link copied!\n\nPaste it in your Instagram / TikTok bio:\n" + link); }
+    catch(e){ window.prompt("Copy your Bio Link:", link); }
+  };
+  const shareToWhatsApp = () => {
+    const link = getBioLink();
+    const text = `🛍️ Shop ${built.title} — Click link to shop:\n${link}\n\nFree Delivery • Easy Returns • Quality You Can Trust`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  };
+  const shareToInstagram = async () => {
+    // Instagram has no direct share API, so copy is the correct way
+    await copyBioLink();
+  };
+  const shareNative = async () => {
+    const link = getBioLink();
+    const text = `Shop ${built.title} — Click to shop: ${link}`;
+    if(navigator.share){
+      try{ await navigator.share({title: built.title, text, url: link}); }catch(e){ await copyBioLink(); }
+    } else { await copyBioLink(); }
+  };
+  const downloadSingleHTML = () => {
+    const itemsHtml = built.items.map(it => {
+      const opts = getOptionsFor(it.name, it.desc, built.title);
+      const optsHtml = opts.options.length ? `<div style="margin-top:6px"><b style="font-size:12px">${opts.label}:</b> ${opts.options.map(o=>`<span style="display:inline-block;border:1px solid #ccc;border-radius:999px;padding:4px 10px;font-size:12px;margin:2px">${o}</span>`).join("")}</div>` : "";
+      return `<div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #eee;align-items:center">
+        <img src="${it.img}" style="width:80px;height:80px;border-radius:12px;object-fit:cover" />
+        <div style="flex:1"><b>${it.name}</b><br/><span style="font-size:13px;opacity:.6">${(it.desc||"").replace(/</g,"&lt;")}</span>${optsHtml}<br/>${it.soldOut ? "<b style='color:red;font-size:12px'>SOLD OUT</b>" : "<b style='color:green;font-size:12px'>In Stock</b>"}</div>
+        <b style="color:${built.color}">${it.price}</b>
+      </div>`;
+    }).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${built.title}</title></head>
+    <body style="font-family:sans-serif;margin:0;background:white;color:black">
+    <div style="background:black;color:white;padding:16px;display:flex;justify-content:space-between"><b style="font-size:20px">${built.title}</b><b>Shop</b></div>
+    ${built.video ? `<video src="${built.video}" controls style="width:100%;max-height:320px;object-fit:cover"></video>` : `<img src="${built.heroImage}" style="width:100%;height:220px;object-fit:cover" />`}
+    <div style="background:${built.color};color:white;padding:20px"><b style="font-size:26px">${built.title}</b><p>${built.desc}</p><p>Free Delivery • Easy Returns • Quality You Can Trust</p>
+    ${built.whatsapp ? `<a href="${built.whatsapp.waLink}" style="display:block;background:#25D366;color:white;text-align:center;padding:12px;border-radius:999px;font-weight:bold;text-decoration:none">Chat on WhatsApp — Order Now</a>` : ""}</div>
+    <div style="padding:16px"><h3>Shop All Products</h3>${itemsHtml}</div>
+    ${built.whatsapp ? `<div style="margin:0 16px 16px;background:#f0fdf4;border:1px solid #bbf7d0;padding:14px;border-radius:12px"><b>Contact Seller</b><p>Tap below to chat directly.</p><a href="${built.whatsapp.waLink}" style="display:block;background:#25D366;color:white;text-align:center;padding:12px;border-radius:999px;font-weight:bold;text-decoration:none">Open WhatsApp</a></div>` : ""}
+    <div style="padding:16px;text-align:center;opacity:.6;font-size:12px">Made with EVA • ${built.title}</div>
+    </body></html>`;
+    const blob = new Blob([html], {type:"text/html"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${built.title.replace(/[^a-z0-9]/gi,"-")}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const loadNSFWModel=async()=>{ if(modelRef.current) return modelRef.current; setCheckStatus("Loading safety AI model. Please wait..."); await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"); await loadScript("https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/nsfwjs.min.js"); const m=await window.nsfwjs.load(); modelRef.current=m; return m; };
   const isNSFWPrediction=(preds)=>{ const g=(n)=>{ const p=preds.find(x=>x.className===n); return p?p.probability:0; }; const porn=g("Porn"); const hen=g("Hentai"); if(porn>0.70||hen>0.70) return {blocked:true,reason:`Porn ${Math.round(porn*100)}% / Hentai ${Math.round(hen*100)}%`}; return {blocked:false,reason:""}; };
@@ -392,6 +463,7 @@ export default function Build(){
           <b style={{fontSize:20}}>{built.title}</b>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button onClick={()=>{setShowCart(true); pushHistory("cart");}} style={{background:"white",border:"none",color:"black",padding:"8px 14px",borderRadius:999,fontWeight:"bold"}}>Cart ({cart.length})</button>
+            <button onClick={()=>{setShowShare(true); pushHistory("share");}} style={{background:"#c084fc",border:"none",color:"black",padding:"8px 12px",borderRadius:999,fontSize:12,fontWeight:"bold"}}>Share 🔗</button>
             {isOwner ? (
               <button onClick={()=>{setIsOwner(false); setChat("You logged out of Owner Mode. Now showing Customer View.");}} style={{background:"#22c55e",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12,fontWeight:"bold"}}>Owner: Logout</button>
             ) : (
@@ -424,6 +496,21 @@ export default function Build(){
         {(()=>{ const opts=getOptionsFor(selectedItem.name, selectedItem.desc, built.title); if(opts.options.length===0) return null; return (<div><p style={{fontWeight:"bold",margin:"12px 0 6px"}}>{opts.label}:</p><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{opts.options.map(s=>(<button key={s} onClick={()=>setSelectedOption(s)} style={{padding:"10px 18px",borderRadius:999,border:selectedOption===s?`2px solid ${built.color}`:"1px solid #ccc",background:selectedOption===s?built.color:"white",color:selectedOption===s?"white":"black",fontWeight:"bold"}}>{s}</button>))}</div></div>); })()}
         <button onClick={()=>{if(selectedItem.soldOut) return alert("This product is sold out."); setCart([...cart,{...selectedItem, option:selectedOption}]); setSelectedItem(null); setShowCart(true);}} style={{width:"100%",background:built.color,border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold",marginTop:12}}>Add to Cart — {selectedItem.price} {selectedOption?`(${selectedOption})`:""}</button>{built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Ask on WhatsApp</a>}</div></div>)}
         {showCart&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:60,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><div style={{display:"flex",justifyContent:"space-between"}}><h2>Your Cart ({cart.length})</h2><button onClick={()=>setShowCart(false)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>{cart.length===0?<p>Your cart is empty.</p>:cart.map((c,i)=>(<div key={i} style={{display:"flex",gap:12,padding:"12px 0",borderBottom:"1px solid #eee",alignItems:"center"}}><ProductImg item={c} idx={i} size="small"/><div style={{flex:1}}><b>{c.name}</b><div style={{fontSize:13}}>{c.option?`${getOptionsFor(c.name, c.desc, built.title).label}: ${c.option}`:""}</div></div><b>{c.price}</b><button onClick={()=>setCart(cart.filter((_,idx)=>idx!==i))} style={{background:"#fee",border:"none",padding:"6px 10px",borderRadius:999}}>Remove</button></div>))}<h3 style={{textAlign:"right"}}>Total: ${cartTotal.toFixed(2)}</h3><button onClick={()=>{if(!cart.length) return alert("Your cart is empty."); alert("Thank you. Your order is confirmed."); setCart([]); setShowCart(false);}} style={{width:"100%",background:"black",border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold"}}>Checkout — ${cartTotal.toFixed(2)}</button>{built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Checkout on WhatsApp</a>}</div></div>)}
+        {showShare&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"white",width:"100%",borderRadius:"20px 20px 0 0",padding:16,maxHeight:"92vh",overflow:"auto"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{margin:0}}>Share {built.title}</h3><button onClick={()=>setShowShare(false)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>
+              <p style={{fontSize:13,opacity:0.7,margin:"8px 0 12px"}}>One link for your shop. Put it in your bio.</p>
+              <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",padding:12,borderRadius:12,fontSize:12,wordBreak:"break-all"}}>{getBioLink()}</div>
+              <button onClick={copyBioLink} style={{width:"100%",background:"black",color:"white",border:"none",padding:14,borderRadius:999,fontWeight:"bold",marginTop:12}}>Copy Bio Link 🔗</button>
+              <button onClick={shareToWhatsApp} style={{width:"100%",background:"#25D366",color:"white",border:"none",padding:14,borderRadius:999,fontWeight:"bold",marginTop:8}}>Share to WhatsApp 💬</button>
+              <button onClick={shareToInstagram} style={{width:"100%",background:"#E1306C",color:"white",border:"none",padding:14,borderRadius:999,fontWeight:"bold",marginTop:8}}>Copy for Instagram / TikTok 📸</button>
+              <button onClick={shareNative} style={{width:"100%",background:"#c084fc",color:"black",border:"none",padding:14,borderRadius:999,fontWeight:"bold",marginTop:8}}>Share to Other Apps ↗️</button>
+              <button onClick={downloadSingleHTML} style={{width:"100%",background:"white",color:"black",border:"1px solid #ddd",padding:14,borderRadius:999,fontWeight:"bold",marginTop:8}}>Download Shop (Single HTML) ⬇️</button>
+              <p style={{fontSize:11,opacity:0.6,marginTop:10,textAlign:"center"}}>Downloaded file = your full shop in one file. Send it on WhatsApp or upload it to Netlify Drop to get a real link for other phones.</p>
+            </div>
+          </div>
+        )}
         {showOwnerLogin&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
             <div style={{background:"white",width:"100%",maxWidth:400,borderRadius:16,padding:20}}>
@@ -530,6 +617,7 @@ export default function Build(){
           <div style={{padding:16}}>
             {built.items?.map((it,i)=>(<div key={it.id||i} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #eee",alignItems:"center"}}><ProductImg item={it} idx={i} size="small"/><div style={{flex:1}}><b>{it.name}</b> {it.soldOut&&<span style={{background:"#ef4444",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999,marginLeft:4}}>SOLD OUT</span>}<div style={{fontSize:13,opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
             <button onClick={()=>{setLiveMode(true); pushHistory("live-shop");}} style={{width:"100%",background:"black",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",marginTop:14}}>View Live Shop</button>
+            <button onClick={()=>{setLiveMode(true); setShowShare(true);}} style={{width:"100%",background:"#c084fc",border:"none",color:"black",padding:14,borderRadius:999,fontWeight:"bold",marginTop:8}}>Share / Bio Link / Download 🔗</button>
           </div>
         </div>
       )}
@@ -561,4 +649,4 @@ export default function Build(){
       <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
     </div>
   );
-}
+                                                                                                                                                             }
