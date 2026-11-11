@@ -6,6 +6,13 @@ const IMG_BAG = "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=
 const IMG_SHOE = "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=800&q=80";
 const IMG_JEWELRY = "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=800&q=80";
 const IMG_HERO = "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80";
+// V15.3 - LINGERIE IMAGES
+const IMG_BRA = "https://images.unsplash.com/photo-1582533561751-ef6f6ab93a2e?w=800&q=80";
+const IMG_PANT = "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800&q=80";
+const IMG_BIKINI = "https://images.unsplash.com/photo-1582639510494-c80b5de9f148?w=800&q=80";
+const IMG_SWIM = "https://images.unsplash.com/photo-1570976447640-ac242c57a6a0?w=800&q=80";
+const IMG_LINGERIE_HERO = "https://images.unsplash.com/photo-1617331721458-bd3bd3f9c7f8?w=800&q=80";
+
 const SAFE_IMAGES = [IMG_DRESS, IMG_BAG, IMG_SHOE, IMG_JEWELRY, IMG_HERO];
 const DEFAULT_ITEMS = [
   { name: "Elegant Dress", price: "$45", img: IMG_DRESS, desc: "A luxury elegant dress for women. Perfect for dinner and special events." },
@@ -13,15 +20,31 @@ const DEFAULT_ITEMS = [
   { name: "Stylish Shoes", price: "$55", img: IMG_SHOE, desc: "Stylish and comfortable shoes for everyday wear." },
   { name: "Gold Jewelry Set", price: "$35", img: IMG_JEWELRY, desc: "A beautiful gold jewelry set. Elegant and timeless." },
 ];
+// V15.3 - LINGERIE DEFAULTS - For underwear / pikini / swimwear sellers
+const LINGERIE_ITEMS = [
+  { name: "Lace Bra Set", price: "$28", img: IMG_BRA, desc: "Comfortable lace bra set for women. Soft, breathable, and elegant." },
+  { name: "Cotton Pant - 3 Pack", price: "$18", img: IMG_PANT, desc: "Soft cotton pant, pack of 3. Comfortable for everyday wear." },
+  { name: "Bikini Set", price: "$32", img: IMG_BIKINI, desc: "Stylish bikini set for women. Perfect for beach and swimming." },
+  { name: "Swimwear One Piece", price: "$35", img: IMG_SWIM, desc: "Elegant one-piece swimwear for ladies. Comfortable and stylish." },
+];
 
-// V15.2 - FIXED: Removed "sex", "child", "kid", "teen" general blocks so legit underwear / kids clothes sellers no go block.
-// Only specific bad phrases remain.
 const BLOCKED_TEXT = ["nude","naked","porn","xxx","onlyfans","escort","prostitut","child porn","kid nude","sex with minor","minor sex","school girl","schoolgirl","clone","copy exactly","exact copy","replica","pirate","crack","fake bank","phishing","fake login","steal password","fake paypal","fake crypto","scam","fake shop","bomb","hack","ddos","fake id","fake passport","drugs","how to steal","weapon","kill","murder","terror","hate","bank card","bank account","credit card number","password","otp","pin code"];
-// V15.2 - Child + Underwear/ Swimwear as model = BLOCK. Adult underwear alone = ALLOW
 const BLOCKED_CHILD_MODEL = ["child","kid","pikin","teen","minor","baby","toddler","school"];
 const BLOCKED_FILE = ["nude","naked","porn","xxx","onlyfans","escort","bank","password","otp","pin","passport","id card","credit card","nudes"];
 const BLOCKED_OCR = ["bank","account number","credit card","debit card","password","otp","pin code","passport","national id","id card","sort code","routing number","iban","swift"];
 const LINGERIE_WORDS = ["underwear","pikini","pant","bra","lingerie","bikini","swimwear","swimsuit","panties","boxer","brief"];
+
+// V15.3 - Get correct default items based on what user sells
+function getDefaultForPrompt(prompt) {
+  const p = (prompt||"").toLowerCase();
+  if (LINGERIE_WORDS.some(w => p.includes(w)) || p.includes("sexy under") || p.includes("swimming pant")) return LINGERIE_ITEMS;
+  return DEFAULT_ITEMS;
+}
+function getHeroForPrompt(prompt) {
+  const p = (prompt||"").toLowerCase();
+  if (LINGERIE_WORDS.some(w => p.includes(w))) return IMG_LINGERIE_HERO;
+  return IMG_HERO;
+}
 
 function makeShortTitle(prompt, aiTitle) {
   if (aiTitle && aiTitle.length <= 30 && !aiTitle.toLowerCase().includes("a luxury")) return aiTitle;
@@ -34,6 +57,8 @@ function makeShortTitle(prompt, aiTitle) {
   if (p.includes("jewel")) return "Golden Glow";
   if (p.includes("furniture") || p.includes("table") || p.includes("chair")) return "Home Living";
   if (p.includes("phone") || p.includes("tech")) return "Tech World";
+  // V15.3 - Allow 3 words for lingerie titles like "Sexy Underwear Store"
+  if (LINGERIE_WORDS.some(w => p.includes(w))) return prompt.trim().split(" ").slice(0,3).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ") || "My Store";
   return prompt.trim().split(" ").slice(0,2).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ") || "My Store";
 }
 
@@ -72,6 +97,12 @@ export default function Build() {
   const fixImg = (url, i) => { if (!url || !url.includes("http")) return SAFE_IMAGES[i % SAFE_IMAGES.length]; return url; };
   const correctImageByName = (name, img, i) => {
     const n = (name||"").toLowerCase();
+    // V15.3 - Lingerie mapping FIRST, so AI no go confuse am with dress
+    if (n.includes("bra")) return IMG_BRA;
+    if (n.includes("pant") || n.includes("underwear") || n.includes("brief") || n.includes("boxer")) return IMG_PANT;
+    if (n.includes("bikini")) return IMG_BIKINI;
+    if (n.includes("swim")) return IMG_SWIM;
+    if (n.includes("lingerie")) return IMG_BRA;
     if (n.includes("dress")||n.includes("gown")) return IMG_DRESS;
     if (n.includes("bag")||n.includes("handbag")||n.includes("purse")) return IMG_BAG;
     if (n.includes("shoe")||n.includes("sneaker")||n.includes("heel")) return IMG_SHOE;
@@ -89,13 +120,10 @@ export default function Build() {
     return model;
   };
 
-  // V15.2 - LINGERIE FIX: Sexy alone = ALLOW. Only real Porn / Hentai = BLOCK.
-  // This allows adult underwear / bikini / swimwear sellers to use human models.
   const isNSFWPrediction = (preds) => {
     const get = (name) => { const p = preds.find(x => x.className === name); return p ? p.probability : 0; };
-    const porn = get("Porn"); const sexy = get("Sexy"); const hentai = get("Hentai");
+    const porn = get("Porn"); const hentai = get("Hentai");
     if (porn > 0.70 || hentai > 0.70) return { blocked: true, reason: `Porn ${Math.round(porn*100)}% / Hentai ${Math.round(hentai*100)}%` };
-    // Sexy alone is NOT blocked - e.g. adult in bikini / underwear for product photo
     return { blocked: false, reason: "" };
   };
 
@@ -144,7 +172,6 @@ export default function Build() {
     } catch(e) { return { blocked: false, reason: "" }; }
   };
 
-  // V15.2 - Helper: Is user trying to use a child as underwear/swimwear model?
   const isChildModelRequest = (text) => {
     const t = (text||"").toLowerCase();
     const hasChild = BLOCKED_CHILD_MODEL.some(w => t.includes(w));
@@ -164,7 +191,7 @@ export default function Build() {
       const url = URL.createObjectURL(f);
       setChecking(true); setCheckStatus("Checking your image. Please wait...");
       const ai = await checkImageWithAI(url);
-      if (ai.blocked) { setChecking(false); setCheckStatus(""); alert(`This image was rejected by safety check. Reason: ${ai.reason}. It may contain explicit content. Please upload a clean product image.`); URL.revokeObjectURL(url); continue; }
+      if (ai.blocked) { setChecking(false); setCheckStatus(""); alert(`This image was rejected by safety check. Reason: ${ai.reason}. Please upload a clean product image.`); URL.revokeObjectURL(url); continue; }
       const ocr = await checkTextWithOCR(url);
       if (ocr.blocked) { setChecking(false); setCheckStatus(""); alert(`This image was rejected. Reason: ${ocr.reason}. Do not upload bank documents or personal records.`); URL.revokeObjectURL(url); continue; }
       setUploadedImages(prev => [...prev, { url, name: f.name }]);
@@ -195,7 +222,6 @@ export default function Build() {
 
   const handleGenerateAI = async () => {
     if (!prompt.trim()) return alert("Please type what you want AI to create first.");
-    // V15.2 - Child model check
     if (isChildModelRequest(prompt)) { setChat("This request cannot be completed. Children cannot be used as models for underwear, swimwear, or bikini. For kids products, please use flat lay photos or a mannequin, not a child model."); return; }
     const bad = BLOCKED_TEXT.find(w => prompt.toLowerCase().includes(w));
     if (bad) { setChat(`This request cannot be completed because it may contain restricted content: "${bad}". Please try a safe, original request.`); return; }
@@ -215,7 +241,6 @@ export default function Build() {
   const makeSmartSite = async () => {
     if (!prompt.trim()) return alert("Please describe what you want EVA to build.");
     const allText = (prompt + " " + inspiredBy + " " + changes).toLowerCase();
-    // V15.2 - Child model check for Website prompt too
     if (isChildModelRequest(allText)) { setChat("This request cannot be completed. Children cannot be used as models for underwear, swimwear, or bikini. For kids products, please use flat lay photos or a mannequin, not a child model."); return; }
     const found = BLOCKED_TEXT.find(w => allText.includes(w));
     if (found) { setChat(`This request cannot be completed. It may contain restricted content: "${found}". Please try a safe, original website idea.`); return; }
@@ -224,6 +249,12 @@ export default function Build() {
     if (inspiredBy.trim()) fullPrompt += `. Inspired by the style of ${inspiredBy}, but with original content.`;
     if (changes.trim()) fullPrompt += `. Changes: ${changes}.`;
     if (uploadedImages.length > 0) fullPrompt += `. User uploaded ${uploadedImages.length} real product images.`;
+    // V15.3 - Tell AI exactly what products to make for lingerie
+    if (LINGERIE_WORDS.some(w => allText.includes(w))) {
+      fullPrompt += `. IMPORTANT: This is an adult women underwear / lingerie / swimwear store. Products MUST be: Lace Bra Set, Cotton Pant 3 Pack, Bikini Set, Swimwear One Piece. Do NOT use dresses, handbags, shoes, jewelry. Prices in USD.`;
+    }
+    const categoryDefaults = getDefaultForPrompt(prompt);
+    const categoryHero = getHeroForPrompt(prompt);
     try {
       const res = await fetch("/api/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ message: `You are EVA Builder. User wants: "${fullPrompt}" for Website. Use US DOLLARS only. Return ONLY valid JSON: {"title":"New York Luxe","desc":"...","color":"#a78bfa","heroImage":"https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800","items":[{"name":"...","price":"$25","img":"https://images.unsplash.com/photo-1445205170230-053b83016050?w=400","desc":"One sentence"}],"cta":"Shop Now","extra":"One sentence"}`, history: [] }) });
       const data = await res.json();
@@ -235,13 +266,19 @@ export default function Build() {
         site.title = makeShortTitle(prompt, site.title);
         site.desc = site.desc && site.desc.length <= 110 ? site.desc : "Quality products for modern customers.";
         site.heroImage = fixImg(site.heroImage, 4);
-        if (!site.items || site.items.length===0) site.items = DEFAULT_ITEMS;
+        if (!site.items || site.items.length===0) site.items = categoryDefaults;
         else site.items = site.items.map((it,i)=>({ name: it.name||"Product", price: it.price||"$35", img: correctImageByName(it.name, it.img, i), desc: it.desc||"Best quality. Fast delivery." }));
+        // V15.3 - If AI still returns wrong items (dress/bag) for lingerie store, force correct ones
+        const isLingerie = LINGERIE_WORDS.some(w => allText.includes(w));
+        if (isLingerie) {
+          const hasLingerieItem = site.items.some(it => LINGERIE_WORDS.some(w => (it.name||"").toLowerCase().includes(w)));
+          if (!hasLingerieItem) site.items = categoryDefaults;
+        }
         if (!site.color) site.color = "#a78bfa";
       } else throw new Error("no json");
       if (uploadedImages.length > 0) {
         site.items = uploadedImages.map((up, i) => {
-          const orig = site.items[i] || DEFAULT_ITEMS[i % DEFAULT_ITEMS.length];
+          const orig = site.items[i] || categoryDefaults[i % categoryDefaults.length];
           return { name: orig.name, price: orig.price, img: up.url, desc: orig.desc + " - Your product photo." };
         });
         site.extra = "Your website is ready with your uploaded images.";
@@ -249,9 +286,9 @@ export default function Build() {
       if (uploadedVideo) site.video = uploadedVideo;
       setBuilt(site); setChat(site.extra || "Your website is ready. Select View Live Shop to see the customer view.");
     } catch(e) {
-      let fallbackItems = DEFAULT_ITEMS;
-      if (uploadedImages.length > 0) fallbackItems = uploadedImages.map((up,i)=>({ name: DEFAULT_ITEMS[i % DEFAULT_ITEMS.length].name, price: DEFAULT_ITEMS[i % DEFAULT_ITEMS.length].price, img: up.url, desc: "Your product photo." }));
-      setBuilt({ title: makeShortTitle(prompt,""), desc: "Quality products for modern customers.", color:"#a78bfa", heroImage: IMG_HERO, items: fallbackItems, cta:"Shop Now", extra:"Your website is ready.", video: uploadedVideo || null });
+      let fallbackItems = categoryDefaults;
+      if (uploadedImages.length > 0) fallbackItems = uploadedImages.map((up,i)=>({ name: categoryDefaults[i % categoryDefaults.length].name, price: categoryDefaults[i % categoryDefaults.length].price, img: up.url, desc: "Your product photo." }));
+      setBuilt({ title: makeShortTitle(prompt,""), desc: "Quality products for modern customers.", color:"#a78bfa", heroImage: categoryHero, items: fallbackItems, cta:"Shop Now", extra:"Your website is ready.", video: uploadedVideo || null });
       setChat("Your website is ready with your uploaded images.");
     }
     setBuilding(false);
@@ -296,10 +333,8 @@ export default function Build() {
               <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>{uploadedImages.map((im,i)=>(<div key={i} style={{position:"relative"}}><img src={im.url} alt="" style={{width:56, height:56, borderRadius:10, objectFit:"cover"}} /><button onClick={()=> setUploadedImages(uploadedImages.filter((_,idx)=> idx!==i))} style={{position:"absolute", top:-6, right:-6, background:"red", color:"white", border:"none", borderRadius:999, width:20, height:20, fontSize:11}}>X</button></div>))}</div>
             </div>
           )}
-
           <label style={{display:"block", background:"#c084fc", color:"black", textAlign:"center", padding:12, borderRadius:12, fontWeight:"bold", cursor:"pointer", marginTop:10}}>Upload your video<input type="file" accept="video/*" onChange={handleVideoUpload} style={{display:"none"}} /></label>
           {uploadedVideo && <video src={uploadedVideo} controls style={{width:"100%", height:140, objectFit:"cover", borderRadius:12, marginTop:10}} />}
-
           <div style={{marginTop:12}}>
             <button onClick={()=> setShowSafety(!showSafety)} style={{width:"100%", background:"transparent", border:"none", color:"white", textAlign:"left", padding:"6px 0", fontSize:13, display:"flex", justifyContent:"space-between", cursor:"pointer"}}>
               <span>Safety Rules for Uploads</span><span>{showSafety ? "▲" : "▼"}</span>
@@ -347,7 +382,7 @@ export default function Build() {
           <div style={{padding:16}}>
             {built.items?.map((it,i)=>(<div key={i} onClick={()=>{ setSelectedItem(it); setSelectedSize("M"); }} style={{display:"flex", gap:12, padding:"10px 0", borderBottom:"1px solid #eee", alignItems:"center", cursor:"pointer"}}><img src={it.img} alt="" style={{width:60, height:60, borderRadius:10, objectFit:"cover"}} /><div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13, opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
             <button onClick={()=> setLiveMode(true)} style={{width:"100%", background:"black", border:"none", color:"white", padding:14, borderRadius:999, fontWeight:"bold", marginTop:14}}>View Live Shop</button>
-            <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:10}}>V15.2 — Pikini / Lingerie Fix • Unlimited Images • Real Safety Check</p>
+            <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:10}}>V15.3 — Category Fix • Pikini Products Now Correct</p>
           </div>
         </div>
       )}
