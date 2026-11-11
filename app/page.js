@@ -131,7 +131,6 @@ const getSizeFor = (msgs, kind) => {
 };
 
 export default function EVA() {
-  // FIX SHAKE: start empty, load cache BEFORE paint. No useState(localStorage) — na that dey cause hydration shake.
   const [text, setText] = useState("");
   const [messages, setMessages] = useState([]);
   const [isReady, setIsReady] = useState(false);
@@ -176,7 +175,6 @@ export default function EVA() {
   const showEmojiRef = useRef(false);
   showEmojiRef.current = showEmoji;
 
-  // ===== WHATSAPP STABLE — NO AUTO SCROLL ON TYPING =====
   const scrollToQuestionWhatsApp = (userMsgIndex) => {
     setTimeout(() => {
       if (!scrollRef.current) return;
@@ -209,7 +207,6 @@ export default function EVA() {
     }, 100);
   };
 
-  // ===== FIX SHAKE: LOCALSTORAGE = INSTANT, SUPABASE = SILENT BACKUP =====
   useLayoutEffect(() => {
     try {
       const n = localStorage.getItem("eva_dave_name"); if (n) setMyName(n);
@@ -220,7 +217,6 @@ export default function EVA() {
     if (cached.length > 0) {
       setMessages(cached);
       setIsReady(true);
-      // Supabase background — only if e get MORE messages, never replace, never shake
       (async () => {
         try {
           const { data } = await supabase.from("messages").select("*").eq("chat_id", CHAT_ID).order("created_at", { ascending: true }).limit(80);
@@ -235,7 +231,6 @@ export default function EVA() {
       })();
       return;
     }
-    // No cache (new phone) — load from Supabase ONCE
     (async () => {
       try {
         const { data } = await supabase.from("messages").select("*").eq("chat_id", CHAT_ID).order("created_at", { ascending: true }).limit(80);
@@ -249,7 +244,6 @@ export default function EVA() {
     })();
   }, []);
 
-  // Initial scroll ONCE, INSTANT, no smooth
   useEffect(() => {
     if (!isReady) return;
     if (didInitialScroll.current) return;
@@ -462,7 +456,8 @@ export default function EVA() {
             <div style={{ width: 38, height: 38, minWidth: 38, minHeight: 38, borderRadius: 999, overflow: "hidden", border: "2px solid #a78bfa", background: "linear-gradient(135deg, #1e1b4b, #4c1d95, #0ea5e9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 22 }}>💧</div>
             <b style={{ fontSize: 20, letterSpacing: 2, lineHeight: 1 }}>EVA</b>
           </div>
-          <div style={{ position: "relative", flexShrink: 0, zIndex: 70 }}>
+          <div style={{ position: "relative", flexShrink: 0, zIndex: 70, display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={()=> window.location.href='/build'} style={{background:"#c084fc", border:"none", color:"black", padding:"6px 12px", borderRadius:999, fontWeight:"bold", fontSize:13}}>🔨 BUILD</button>
             <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} style={{ width: 42, height: 42, borderRadius: 999, background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", fontSize: 22, lineHeight: 1 }}>⋮</button>
             {showMenu && (
               <div style={{ position: "absolute", top: 50, right: 0, width: 210, background: "rgba(10,10,20,0.98)", borderRadius: 14, overflow: "hidden", zIndex: 80, boxShadow: "0 10px 30px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.12)" }} onClick={(e) => e.stopPropagation()}>
@@ -607,4 +602,4 @@ export default function EVA() {
       )}
     </div>
   );
-  }
+}
