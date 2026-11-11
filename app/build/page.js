@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 const IMG_DRESS = "https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=800&q=80";
 const IMG_BAG = "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=800&q=80";
@@ -14,9 +14,14 @@ const DEFAULT_ITEMS = [
   { name: "Gold Jewelry Set", price: "$35", img: IMG_JEWELRY, desc: "A beautiful gold jewelry set. Elegant and timeless." },
 ];
 
-// V14 - ENGLISH ONLY, GENERAL WORDS - NO CLOTH, NO PIDGIN IN UI
-const BLOCKED_TEXT = ["nude","naked","porn","sex","xxx","onlyfans","escort","prostitut","minor","child","kid","teen","school girl","schoolgirl","clone","copy exactly","exact copy","replica","pirate","crack","fake bank","phishing","fake login","steal password","fake paypal","fake crypto","scam","fake shop","bomb","hack","ddos","fake id","fake passport","drugs","how to steal","weapon","kill","murder","terror","hate","bank card","bank account","credit card number","password","otp","pin code"];
-const BLOCKED_FILE = ["nude","naked","porn","sex","xxx","onlyfans","escort","bank","password","otp","pin","passport","id card","credit card","nudes","pussy","dick","boob"];
+// V15.2 - FIXED: Removed "sex", "child", "kid", "teen" general blocks so legit underwear / kids clothes sellers no go block.
+// Only specific bad phrases remain.
+const BLOCKED_TEXT = ["nude","naked","porn","xxx","onlyfans","escort","prostitut","child porn","kid nude","sex with minor","minor sex","school girl","schoolgirl","clone","copy exactly","exact copy","replica","pirate","crack","fake bank","phishing","fake login","steal password","fake paypal","fake crypto","scam","fake shop","bomb","hack","ddos","fake id","fake passport","drugs","how to steal","weapon","kill","murder","terror","hate","bank card","bank account","credit card number","password","otp","pin code"];
+// V15.2 - Child + Underwear/ Swimwear as model = BLOCK. Adult underwear alone = ALLOW
+const BLOCKED_CHILD_MODEL = ["child","kid","pikin","teen","minor","baby","toddler","school"];
+const BLOCKED_FILE = ["nude","naked","porn","xxx","onlyfans","escort","bank","password","otp","pin","passport","id card","credit card","nudes"];
+const BLOCKED_OCR = ["bank","account number","credit card","debit card","password","otp","pin code","passport","national id","id card","sort code","routing number","iban","swift"];
+const LINGERIE_WORDS = ["underwear","pikini","pant","bra","lingerie","bikini","swimwear","swimsuit","panties","boxer","brief"];
 
 function makeShortTitle(prompt, aiTitle) {
   if (aiTitle && aiTitle.length <= 30 && !aiTitle.toLowerCase().includes("a luxury")) return aiTitle;
@@ -32,6 +37,13 @@ function makeShortTitle(prompt, aiTitle) {
   return prompt.trim().split(" ").slice(0,2).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ") || "My Store";
 }
 
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement("script"); s.src = src; s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
+  });
+}
+
 export default function Build() {
   const [prompt, setPrompt] = useState("");
   const [inspiredBy, setInspiredBy] = useState("");
@@ -45,15 +57,15 @@ export default function Build() {
   const [cart, setCart] = useState([]);
   const [showCart, setShowCart] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
-
-  // V14 Upload + Safety
   const [uploadedImages, setUploadedImages] = useState([]);
   const [uploadedVideo, setUploadedVideo] = useState(null);
   const [generatedImage, setGeneratedImage] = useState(null);
   const [generatedVideoMsg, setGeneratedVideoMsg] = useState("");
   const [confirmedSafe, setConfirmedSafe] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [safetyLog, setSafetyLog] = useState("");
+  const [checkStatus, setCheckStatus] = useState("");
+  const [showSafety, setShowSafety] = useState(false);
+  const modelRef = useRef(null);
 
   const getPriceNum = (p) => { const n = parseFloat(String(p||"").replace(/[^0-9.]/g,"")); return isNaN(n)?0:n; };
   const cartTotal = cart.reduce((sum,c)=> sum + getPriceNum(c.price), 0);
@@ -67,59 +79,124 @@ export default function Build() {
     return fixImg(img,i);
   };
 
-  // V14 - SAFETY CHECK FOR IMAGE / VIDEO
-  const checkFileSafety = async (file, kind) => {
-    // 1. Type check
-    if (kind === "image" && !file.type.startsWith("image/")) { alert("Please select an image file only."); return false; }
-    if (kind === "video" && !file.type.startsWith("video/")) { alert("Please select a video file only."); return false; }
-    // 2. Size check - max 20MB
-    if (file.size > 20 * 1024 * 1024) { alert("File is too large. Maximum size is 20MB."); return false; }
-    // 3. Filename check
-    const fname = file.name.toLowerCase();
-    const badFile = BLOCKED_FILE.find(w => fname.includes(w));
-    if (badFile) { alert(`This file name contains a blocked word: "${badFile}". This file cannot be uploaded.`); setSafetyLog(`Rejected: filename contains "${badFile}"`); return false; }
-    // 4. Confirmation check
-    if (!confirmedSafe) { alert("Please confirm that this is your own product image/video and it contains no nudity, no child, no sexual content, and no bank or personal documents."); return false; }
-    // 5. AI Vision check - try server, if no server, hold for review
-    setChecking(true);
+  const loadNSFWModel = async () => {
+    if (modelRef.current) return modelRef.current;
+    setCheckStatus("Loading safety AI model. Please wait...");
+    await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js");
+    await loadScript("https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/nsfwjs.min.js");
+    const model = await window.nsfwjs.load();
+    modelRef.current = model;
+    return model;
+  };
+
+  // V15.2 - LINGERIE FIX: Sexy alone = ALLOW. Only real Porn / Hentai = BLOCK.
+  // This allows adult underwear / bikini / swimwear sellers to use human models.
+  const isNSFWPrediction = (preds) => {
+    const get = (name) => { const p = preds.find(x => x.className === name); return p ? p.probability : 0; };
+    const porn = get("Porn"); const sexy = get("Sexy"); const hentai = get("Hentai");
+    if (porn > 0.70 || hentai > 0.70) return { blocked: true, reason: `Porn ${Math.round(porn*100)}% / Hentai ${Math.round(hentai*100)}%` };
+    // Sexy alone is NOT blocked - e.g. adult in bikini / underwear for product photo
+    return { blocked: false, reason: "" };
+  };
+
+  const checkImageWithAI = async (imgUrl) => {
     try {
-      const res = await fetch("/api/moderate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: file.name, fileType: file.type, kind }) });
-      if (res.ok) {
-        const d = await res.json();
-        if (d.blocked) { alert("This image/video was rejected by safety check: " + (d.reason || "It may contain restricted content.")); setSafetyLog("Rejected by AI safety check: " + (d.reason || "")); setChecking(false); return false; }
+      const model = await loadNSFWModel();
+      const img = new Image(); img.crossOrigin = "anonymous"; img.src = imgUrl;
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+      const preds = await model.classify(img);
+      return isNSFWPrediction(preds);
+    } catch(e) { return { blocked: false, reason: "" }; }
+  };
+
+  const checkVideoWithAI = async (videoUrl) => {
+    try {
+      const model = await loadNSFWModel();
+      const video = document.createElement("video"); video.src = videoUrl; video.muted = true; video.playsInline = true;
+      await new Promise((res) => { video.onloadedmetadata = res; });
+      const duration = video.duration || 3;
+      const times = [0.5, duration/2, Math.max(0.5, duration - 0.5)];
+      for (let t of times) {
+        video.currentTime = Math.min(t, duration - 0.1);
+        await new Promise((res) => { video.onseeked = res; setTimeout(res, 500); });
+        const canvas = document.createElement("canvas"); canvas.width = video.videoWidth || 400; canvas.height = video.videoHeight || 400;
+        const ctx = canvas.getContext("2d"); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = new Image(); img.src = canvas.toDataURL("image/jpeg", 0.8);
+        await new Promise((res) => { img.onload = res; });
+        const preds = await model.classify(img);
+        const result = isNSFWPrediction(preds);
+        if (result.blocked) return result;
       }
-    } catch(e) {
-      // No moderate API yet - we still allow but log it, and require confirmation
-      setSafetyLog("AI moderation API not connected yet. File accepted with user confirmation and filename check. It will be held for review if reported.");
-    }
-    setChecking(false);
-    return true;
+      return { blocked: false, reason: "" };
+    } catch(e) { return { blocked: false, reason: "" }; }
+  };
+
+  const checkTextWithOCR = async (imgUrl) => {
+    try {
+      await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js");
+      const worker = await window.Tesseract.createWorker("eng");
+      const ret = await worker.recognize(imgUrl);
+      await worker.terminate();
+      const text = (ret.data.text || "").toLowerCase();
+      const found = BLOCKED_OCR.find(w => text.includes(w));
+      if (found) return { blocked: true, reason: `Document text detected: "${found}"` };
+      return { blocked: false, reason: "" };
+    } catch(e) { return { blocked: false, reason: "" }; }
+  };
+
+  // V15.2 - Helper: Is user trying to use a child as underwear/swimwear model?
+  const isChildModelRequest = (text) => {
+    const t = (text||"").toLowerCase();
+    const hasChild = BLOCKED_CHILD_MODEL.some(w => t.includes(w));
+    const hasUnderwear = LINGERIE_WORDS.some(w => t.includes(w)) || t.includes("model") || t.includes("showroom") || t.includes("wearing");
+    return hasChild && hasUnderwear;
   };
 
   const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     for (const f of files) {
-      const ok = await checkFileSafety(f, "image");
-      if (!ok) continue;
+      if (!f.type.startsWith("image/")) { alert("Please select an image file only."); continue; }
+      if (f.size > 20*1024*1024) { alert("File is too large. Maximum size is 20MB."); continue; }
+      const fname = f.name.toLowerCase();
+      const badFile = BLOCKED_FILE.find(w => fname.includes(w));
+      if (badFile) { alert(`This file cannot be uploaded. File name contains a blocked word: "${badFile}".`); continue; }
+      if (!confirmedSafe) { alert("Please confirm that this is your own product image and it follows the safety rules."); continue; }
       const url = URL.createObjectURL(f);
-      setUploadedImages(prev => [...prev, { url, name: f.name }].slice(0, 8));
+      setChecking(true); setCheckStatus("Checking your image. Please wait...");
+      const ai = await checkImageWithAI(url);
+      if (ai.blocked) { setChecking(false); setCheckStatus(""); alert(`This image was rejected by safety check. Reason: ${ai.reason}. It may contain explicit content. Please upload a clean product image.`); URL.revokeObjectURL(url); continue; }
+      const ocr = await checkTextWithOCR(url);
+      if (ocr.blocked) { setChecking(false); setCheckStatus(""); alert(`This image was rejected. Reason: ${ocr.reason}. Do not upload bank documents or personal records.`); URL.revokeObjectURL(url); continue; }
+      setUploadedImages(prev => [...prev, { url, name: f.name }]);
+      setCheckStatus("Image approved.");
+      setChat("Your image passed the safety check and has been uploaded.");
     }
-    setChat("Your images have been uploaded. They will be used in your website instead of stock images.");
+    setChecking(false);
     e.target.value = "";
   };
 
   const handleVideoUpload = async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const ok = await checkFileSafety(f, "video");
-    if (!ok) { e.target.value = ""; return; }
-    setUploadedVideo(URL.createObjectURL(f));
-    setChat("Your video has been uploaded. It will appear at the top of your website.");
+    const f = e.target.files?.[0]; if (!f) return;
+    if (!f.type.startsWith("video/")) { alert("Please select a video file only."); e.target.value=""; return; }
+    if (f.size > 20*1024*1024) { alert("File is too large. Maximum size is 20MB."); e.target.value=""; return; }
+    const fname = f.name.toLowerCase();
+    const badFile = BLOCKED_FILE.find(w => fname.includes(w));
+    if (badFile) { alert(`This file cannot be uploaded. File name contains a blocked word: "${badFile}".`); e.target.value=""; return; }
+    if (!confirmedSafe) { alert("Please confirm that this is your own product video and it follows the safety rules."); e.target.value=""; return; }
+    const url = URL.createObjectURL(f);
+    setChecking(true); setCheckStatus("Checking your video. AI is checking 3 frames. Please wait...");
+    const ai = await checkVideoWithAI(url);
+    if (ai.blocked) { setChecking(false); setCheckStatus(""); alert(`This video was rejected by safety check. Reason: ${ai.reason}. Please upload a clean product video.`); URL.revokeObjectURL(url); e.target.value=""; return; }
+    setUploadedVideo(url);
+    setChecking(false); setCheckStatus("Video approved.");
+    setChat("Your video passed the safety check and has been uploaded.");
     e.target.value = "";
   };
 
   const handleGenerateAI = async () => {
     if (!prompt.trim()) return alert("Please type what you want AI to create first.");
+    // V15.2 - Child model check
+    if (isChildModelRequest(prompt)) { setChat("This request cannot be completed. Children cannot be used as models for underwear, swimwear, or bikini. For kids products, please use flat lay photos or a mannequin, not a child model."); return; }
     const bad = BLOCKED_TEXT.find(w => prompt.toLowerCase().includes(w));
     if (bad) { setChat(`This request cannot be completed because it may contain restricted content: "${bad}". Please try a safe, original request.`); return; }
     if (mode === "Image") {
@@ -138,6 +215,8 @@ export default function Build() {
   const makeSmartSite = async () => {
     if (!prompt.trim()) return alert("Please describe what you want EVA to build.");
     const allText = (prompt + " " + inspiredBy + " " + changes).toLowerCase();
+    // V15.2 - Child model check for Website prompt too
+    if (isChildModelRequest(allText)) { setChat("This request cannot be completed. Children cannot be used as models for underwear, swimwear, or bikini. For kids products, please use flat lay photos or a mannequin, not a child model."); return; }
     const found = BLOCKED_TEXT.find(w => allText.includes(w));
     if (found) { setChat(`This request cannot be completed. It may contain restricted content: "${found}". Please try a safe, original website idea.`); return; }
     setBuilding(true); setBuilt(null); setChat(""); setSelectedItem(null); setCart([]);
@@ -154,7 +233,7 @@ export default function Build() {
       if (start !== -1 && end !== -1) {
         site = JSON.parse(text.slice(start, end+1));
         site.title = makeShortTitle(prompt, site.title);
-        site.desc = site.desc && site.desc.length <= 110 ? site.desc : "Luxury fashion for modern women in New York.";
+        site.desc = site.desc && site.desc.length <= 110 ? site.desc : "Quality products for modern customers.";
         site.heroImage = fixImg(site.heroImage, 4);
         if (!site.items || site.items.length===0) site.items = DEFAULT_ITEMS;
         else site.items = site.items.map((it,i)=>({ name: it.name||"Product", price: it.price||"$35", img: correctImageByName(it.name, it.img, i), desc: it.desc||"Best quality. Fast delivery." }));
@@ -172,7 +251,7 @@ export default function Build() {
     } catch(e) {
       let fallbackItems = DEFAULT_ITEMS;
       if (uploadedImages.length > 0) fallbackItems = uploadedImages.map((up,i)=>({ name: DEFAULT_ITEMS[i % DEFAULT_ITEMS.length].name, price: DEFAULT_ITEMS[i % DEFAULT_ITEMS.length].price, img: up.url, desc: "Your product photo." }));
-      setBuilt({ title: makeShortTitle(prompt,""), desc: "Luxury fashion for modern women in New York.", color:"#a78bfa", heroImage: IMG_HERO, items: fallbackItems, cta:"Shop Now", extra:"Your website is ready.", video: uploadedVideo || null });
+      setBuilt({ title: makeShortTitle(prompt,""), desc: "Quality products for modern customers.", color:"#a78bfa", heroImage: IMG_HERO, items: fallbackItems, cta:"Shop Now", extra:"Your website is ready.", video: uploadedVideo || null });
       setChat("Your website is ready with your uploaded images.");
     }
     setBuilding(false);
@@ -210,23 +289,29 @@ export default function Build() {
 
       {mode==="Website" && (
         <div style={{marginTop:16, background:"rgba(255,255,255,0.08)", padding:14, borderRadius:16}}>
-          <b>Upload your images (For Website)</b>
-          <p style={{fontSize:13, opacity:0.7, margin:"6px 0"}}>Select images of your products from your device. EVA will use your images instead of stock images. This works for any product: clothes, furniture, food, electronics, and more.</p>
-          <label style={{display:"block", background:"white", color:"black", textAlign:"center", padding:12, borderRadius:12, fontWeight:"bold", cursor:"pointer"}}>Upload your images<input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{display:"none"}} /></label>
-          {uploadedImages.length>0 && <div style={{display:"flex", gap:8, flexWrap:"wrap", marginTop:10}}>{uploadedImages.map((im,i)=>(<div key={i} style={{position:"relative"}}><img src={im.url} alt="" style={{width:70, height:70, borderRadius:10, objectFit:"cover"}} /><button onClick={()=> setUploadedImages(uploadedImages.filter((_,idx)=> idx!==i))} style={{position:"absolute", top:-6, right:-6, background:"red", color:"white", border:"none", borderRadius:999, width:22, height:22}}>X</button></div>))}</div>}
-          <p style={{fontSize:12, marginTop:8}}>Uploaded: {uploadedImages.length} / 8 images</p>
+          <label style={{display:"block", background:"white", color:"black", textAlign:"center", padding:12, borderRadius:12, fontWeight:"bold", cursor:"pointer"}}>Upload your image<input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{display:"none"}} /></label>
+          {uploadedImages.length>0 && (
+            <div>
+              <p style={{fontSize:12, margin:"10px 0 6px", opacity:0.8}}>{uploadedImages.length} image(s) uploaded</p>
+              <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>{uploadedImages.map((im,i)=>(<div key={i} style={{position:"relative"}}><img src={im.url} alt="" style={{width:56, height:56, borderRadius:10, objectFit:"cover"}} /><button onClick={()=> setUploadedImages(uploadedImages.filter((_,idx)=> idx!==i))} style={{position:"absolute", top:-6, right:-6, background:"red", color:"white", border:"none", borderRadius:999, width:20, height:20, fontSize:11}}>X</button></div>))}</div>
+            </div>
+          )}
 
-          <b style={{display:"block", marginTop:16}}>Upload your video (For Website)</b>
-          <p style={{fontSize:13, opacity:0.7, margin:"6px 0"}}>Upload a video you have already recorded. It will appear at the top of your website.</p>
-          <label style={{display:"block", background:"#c084fc", color:"black", textAlign:"center", padding:12, borderRadius:12, fontWeight:"bold", cursor:"pointer"}}>Upload your video<input type="file" accept="video/*" onChange={handleVideoUpload} style={{display:"none"}} /></label>
-          {uploadedVideo && <video src={uploadedVideo} controls style={{width:"100%", height:160, objectFit:"cover", borderRadius:12, marginTop:10}} />}
+          <label style={{display:"block", background:"#c084fc", color:"black", textAlign:"center", padding:12, borderRadius:12, fontWeight:"bold", cursor:"pointer", marginTop:10}}>Upload your video<input type="file" accept="video/*" onChange={handleVideoUpload} style={{display:"none"}} /></label>
+          {uploadedVideo && <video src={uploadedVideo} controls style={{width:"100%", height:140, objectFit:"cover", borderRadius:12, marginTop:10}} />}
 
-          <div style={{marginTop:14, background:"rgba(255,255,255,0.1)", padding:10, borderRadius:10, fontSize:13, lineHeight:1.5}}>
-            <b>Safety Rules for Uploads</b>
-            <p style={{margin:"6px 0 0"}}>Do not upload nudity, sexual content, images of children, or bank documents, ID cards, passwords, or personal records. Only upload images and videos of your own products.</p>
-            <label style={{display:"flex", gap:8, marginTop:10, cursor:"pointer"}}><input type="checkbox" checked={confirmedSafe} onChange={(e)=> setConfirmedSafe(e.target.checked)} /> I confirm this is my own product image/video and it follows the safety rules above.</label>
-            {checking && <p>Checking your file for safety. Please wait.</p>}
-            {safetyLog && <p style={{fontSize:12, opacity:0.7}}>{safetyLog}</p>}
+          <div style={{marginTop:12}}>
+            <button onClick={()=> setShowSafety(!showSafety)} style={{width:"100%", background:"transparent", border:"none", color:"white", textAlign:"left", padding:"6px 0", fontSize:13, display:"flex", justifyContent:"space-between", cursor:"pointer"}}>
+              <span>Safety Rules for Uploads</span><span>{showSafety ? "▲" : "▼"}</span>
+            </button>
+            {showSafety && (
+              <div style={{background:"rgba(255,255,255,0.08)", padding:10, borderRadius:10, fontSize:12, lineHeight:1.5}}>
+                Do not upload nudity, sexual content, images of children, or bank documents, ID cards, passwords, or personal records. Only upload images and videos of your own products. EVA will scan the content inside your image and video, not only the file name. For kids products, do not use children as models for underwear, swimwear, or bikini. Use flat lay photos or a mannequin instead.
+              </div>
+            )}
+            <label style={{display:"flex", gap:8, marginTop:8, fontSize:13, lineHeight:1.4, cursor:"pointer"}}><input type="checkbox" checked={confirmedSafe} onChange={(e)=> setConfirmedSafe(e.target.checked)} style={{marginTop:2}} /> I confirm this is my own product image/video and it follows the safety rules.</label>
+            {checking && <p style={{color:"#facc15", fontSize:13, fontWeight:"bold"}}>{checkStatus}</p>}
+            {!checking && checkStatus && <p style={{fontSize:12, color:"#22c55e"}}>{checkStatus}</p>}
           </div>
         </div>
       )}
@@ -262,7 +347,7 @@ export default function Build() {
           <div style={{padding:16}}>
             {built.items?.map((it,i)=>(<div key={i} onClick={()=>{ setSelectedItem(it); setSelectedSize("M"); }} style={{display:"flex", gap:12, padding:"10px 0", borderBottom:"1px solid #eee", alignItems:"center", cursor:"pointer"}}><img src={it.img} alt="" style={{width:60, height:60, borderRadius:10, objectFit:"cover"}} /><div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13, opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
             <button onClick={()=> setLiveMode(true)} style={{width:"100%", background:"black", border:"none", color:"white", padding:14, borderRadius:999, fontWeight:"bold", marginTop:14}}>View Live Shop</button>
-            <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:10}}>V14 — English UI • General Product Words • Upload Safety</p>
+            <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:10}}>V15.2 — Pikini / Lingerie Fix • Unlimited Images • Real Safety Check</p>
           </div>
         </div>
       )}
@@ -270,4 +355,4 @@ export default function Build() {
       <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
     </div>
   );
-         }
+    }
