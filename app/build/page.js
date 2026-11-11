@@ -6,12 +6,12 @@ const IMG_BAG = "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=
 const IMG_SHOE = "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=800&q=80";
 const IMG_JEWELRY = "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=800&q=80";
 const IMG_HERO = "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80";
-// V15.3 - LINGERIE IMAGES
-const IMG_BRA = "https://images.unsplash.com/photo-1582533561751-ef6f6ab93a2e?w=800&q=80";
+// V15.4 - FIXED IMAGES: Verified Unsplash IDs, no more car / broken image
+const IMG_BRA = "https://images.unsplash.com/photo-1622396481328-9b1b78cdd9fd?w=800&q=80";
 const IMG_PANT = "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800&q=80";
-const IMG_BIKINI = "https://images.unsplash.com/photo-1582639510494-c80b5de9f148?w=800&q=80";
-const IMG_SWIM = "https://images.unsplash.com/photo-1570976447640-ac242c57a6a0?w=800&q=80";
-const IMG_LINGERIE_HERO = "https://images.unsplash.com/photo-1617331721458-bd3bd3f9c7f8?w=800&q=80";
+const IMG_BIKINI = "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=800&q=80";
+const IMG_SWIM = "https://images.unsplash.com/photo-1509631179647-0177331693ae?w=800&q=80";
+const IMG_LINGERIE_HERO = "https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=800&q=80";
 
 const SAFE_IMAGES = [IMG_DRESS, IMG_BAG, IMG_SHOE, IMG_JEWELRY, IMG_HERO];
 const DEFAULT_ITEMS = [
@@ -20,12 +20,11 @@ const DEFAULT_ITEMS = [
   { name: "Stylish Shoes", price: "$55", img: IMG_SHOE, desc: "Stylish and comfortable shoes for everyday wear." },
   { name: "Gold Jewelry Set", price: "$35", img: IMG_JEWELRY, desc: "A beautiful gold jewelry set. Elegant and timeless." },
 ];
-// V15.3 - LINGERIE DEFAULTS - For underwear / pikini / swimwear sellers
 const LINGERIE_ITEMS = [
-  { name: "Lace Bra Set", price: "$28", img: IMG_BRA, desc: "Comfortable lace bra set for women. Soft, breathable, and elegant." },
-  { name: "Cotton Pant - 3 Pack", price: "$18", img: IMG_PANT, desc: "Soft cotton pant, pack of 3. Comfortable for everyday wear." },
-  { name: "Bikini Set", price: "$32", img: IMG_BIKINI, desc: "Stylish bikini set for women. Perfect for beach and swimming." },
-  { name: "Swimwear One Piece", price: "$35", img: IMG_SWIM, desc: "Elegant one-piece swimwear for ladies. Comfortable and stylish." },
+  { name: "Lace Bra Set", price: "$25", img: IMG_BRA, desc: "Comfortable lace bra set for women. Soft, breathable, and elegant." },
+  { name: "Cotton Pant - 3 Pack", price: "$22", img: IMG_PANT, desc: "Soft cotton pant, pack of 3. Comfortable for everyday wear." },
+  { name: "Bikini Set", price: "$28", img: IMG_BIKINI, desc: "Stylish bikini set for women. Perfect for beach and swimming." },
+  { name: "Swimwear One Piece", price: "$30", img: IMG_SWIM, desc: "Elegant one-piece swimwear for ladies. Comfortable and stylish." },
 ];
 
 const BLOCKED_TEXT = ["nude","naked","porn","xxx","onlyfans","escort","prostitut","child porn","kid nude","sex with minor","minor sex","school girl","schoolgirl","clone","copy exactly","exact copy","replica","pirate","crack","fake bank","phishing","fake login","steal password","fake paypal","fake crypto","scam","fake shop","bomb","hack","ddos","fake id","fake passport","drugs","how to steal","weapon","kill","murder","terror","hate","bank card","bank account","credit card number","password","otp","pin code"];
@@ -34,7 +33,27 @@ const BLOCKED_FILE = ["nude","naked","porn","xxx","onlyfans","escort","bank","pa
 const BLOCKED_OCR = ["bank","account number","credit card","debit card","password","otp","pin code","passport","national id","id card","sort code","routing number","iban","swift"];
 const LINGERIE_WORDS = ["underwear","pikini","pant","bra","lingerie","bikini","swimwear","swimsuit","panties","boxer","brief"];
 
-// V15.3 - Get correct default items based on what user sells
+// V15.4 - PRICE RANGE: Read "$20 to $30" or "$20-$30" or "prize tag from $20 to $30"
+function parsePriceRange(text) {
+  const t = (text||"").toLowerCase().replace("prize","price");
+  const m = t.match(/\$?\s*(\d+)\s*(?:to|-)\s*\$?\s*(\d+)/);
+  if (m) { let min = parseInt(m[1]); let max = parseInt(m[2]); if (min > max) [min,max]=[max,min]; return { min, max }; }
+  const single = t.match(/\$\s*(\d+)/);
+  if (single) { const v = parseInt(single[1]); return { min: Math.max(5, v-10), max: v+10 }; }
+  return null;
+}
+function applyPriceRange(items, range) {
+  if (!range) return items;
+  const { min, max } = range;
+  const step = items.length > 1 ? (max - min) / (items.length - 1) : 0;
+  return items.map((it, i) => {
+    let p = Math.round(min + step * i);
+    if (i === items.length-1) p = max;
+    if (i === 0) p = min + Math.round(step*0.3);
+    return { ...it, price: `$${p}` };
+  });
+}
+
 function getDefaultForPrompt(prompt) {
   const p = (prompt||"").toLowerCase();
   if (LINGERIE_WORDS.some(w => p.includes(w)) || p.includes("sexy under") || p.includes("swimming pant")) return LINGERIE_ITEMS;
@@ -46,20 +65,17 @@ function getHeroForPrompt(prompt) {
   return IMG_HERO;
 }
 
+// V15.4 - TITLE FIX: Skip "create, make, build, a, an, the, for, me, please" - take real shop name
 function makeShortTitle(prompt, aiTitle) {
-  if (aiTitle && aiTitle.length <= 30 && !aiTitle.toLowerCase().includes("a luxury")) return aiTitle;
+  if (aiTitle && aiTitle.length <= 30 && !aiTitle.toLowerCase().includes("a luxury") && !aiTitle.toLowerCase().startsWith("create")) return aiTitle;
+  const stop = ["create","make","build","give","me","a","an","the","for","please","i","want","need","with","website","store","shop","online"];
+  const words = (prompt||"").replace(/[^a-zA-Z0-9 $]/g,"").split(/\s+/).filter(w => w && !stop.includes(w.toLowerCase()) && !w.includes("$") && isNaN(parseInt(w)));
+  // e.g. "Create a female underwear website" -> ["female","underwear"] -> "Female Underwear"
+  if (words.length >= 2) return words.slice(0,2).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ");
+  if (words.length === 1) return words[0].charAt(0).toUpperCase()+words[0].slice(1) + " Store";
   const p = prompt.toLowerCase();
-  if (p.includes("new york")) return "New York Luxe";
   if (p.includes("fashion")) return "Fashion House";
-  if (p.includes("food") || p.includes("restaurant")) return "Tasty Bites";
-  if (p.includes("beauty") || p.includes("hair")) return "Beauty Lounge";
-  if (p.includes("shoe")) return "Step Up Shoes";
-  if (p.includes("jewel")) return "Golden Glow";
-  if (p.includes("furniture") || p.includes("table") || p.includes("chair")) return "Home Living";
-  if (p.includes("phone") || p.includes("tech")) return "Tech World";
-  // V15.3 - Allow 3 words for lingerie titles like "Sexy Underwear Store"
-  if (LINGERIE_WORDS.some(w => p.includes(w))) return prompt.trim().split(" ").slice(0,3).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ") || "My Store";
-  return prompt.trim().split(" ").slice(0,2).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ") || "My Store";
+  return "My Store";
 }
 
 function loadScript(src) {
@@ -97,7 +113,6 @@ export default function Build() {
   const fixImg = (url, i) => { if (!url || !url.includes("http")) return SAFE_IMAGES[i % SAFE_IMAGES.length]; return url; };
   const correctImageByName = (name, img, i) => {
     const n = (name||"").toLowerCase();
-    // V15.3 - Lingerie mapping FIRST, so AI no go confuse am with dress
     if (n.includes("bra")) return IMG_BRA;
     if (n.includes("pant") || n.includes("underwear") || n.includes("brief") || n.includes("boxer")) return IMG_PANT;
     if (n.includes("bikini")) return IMG_BIKINI;
@@ -109,6 +124,8 @@ export default function Build() {
     if (n.includes("jewel")||n.includes("gold")||n.includes("ring")||n.includes("necklace")) return IMG_JEWELRY;
     return fixImg(img,i);
   };
+  // V15.4 - If any image fails / broken, replace with correct product image
+  const handleImgError = (e, name) => { e.target.src = correctImageByName(name, "", 0); e.target.onerror = null; };
 
   const loadNSFWModel = async () => {
     if (modelRef.current) return modelRef.current;
@@ -249,9 +266,10 @@ export default function Build() {
     if (inspiredBy.trim()) fullPrompt += `. Inspired by the style of ${inspiredBy}, but with original content.`;
     if (changes.trim()) fullPrompt += `. Changes: ${changes}.`;
     if (uploadedImages.length > 0) fullPrompt += `. User uploaded ${uploadedImages.length} real product images.`;
-    // V15.3 - Tell AI exactly what products to make for lingerie
+    const priceRange = parsePriceRange(prompt + " " + changes);
+    if (priceRange) fullPrompt += `. IMPORTANT: All product prices MUST be between $${priceRange.min} and $${priceRange.max}. Do NOT go below $${priceRange.min} or above $${priceRange.max}.`;
     if (LINGERIE_WORDS.some(w => allText.includes(w))) {
-      fullPrompt += `. IMPORTANT: This is an adult women underwear / lingerie / swimwear store. Products MUST be: Lace Bra Set, Cotton Pant 3 Pack, Bikini Set, Swimwear One Piece. Do NOT use dresses, handbags, shoes, jewelry. Prices in USD.`;
+      fullPrompt += `. IMPORTANT: This is an adult women underwear / lingerie / swimwear store. Products MUST be: Lace Bra Set, Cotton Pant 3 Pack, Bikini Set, Swimwear One Piece. Do NOT use dresses, handbags, shoes, jewelry, cars. Prices in USD.`;
     }
     const categoryDefaults = getDefaultForPrompt(prompt);
     const categoryHero = getHeroForPrompt(prompt);
@@ -268,12 +286,13 @@ export default function Build() {
         site.heroImage = fixImg(site.heroImage, 4);
         if (!site.items || site.items.length===0) site.items = categoryDefaults;
         else site.items = site.items.map((it,i)=>({ name: it.name||"Product", price: it.price||"$35", img: correctImageByName(it.name, it.img, i), desc: it.desc||"Best quality. Fast delivery." }));
-        // V15.3 - If AI still returns wrong items (dress/bag) for lingerie store, force correct ones
         const isLingerie = LINGERIE_WORDS.some(w => allText.includes(w));
         if (isLingerie) {
           const hasLingerieItem = site.items.some(it => LINGERIE_WORDS.some(w => (it.name||"").toLowerCase().includes(w)));
           if (!hasLingerieItem) site.items = categoryDefaults;
         }
+        // V15.4 - Force prices into user range, even if AI ignores it
+        site.items = applyPriceRange(site.items, priceRange);
         if (!site.color) site.color = "#a78bfa";
       } else throw new Error("no json");
       if (uploadedImages.length > 0) {
@@ -286,8 +305,8 @@ export default function Build() {
       if (uploadedVideo) site.video = uploadedVideo;
       setBuilt(site); setChat(site.extra || "Your website is ready. Select View Live Shop to see the customer view.");
     } catch(e) {
-      let fallbackItems = categoryDefaults;
-      if (uploadedImages.length > 0) fallbackItems = uploadedImages.map((up,i)=>({ name: categoryDefaults[i % categoryDefaults.length].name, price: categoryDefaults[i % categoryDefaults.length].price, img: up.url, desc: "Your product photo." }));
+      let fallbackItems = applyPriceRange(categoryDefaults, priceRange);
+      if (uploadedImages.length > 0) fallbackItems = uploadedImages.map((up,i)=>({ name: fallbackItems[i % fallbackItems.length].name, price: fallbackItems[i % fallbackItems.length].price, img: up.url, desc: "Your product photo." }));
       setBuilt({ title: makeShortTitle(prompt,""), desc: "Quality products for modern customers.", color:"#a78bfa", heroImage: categoryHero, items: fallbackItems, cta:"Shop Now", extra:"Your website is ready.", video: uploadedVideo || null });
       setChat("Your website is ready with your uploaded images.");
     }
@@ -304,15 +323,15 @@ export default function Build() {
             <button onClick={()=> setLiveMode(false)} style={{background:"rgba(255,255,255,0.2)", border:"none", color:"white", padding:"8px 10px", borderRadius:999, fontSize:12}}>Owner: Back to Builder</button>
           </div>
         </div>
-        {built.video ? <video src={built.video} controls style={{width:"100%", maxHeight:320, objectFit:"cover", display:"block", background:"black"}} /> : <img src={built.heroImage} alt="" style={{width:"100%", height:220, objectFit:"cover", display:"block"}} />}
+        {built.video ? <video src={built.video} controls style={{width:"100%", maxHeight:320, objectFit:"cover", display:"block", background:"black"}} /> : <img src={built.heroImage} alt="" style={{width:"100%", height:220, objectFit:"cover", display:"block"}} onError={(e)=>{e.target.src=IMG_HERO; e.target.onerror=null;}} />}
         <div style={{background:built.color, color:"white", padding:20}}><b style={{fontSize:26}}>{built.title}</b><p style={{margin:"6px 0 0", lineHeight:1.5}}>{built.desc}</p><p style={{fontSize:13, marginTop:8}}>Free Delivery • Easy Returns • Quality You Can Trust</p></div>
         <div style={{padding:16}}><h3>Shop All Products</h3>{built.items?.map((it,i)=>(
           <div key={i} onClick={()=>{ setSelectedItem(it); setSelectedSize("M"); }} style={{display:"flex", gap:12, padding:"12px 0", borderBottom:"1px solid #eee", alignItems:"center", cursor:"pointer"}}>
-            <img src={it.img} alt="" style={{width:80, height:80, borderRadius:12, objectFit:"cover"}} />
+            <img src={it.img} alt="" onError={(e)=>handleImgError(e,it.name)} style={{width:80, height:80, borderRadius:12, objectFit:"cover"}} />
             <div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13, opacity:0.6}}>Tap to view details</div><div style={{fontSize:12, color:"#22c55e", fontWeight:"bold"}}>In Stock</div></div><b style={{color:built.color}}>{it.price}</b>
           </div>))}</div>
-        {selectedItem && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:50, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><button onClick={()=> setSelectedItem(null)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Back to Shop</button><img src={selectedItem.img} alt="" style={{width:"100%", height:300, objectFit:"cover", borderRadius:14, marginTop:12}} /><h2>{selectedItem.name}</h2><b style={{fontSize:24, color:built.color}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><div style={{display:"flex", gap:8}}>{["S","M","L","XL"].map(s=>(<button key={s} onClick={()=> setSelectedSize(s)} style={{padding:"10px 18px", borderRadius:999, border: selectedSize===s ? `2px solid ${built.color}` : "1px solid #ccc", background: selectedSize===s ? built.color : "white", color: selectedSize===s ? "white":"black", fontWeight:"bold"}}>{s}</button>))}</div><button onClick={()=>{ setCart([...cart, {...selectedItem, size:selectedSize}]); setSelectedItem(null); setShowCart(true); }} style={{width:"100%", background:built.color, border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold", marginTop:12}}>Add to Cart — {selectedItem.price}</button></div></div>)}
-        {showCart && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:60, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><div style={{display:"flex", justifyContent:"space-between"}}><h2>Your Cart ({cart.length})</h2><button onClick={()=> setShowCart(false)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Close</button></div>{cart.length===0 ? <p>Your cart is empty.</p> : cart.map((c,i)=>(<div key={i} style={{display:"flex", gap:12, padding:"12px 0", borderBottom:"1px solid #eee", alignItems:"center"}}><img src={c.img} alt="" style={{width:55, height:55, borderRadius:10, objectFit:"cover"}} /><div style={{flex:1}}><b>{c.name}</b><div style={{fontSize:13}}>Size {c.size}</div></div><b>{c.price}</b><button onClick={()=> setCart(cart.filter((_,idx)=> idx!==i))} style={{background:"#fee", border:"none", padding:"6px 10px", borderRadius:999}}>Remove</button></div>))}<h3 style={{textAlign:"right"}}>Total: ${cartTotal.toFixed(2)}</h3><button onClick={()=>{ if(!cart.length) return alert("Your cart is empty."); alert("Thank you. Your order is confirmed."); setCart([]); setShowCart(false); }} style={{width:"100%", background:"black", border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold"}}>Checkout — ${cartTotal.toFixed(2)}</button></div></div>)}
+        {selectedItem && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:50, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><button onClick={()=> setSelectedItem(null)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Back to Shop</button><img src={selectedItem.img} alt="" onError={(e)=>handleImgError(e,selectedItem.name)} style={{width:"100%", height:300, objectFit:"cover", borderRadius:14, marginTop:12}} /><h2>{selectedItem.name}</h2><b style={{fontSize:24, color:built.color}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><div style={{display:"flex", gap:8}}>{["S","M","L","XL"].map(s=>(<button key={s} onClick={()=> setSelectedSize(s)} style={{padding:"10px 18px", borderRadius:999, border: selectedSize===s ? `2px solid ${built.color}` : "1px solid #ccc", background: selectedSize===s ? built.color : "white", color: selectedSize===s ? "white":"black", fontWeight:"bold"}}>{s}</button>))}</div><button onClick={()=>{ setCart([...cart, {...selectedItem, size:selectedSize}]); setSelectedItem(null); setShowCart(true); }} style={{width:"100%", background:built.color, border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold", marginTop:12}}>Add to Cart — {selectedItem.price}</button></div></div>)}
+        {showCart && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:60, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><div style={{display:"flex", justifyContent:"space-between"}}><h2>Your Cart ({cart.length})</h2><button onClick={()=> setShowCart(false)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Close</button></div>{cart.length===0 ? <p>Your cart is empty.</p> : cart.map((c,i)=>(<div key={i} style={{display:"flex", gap:12, padding:"12px 0", borderBottom:"1px solid #eee", alignItems:"center"}}><img src={c.img} alt="" onError={(e)=>handleImgError(e,c.name)} style={{width:55, height:55, borderRadius:10, objectFit:"cover"}} /><div style={{flex:1}}><b>{c.name}</b><div style={{fontSize:13}}>Size {c.size}</div></div><b>{c.price}</b><button onClick={()=> setCart(cart.filter((_,idx)=> idx!==i))} style={{background:"#fee", border:"none", padding:"6px 10px", borderRadius:999}}>Remove</button></div>))}<h3 style={{textAlign:"right"}}>Total: ${cartTotal.toFixed(2)}</h3><button onClick={()=>{ if(!cart.length) return alert("Your cart is empty."); alert("Thank you. Your order is confirmed."); setCart([]); setShowCart(false); }} style={{width:"100%", background:"black", border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold"}}>Checkout — ${cartTotal.toFixed(2)}</button></div></div>)}
       </div>
     );
   }
@@ -377,17 +396,17 @@ export default function Build() {
 
       {built && mode==="Website" && (
         <div style={{marginTop:16, background:"white", color:"black", borderRadius:16, overflow:"hidden"}}>
-          {built.video ? <video src={built.video} controls style={{width:"100%", height:180, objectFit:"cover", display:"block"}} /> : <img src={built.heroImage} alt="" style={{width:"100%", height:180, objectFit:"cover", display:"block"}} />}
+          {built.video ? <video src={built.video} controls style={{width:"100%", height:180, objectFit:"cover", display:"block"}} /> : <img src={built.heroImage} alt="" onError={(e)=>{e.target.src=IMG_HERO; e.target.onerror=null;}} style={{width:"100%", height:180, objectFit:"cover", display:"block"}} />}
           <div style={{background:built.color, color:"white", padding:18}}><b style={{fontSize:22}}>{built.title}</b><p style={{margin:"6px 0 0"}}>{built.desc}</p></div>
           <div style={{padding:16}}>
-            {built.items?.map((it,i)=>(<div key={i} onClick={()=>{ setSelectedItem(it); setSelectedSize("M"); }} style={{display:"flex", gap:12, padding:"10px 0", borderBottom:"1px solid #eee", alignItems:"center", cursor:"pointer"}}><img src={it.img} alt="" style={{width:60, height:60, borderRadius:10, objectFit:"cover"}} /><div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13, opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
+            {built.items?.map((it,i)=>(<div key={i} onClick={()=>{ setSelectedItem(it); setSelectedSize("M"); }} style={{display:"flex", gap:12, padding:"10px 0", borderBottom:"1px solid #eee", alignItems:"center", cursor:"pointer"}}><img src={it.img} alt="" onError={(e)=>handleImgError(e,it.name)} style={{width:60, height:60, borderRadius:10, objectFit:"cover"}} /><div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13, opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
             <button onClick={()=> setLiveMode(true)} style={{width:"100%", background:"black", border:"none", color:"white", padding:14, borderRadius:999, fontWeight:"bold", marginTop:14}}>View Live Shop</button>
-            <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:10}}>V15.3 — Category Fix • Pikini Products Now Correct</p>
+            <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:10}}>V15.4 — Price + Title + Image Fix</p>
           </div>
         </div>
       )}
-      {selectedItem && !liveMode && built && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:50, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", color:"black", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><button onClick={()=> setSelectedItem(null)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Back to Shop</button><img src={selectedItem.img} alt="" style={{width:"100%", height:280, objectFit:"cover", borderRadius:14, marginTop:12}} /><h2>{selectedItem.name}</h2><b style={{color:built.color, fontSize:22}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><button onClick={()=>{ setCart([...cart, {...selectedItem, size:selectedSize}]); setSelectedItem(null); }} style={{width:"100%", background:built.color, border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold", marginTop:12}}>Add to Cart — {selectedItem.price}</button></div></div>)}
+      {selectedItem && !liveMode && built && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:50, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", color:"black", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><button onClick={()=> setSelectedItem(null)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Back to Shop</button><img src={selectedItem.img} alt="" onError={(e)=>handleImgError(e,selectedItem.name)} style={{width:"100%", height:280, objectFit:"cover", borderRadius:14, marginTop:12}} /><h2>{selectedItem.name}</h2><b style={{color:built.color, fontSize:22}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><button onClick={()=>{ setCart([...cart, {...selectedItem, size:selectedSize}]); setSelectedItem(null); }} style={{width:"100%", background:built.color, border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold", marginTop:12}}>Add to Cart — {selectedItem.price}</button></div></div>)}
       <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
     </div>
   );
-    }
+}
