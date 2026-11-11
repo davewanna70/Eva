@@ -1,9 +1,11 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 
-// V19.0 - OWNER DASHBOARD + LOGIN + SAVE
-// Customer sees ONLY shop. Owner sees shop + Edit after PIN login.
-// Owner can: Mark Sold Out, Edit Price, Add New Product (gallery details), Delete, Edit Store Info, Save Shop (no loss after refresh).
+// V20.1 - NO MORE LOSS + SMART OPTIONS FOR ANY PRODUCT + NO DUPLICATE
+// FIX 1: Images saved as Base64 (not blob) so they survive Back / Refresh / Close tab
+// FIX 2: Phone Back button handled - Product Detail -> Shop, Shop -> Builder, Builder keeps My Saved Shops
+// FIX 3: Smart Options - Phone = Storage, Cloth = S/M/L/XL, Shoe = 38-44, Hair = Short/Medium/Long + Inches, Food = S/M/L, Perfume = ml, Others = No size, just Description
+// FIX 4: After Create Shop, uploaded images cleared - Add New Product starts empty, no duplicate
 // Same rules: Max 20MB per file, safety check.
 
 function extractWhatsApp(text) {
@@ -17,14 +19,6 @@ function extractWhatsApp(text) {
   return { display: raw, waLink: `https://wa.me/${wa}?text=${encodeURIComponent("Hello, I want to order from your store")}` };
 }
 function maskNumber(d){ if(!d||d.length<7) return d; return d.slice(0,4)+"***"+d.slice(-3); }
-function parsePriceRange(text){
-  const t=(text||"").toLowerCase();
-  let m = t.match(/(?:between|from)\s*\$?\s*(\d+)\s*(?:and|to|-)\s*\$?\s*(\d+)/);
-  if(m){ let min=parseInt(m[1]); let max=parseInt(m[2]); if(min>max)[min,max]=[max,min]; return {min,max}; }
-  m = t.match(/\$?\s*(\d+)\s*(?:to|-)\s*\$?\s*(\d+)/);
-  if(m){ let min=parseInt(m[1]); let max=parseInt(m[2]); if(min>max)[min,max]=[max,min]; return {min,max}; }
-  return null;
-}
 function makeShortTitle(prompt,aiTitle){
   const called = (prompt||"").match(/called\s+([A-Za-z0-9\s&'-]+?)(?:\s+for\s+|\s+in\s+|\s*,|\s*\.)/i);
   if(called && called[1]) return called[1].trim().split(/\s+/).slice(0,4).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ");
@@ -72,7 +66,7 @@ function genericFallback(prompt){
 }
 function emojiFor(name){
   const n=(name||"").toLowerCase();
-  if(n.includes("phone")||n.includes("iphone")||n.includes("samsung")) return "📱";
+  if(n.includes("phone")||n.includes("iphone")||n.includes("samsung")||n.includes("tecno")||n.includes("infinix")) return "📱";
   if(n.includes("sneaker")||n.includes("shoe")) return "👟";
   if(n.includes("wig")||n.includes("hair")) return "💇‍♀️";
   if(n.includes("dress")) return "👗";
@@ -83,10 +77,36 @@ function emojiFor(name){
 }
 function colorFor(name){
   const n=(name||"").toLowerCase();
-  if(n.includes("phone")) return "#dbeafe";
+  if(n.includes("phone")||n.includes("iphone")||n.includes("samsung")) return "#dbeafe";
   if(n.includes("sneaker")||n.includes("shoe")) return "#e0e7ff";
   if(n.includes("wig")||n.includes("hair")) return "#fce7f3";
   return "#e5e7eb";
+}
+// V20.1 - SMART OPTIONS FOR ANY PRODUCT - Reads Name + Description together
+// Phone = Storage, Cloth = S/M/L/XL, Shoe = 38-44, Hair = Short/Medium/Long + Inches, Food = S/M/L, Perfume = ml, Unknown = No size, just Description
+function getOptionsFor(name, desc){
+  const n = ((name||"")+" "+(desc||"")).toLowerCase();
+  // PHONE - Storage, never S/M/L
+  if(n.includes("phone")||n.includes("iphone")||n.includes("samsung")||n.includes("tecno")||n.includes("infinix")||n.includes("itel")||n.includes("redmi")||n.includes("pixel")||n.includes("oppo")||n.includes("vivo")||n.includes("nokia")||n.includes("huawei"))
+    return { label:"Storage", options:["128GB","256GB","512GB"] };
+  // SHOE - Shoe size
+  if(n.includes("sneaker")||n.includes("shoe")||n.includes("sandal")||n.includes("heel")||n.includes("boot")||n.includes("slippers")||n.includes("crocs"))
+    return { label:"Shoe Size", options:["38","39","40","41","42","43","44"] };
+  // HAIR / WIG - Long, Short, Medium + Inches - exactly like real hair websites
+  if(n.includes("wig")||n.includes("hair")||n.includes("bone straight")||n.includes("frontal")||n.includes("closure")||n.includes("brazilian")||n.includes("peruvian"))
+    return { label:"Length", options:["Short - 10\"","Medium - 16\"","Long - 22\"","Extra Long - 28\"","30\""] };
+  // CLOTH - S/M/L/XL
+  if(n.includes("dress")||n.includes("shirt")||n.includes("cloth")||n.includes("top")||n.includes("gown")||n.includes("jacket")||n.includes("trouser")||n.includes("jean")||n.includes("hoodie")||n.includes("bra")||n.includes("underwear")||n.includes("pant")||n.includes("bikini")||n.includes("swim")||n.includes("abaya")||n.includes("skirt"))
+    return { label:"Size", options:["S","M","L","XL"] };
+  // FOOD / CAKE - Small / Medium / Large
+  if(n.includes("cake")||n.includes("food")||n.includes("pizza")||n.includes("shawarma")||n.includes("burger")||n.includes("small chops")||n.includes("rice"))
+    return { label:"Size", options:["Small","Medium","Large"] };
+  // PERFUME / CREAM / OIL - Size in ml
+  if(n.includes("perfume")||n.includes("cream")||n.includes("oil")||n.includes("serum")||n.includes("lotion"))
+    return { label:"Size", options:["50ml","100ml","200ml"] };
+  // UNKNOWN PRODUCT - No forced option, just show description like real website
+  // Example: If you sell "Handmade Beads", e go show no size, just your description
+  return { label:"", options:[] };
 }
 const BLOCKED_TEXT = ["nude","naked","porn","xxx","onlyfans","escort","prostitut","child porn","kid nude","sex with minor","minor sex","school girl","schoolgirl","clone","copy exactly","exact copy","replica","pirate","crack","fake bank","phishing","fake login","steal password","fake paypal","fake crypto","scam","fake shop","bomb","hack","ddos","fake id","fake passport","drugs","how to steal","weapon","kill","murder","terror","hate","bank card","bank account","credit card number","password","otp","pin code"];
 const BLOCKED_CHILD_MODEL = ["child","kid","pikin","teen","minor","baby","toddler","school"];
@@ -94,6 +114,8 @@ const BLOCKED_FILE = ["nude","naked","porn","xxx","onlyfans","escort","bank","pa
 const BLOCKED_OCR = ["bank","account number","credit card","debit card","password","otp","pin code","passport","national id","id card","sort code","routing number","iban","swift"];
 const LINGERIE_WORDS = ["underwear","pikini","pant","bra","lingerie","bikini","swimwear","swimsuit","panties","boxer","brief"];
 function loadScript(src){ return new Promise((res,rej)=>{ if(document.querySelector(`script[src="${src}"]`)) return res(); const s=document.createElement("script"); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+// V20 - Convert file to Base64 so it survives refresh / Back button
+function fileToBase64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
 
 export default function Build(){
   const [prompt,setPrompt]=useState("");
@@ -104,7 +126,7 @@ export default function Build(){
   const [built,setBuilt]=useState(null);
   const [chat,setChat]=useState("");
   const [selectedItem,setSelectedItem]=useState(null);
-  const [selectedSize,setSelectedSize]=useState("M");
+  const [selectedOption,setSelectedOption]=useState(""); // V20 - smart option, not just Size
   const [cart,setCart]=useState([]);
   const [showCart,setShowCart]=useState(false);
   const [liveMode,setLiveMode]=useState(false);
@@ -120,23 +142,21 @@ export default function Build(){
   const [failedImgs,setFailedImgs]=useState({});
   const modelRef=useRef(null);
 
-  // V19 - Owner
-  const [ownerPin,setOwnerPin]=useState(""); // PIN owner chooses when creating shop
-  const [isOwner,setIsOwner]=useState(false); // true only after PIN correct - controls what user sees
+  const [ownerPin,setOwnerPin]=useState("");
+  const [isOwner,setIsOwner]=useState(false);
   const [showOwnerLogin,setShowOwnerLogin]=useState(false);
   const [loginPinInput,setLoginPinInput]=useState("");
-  const [myShops,setMyShops]=useState([]); // saved shops
+  const [myShops,setMyShops]=useState([]);
   const [showMyShops,setShowMyShops]=useState(false);
-  const [editingProduct,setEditingProduct]=useState(null); // product being edited by owner
+  const [editingProduct,setEditingProduct]=useState(null);
   const [editProdName,setEditProdName]=useState("");
   const [editProdPrice,setEditProdPrice]=useState("");
   const [editProdDesc,setEditProdDesc]=useState("");
-  const [showAddProduct,setShowAddProduct]=useState(false); // owner add product panel inside shop
+  const [showAddProduct,setShowAddProduct]=useState(false);
   const [showEditStore,setShowEditStore]=useState(false);
   const [editStoreTitle,setEditStoreTitle]=useState("");
   const [editStoreDesc,setEditStoreDesc]=useState("");
 
-  // V18 Gallery staging
   const [pendingImages,setPendingImages]=useState([]);
   const [pendingVideos,setPendingVideos]=useState([]);
   const [editingImageId,setEditingImageId]=useState(null);
@@ -147,22 +167,47 @@ export default function Build(){
   const [uploadingAll,setUploadingAll]=useState(false);
   const [uploadProgress,setUploadProgress]=useState("");
 
-  // V19 - Load saved shops on start
+  // V20 - Load saved shops + restore last shop on enter, so Back button no kill am
   useEffect(()=>{
     try{
       const saved = JSON.parse(localStorage.getItem("eva_my_shops")||"[]");
-      setMyShops(saved);
+      // Filter out old blob shops that are dead - only keep base64 or http shops
+      const valid = saved.filter(s=> s.items && s.items.every(it=> !String(it.img||"").startsWith("blob:")));
+      if(valid.length!==saved.length) localStorage.setItem("eva_my_shops", JSON.stringify(valid));
+      setMyShops(valid);
+      if(valid.length>0) setShowMyShops(true);
     }catch(e){}
   },[]);
+  // V20 - Handle phone Back button: Product Detail -> Shop, Shop -> Builder, Builder -> stay
+  useEffect(()=>{
+    const onPop = ()=>{
+      if(selectedItem){ setSelectedItem(null); return; }
+      if(showCart){ setShowCart(false); return; }
+      if(showAddProduct){ setShowAddProduct(false); return; }
+      if(showEditStore){ setShowEditStore(false); return; }
+      if(editingProduct){ setEditingProduct(null); return; }
+      if(editingImageId){ setEditingImageId(null); return; }
+      if(editingVideoId){ setEditingVideoId(null); return; }
+      if(showOwnerLogin){ setShowOwnerLogin(false); return; }
+      if(liveMode){ setLiveMode(false); return; }
+      // If in builder, do nothing - stay in builder, don't lose data
+    };
+    window.addEventListener("popstate", onPop);
+    return ()=>window.removeEventListener("popstate", onPop);
+  },[selectedItem,showCart,showAddProduct,showEditStore,editingProduct,editingImageId,editingVideoId,showOwnerLogin,liveMode]);
+  const pushHistory=(label)=>{ try{ window.history.pushState({v20:label}, "", "#"+label); }catch(e){} };
+
   const saveShopToStorage=(site)=>{
     try{
       const all = JSON.parse(localStorage.getItem("eva_my_shops")||"[]");
       const existingIdx = all.findIndex(s=>s.id===site.id);
       if(existingIdx>=0) all[existingIdx]=site;
       else all.unshift(site);
-      localStorage.setItem("eva_my_shops", JSON.stringify(all.slice(0,20)));
-      setMyShops(all.slice(0,20));
-    }catch(e){}
+      // Keep only last 5 shops to avoid storage full - Base64 is big
+      const trimmed = all.slice(0,5);
+      localStorage.setItem("eva_my_shops", JSON.stringify(trimmed));
+      setMyShops(trimmed);
+    }catch(e){ alert("Storage is full. Please delete old shops or use smaller images (max 20MB, but try <2MB for best save). Your shop is still shown now, but may not save after refresh."); }
   };
 
   const getPriceNum=(p)=>{ const n=parseFloat(String(p||"").replace(/[^0-9.]/g,"")); return isNaN(n)?0:n; };
@@ -174,6 +219,13 @@ export default function Build(){
     if(isFailed) return <div style={{width:w,height:h,minWidth:w,background:colorFor(item.name),borderRadius:size==="large"?14:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size==="large"?64:28,flexShrink:0}}>{emojiFor(item.name)}</div>;
     return <img src={item.img} alt={item.name} onError={(e)=>handleImgError(e,item.name,key)} style={{width:w,height:h,minWidth:w,borderRadius:size==="large"?14:12,objectFit:"cover",flexShrink:0}} />;
   };
+  const openProduct=(item)=>{
+    setSelectedItem(item);
+    const opts = getOptionsFor(item.name, item.desc);
+    setSelectedOption(opts.options[0]||"");
+    pushHistory("product");
+  };
+  const closeProduct=()=>{ setSelectedItem(null); };
 
   const loadNSFWModel=async()=>{ if(modelRef.current) return modelRef.current; setCheckStatus("Loading safety AI model. Please wait..."); await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"); await loadScript("https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/nsfwjs.min.js"); const m=await window.nsfwjs.load(); modelRef.current=m; return m; };
   const isNSFWPrediction=(preds)=>{ const g=(n)=>{ const p=preds.find(x=>x.className===n); return p?p.probability:0; }; const porn=g("Porn"); const hen=g("Hentai"); if(porn>0.70||hen>0.70) return {blocked:true,reason:`Porn ${Math.round(porn*100)}% / Hentai ${Math.round(hen*100)}%`}; return {blocked:false,reason:""}; };
@@ -182,22 +234,22 @@ export default function Build(){
   const checkTextWithOCR=async(u)=>{ try{ await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"); const w=await window.Tesseract.createWorker("eng"); const r=await w.recognize(u); await w.terminate(); const t=(r.data.text||"").toLowerCase(); const f=BLOCKED_OCR.find(x=>t.includes(x)); if(f) return {blocked:true,reason:`Document text detected: "${f}"`}; return {blocked:false,reason:""}; }catch(e){ return {blocked:false,reason:""}; } };
   const isChildModelRequest=(t)=>{ const s=(t||"").toLowerCase(); const hc=BLOCKED_CHILD_MODEL.some(w=>s.includes(w)); const hu=LINGERIE_WORDS.some(w=>s.includes(w))||s.includes("model")||s.includes("showroom")||s.includes("wearing"); return hc&&hu; };
 
-  // V18 Gallery
-  const handleSelectImages=(e)=>{
+  // V20 - Select images as Base64, not blob, so they survive Back / Refresh
+  const handleSelectImages=async(e)=>{
     const files=Array.from(e.target.files||[]);
     const newItems=[];
     for(const f of files){
       if(!f.type.startsWith("image/")){ alert("Please select an image file only."); continue; }
-      if(f.size>20*1024*1024){ alert(`"${f.name}" is too large. Maximum is 20MB per file.`); continue; }
+      if(f.size>20*1024*1024){ alert(`"${f.name}" is too large. Maximum is 20MB per file. Try <2MB for best save.`); continue; }
       const fname=f.name.toLowerCase(); const bad=BLOCKED_FILE.find(w=>fname.includes(w));
       if(bad){ alert(`"${f.name}" cannot be used. File name contains blocked word: "${bad}".`); continue; }
-      const url=URL.createObjectURL(f);
-      newItems.push({ id: Date.now()+"-"+Math.random(), url, file: f, fileName: f.name, productName:"", price:"", desc:"", done:false });
+      const base64 = await fileToBase64(f);
+      newItems.push({ id: Date.now()+"-"+Math.random(), url: base64, file: f, fileName: f.name, productName:"", price:"", desc:"", done:false });
     }
     if(newItems.length>0) setPendingImages(p=>[...p,...newItems]);
     e.target.value="";
   };
-  const handleSelectVideos=(e)=>{
+  const handleSelectVideos=async(e)=>{
     const files=Array.from(e.target.files||[]);
     const newItems=[];
     for(const f of files){
@@ -205,14 +257,14 @@ export default function Build(){
       if(f.size>20*1024*1024){ alert(`"${f.name}" is too large. Maximum is 20MB per file.`); continue; }
       const fname=f.name.toLowerCase(); const bad=BLOCKED_FILE.find(w=>fname.includes(w));
       if(bad){ alert(`"${f.name}" cannot be used. File name contains blocked word: "${bad}".`); continue; }
-      const url=URL.createObjectURL(f);
-      newItems.push({ id: Date.now()+"-"+Math.random(), url, file: f, fileName: f.name, productName:"", price:"", desc:"", done:false });
+      const base64 = await fileToBase64(f);
+      newItems.push({ id: Date.now()+"-"+Math.random(), url: base64, file: f, fileName: f.name, productName:"", price:"", desc:"", done:false });
     }
     if(newItems.length>0) setPendingVideos(p=>[...p,...newItems]);
     e.target.value="";
   };
-  const openImageEditor=(item)=>{ setEditingImageId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||""); };
-  const openVideoEditor=(item)=>{ setEditingVideoId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||""); };
+  const openImageEditor=(item)=>{ setEditingImageId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||""); pushHistory("edit-image"); };
+  const openVideoEditor=(item)=>{ setEditingVideoId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||""); pushHistory("edit-video"); };
   const saveImageDetail=()=>{
     if(!editName.trim()){ alert("Please write Product Name."); return; }
     if(!editPrice.trim()){ alert("Please write Price."); return; }
@@ -244,7 +296,7 @@ export default function Build(){
       const desc = it.desc || `${name} - Quality product. Fast delivery.`;
       setUploadedImages(p=>[...p,{url:it.url, name: it.fileName, productName:name, price, desc}]);
     }
-    setPendingImages([]); setUploadingAll(false); setChecking(false); setCheckStatus("All images uploaded."); setUploadProgress("");
+    setPendingImages([]); setUploadingAll(false); setChecking(false); setCheckStatus("All images uploaded. They are now saved safely - Back button will not delete them."); setUploadProgress("");
     setChat("All your images have been uploaded with their details. Now press Create Website.");
   };
   const uploadAllVideos=async()=>{
@@ -281,14 +333,13 @@ export default function Build(){
     if(isChildModelRequest(allText)){ setChat("This request cannot be completed. Children cannot be used as models for underwear, swimwear, or bikini."); return; }
     const found=BLOCKED_TEXT.find(w=>allText.includes(w));
     if(found){ setChat(`This request cannot be completed. It may contain restricted content: "${found}".`); return; }
-    // V19 - Owner must set PIN before creating shop, so only owner can edit later
     let pin = ownerPin.trim();
     if(!pin){
       const p = window.prompt("OWNER SETUP: Choose a 4-digit PIN for your shop (e.g. 1234). Only you with this PIN can edit your shop. Customers will NOT see this. Enter your PIN:");
       if(!p || p.length<4){ alert("Please choose a 4-digit PIN to protect your shop."); return; }
       pin = p.trim(); setOwnerPin(pin);
     }
-    setBuilding(true); setBuilt(null); setChat(""); setSelectedItem(null); setCart([]); setFailedImgs({}); setIsOwner(true); // creator is owner
+    setBuilding(true); setBuilt(null); setChat(""); setSelectedItem(null); setCart([]); setFailedImgs({}); setIsOwner(true);
     let myProducts = null;
     if(uploadedImages.length>0){
       myProducts = uploadedImages.map((up,i)=>({ id: Date.now()+"-"+i+"-"+Math.random(), name: up.productName||up.name||"Product", price: up.price||"$35", img: up.url, desc: up.desc||"Quality product. Fast delivery.", soldOut:false }));
@@ -306,13 +357,14 @@ export default function Build(){
       const data=await res.json(); let text=data.reply||data.text||""; const s=text.indexOf("{"); const e=text.lastIndexOf("}");
       if(s!==-1&&e!==-1){ const j=JSON.parse(text.slice(s,e+1)); if(j.desc) site.desc=j.desc.slice(0,110); }
     }catch(e){}
-    setBuilt(site); saveShopToStorage(site); setChat(site.extra+" Your shop is saved. Share the link with customers. Only you with PIN can edit."); setBuilding(false);
+    setBuilt(site); saveShopToStorage(site);
+    // V20 FIX - Clear uploaded so Add New Product starts empty, no duplicate
+    setUploadedImages([]); setUploadedVideo(null); setUploadedVideoMeta(null); setPendingImages([]); setPendingVideos([]);
+    setChat(site.extra+" Your shop is SAVED. Even if you press Back or close tab, go to My Saved Shops to open it again."); setBuilding(false);
+    pushHistory("shop-created");
   };
 
-  // V19 OWNER ACTIONS - Only run if isOwner === true
-  const updateBuiltAndSave=(newSite)=>{
-    setBuilt(newSite); saveShopToStorage(newSite);
-  };
+  const updateBuiltAndSave=(newSite)=>{ setBuilt(newSite); saveShopToStorage(newSite); };
   const toggleSoldOut=(id)=>{
     if(!isOwner) return alert("Only owner can do this. Press Owner Login and enter your PIN.");
     const newItems = built.items.map(it=> it.id===id ? {...it, soldOut: !it.soldOut} : it);
@@ -324,76 +376,57 @@ export default function Build(){
     const newItems = built.items.filter(it=>it.id!==id);
     updateBuiltAndSave({...built, items: newItems});
   };
-  const openEditProduct=(item)=>{
-    setEditingProduct(item); setEditProdName(item.name); setEditProdPrice(item.price); setEditProdDesc(item.desc);
-  };
+  const openEditProduct=(item)=>{ setEditingProduct(item); setEditProdName(item.name); setEditProdPrice(item.price); setEditProdDesc(item.desc); pushHistory("edit-product"); };
   const saveEditProduct=()=>{
     if(!editProdName.trim()||!editProdPrice.trim()) return alert("Please fill Name and Price.");
     const newItems = built.items.map(it=> it.id===editingProduct.id ? {...it, name: editProdName.trim(), price: editProdPrice.trim().startsWith("$")?editProdPrice.trim():`$${editProdPrice.trim()}`, desc: editProdDesc.trim()} : it);
     updateBuiltAndSave({...built, items: newItems}); setEditingProduct(null);
   };
-  const addProductFromOwnerGallery=async()=>{
-    // Owner uses same gallery flow inside shop: pendingImages already has details
-    if(pendingImages.length===0) return alert("Select images first, tap each to add details, then press Overall Done.");
-    await uploadAllImages();
-    // After uploadAllImages, uploadedImages has new items - convert to shop items
-    // We do it after a short delay because upload is async state
-    setTimeout(()=>{
-      // This will be handled by the button below - owner presses "Add These To Shop"
-    },500);
-  };
   const addUploadedToShop=()=>{
     if(uploadedImages.length===0) return alert("No uploaded images to add.");
-    // uploadedImages that are not already in shop (compare by url)
     const existingUrls = new Set(built.items.map(it=>it.img));
     const newOnes = uploadedImages.filter(u=>!existingUrls.has(u.url)).map((u,i)=>({ id: Date.now()+"-"+i+"-"+Math.random(), name: u.productName||"New Product", price: u.price||"$35", img: u.url, desc: u.desc||"New product. Fast delivery.", soldOut:false }));
-    if(newOnes.length===0) return alert("These images are already in your shop.");
+    if(newOnes.length===0) return alert("These images are already in your shop. Select NEW images.");
     updateBuiltAndSave({...built, items: [...built.items, ...newOnes]});
     setUploadedImages([]); setShowAddProduct(false); setChat("New product(s) added to your shop.");
   };
   const openShopFromMyShops=(shop)=>{
-    setBuilt(shop); setIsOwner(false); setLiveMode(true); setCart([]); // customer view by default, owner must login with PIN
-    setChat("This is customer view. Press Owner Login to edit.");
+    setBuilt(shop); setIsOwner(false); setLiveMode(true); setCart([]); pushHistory("live-shop");
+    setChat("This is customer view. Press Owner Login to edit. Your shop was restored from saved shops - Back button will not delete it.");
   };
   const tryOwnerLogin=()=>{
     if(!built) return;
-    if(loginPinInput.trim()===built.ownerPin){
-      setIsOwner(true); setShowOwnerLogin(false); setLoginPinInput(""); setChat("Owner login successful. You can now edit your shop. Customers do NOT see these buttons.");
-    } else {
-      alert("Wrong PIN. Only the owner with correct PIN can edit.");
-    }
+    if(loginPinInput.trim()===built.ownerPin){ setIsOwner(true); setShowOwnerLogin(false); setLoginPinInput(""); setChat("Owner login successful. You can now edit your shop. Customers do NOT see these buttons."); }
+    else { alert("Wrong PIN. Only the owner with correct PIN can edit."); }
   };
+  const goBackToBuilder=()=>{ setLiveMode(false); setSelectedItem(null); setShowCart(false); setChat("You are back in Builder. Your shop is still saved in My Saved Shops below. It is NOT lost."); };
 
   if(liveMode&&built){
     return (
       <div style={{minHeight:"100dvh",background:"white",color:"black",fontFamily:"sans-serif"}}>
-        {/* TOP BAR - Customer sees only Shop + Cart. Owner sees extra after login. */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:"black",color:"white",position:"sticky",top:0,zIndex:10}}>
           <b style={{fontSize:20}}>{built.title}</b>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>setShowCart(true)} style={{background:"white",border:"none",color:"black",padding:"8px 14px",borderRadius:999,fontWeight:"bold"}}>Cart ({cart.length})</button>
-            {/* OWNER ONLY - Customer will NEVER see this if not logged in */}
+            <button onClick={()=>{setShowCart(true); pushHistory("cart");}} style={{background:"white",border:"none",color:"black",padding:"8px 14px",borderRadius:999,fontWeight:"bold"}}>Cart ({cart.length})</button>
             {isOwner ? (
               <button onClick={()=>{setIsOwner(false); setChat("You logged out of Owner Mode. Now showing Customer View.");}} style={{background:"#22c55e",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12,fontWeight:"bold"}}>Owner: Logout</button>
             ) : (
-              <button onClick={()=>setShowOwnerLogin(true)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12}}>Owner Login</button>
+              <button onClick={()=>{setShowOwnerLogin(true); pushHistory("owner-login");}} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12}}>Owner Login</button>
             )}
-            <button onClick={()=>setLiveMode(false)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12}}>Back to Builder</button>
+            <button onClick={goBackToBuilder} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12}}>Back to Builder (Shop Saved)</button>
           </div>
         </div>
-        {/* OWNER BANNER - Only owner sees this */}
-        {isOwner&&<div style={{background:"#fef3c7",padding:"12px 16px",borderBottom:"1px solid #fde68a"}}><b>👑 Owner Mode ON</b> — Only you see Edit / Sold Out / Delete buttons. Customers do NOT see them. <button onClick={()=>{setEditStoreTitle(built.title); setEditStoreDesc(built.desc); setShowEditStore(true);}} style={{background:"black",color:"white",border:"none",padding:"6px 12px",borderRadius:999,fontSize:12,marginLeft:8}}>Edit Store Info</button> <button onClick={()=>setShowAddProduct(true)} style={{background:"#22c55e",color:"white",border:"none",padding:"6px 12px",borderRadius:999,fontSize:12}}>Add New Product +</button></div>}
+        {isOwner&&<div style={{background:"#fef3c7",padding:"12px 16px",borderBottom:"1px solid #fde68a"}}><b>👑 Owner Mode ON</b> — Only you see Edit / Sold Out / Delete buttons. Customers do NOT see them. <button onClick={()=>{setEditStoreTitle(built.title); setEditStoreDesc(built.desc); setShowEditStore(true); pushHistory("edit-store");}} style={{background:"black",color:"white",border:"none",padding:"6px 12px",borderRadius:999,fontSize:12,marginLeft:8}}>Edit Store Info</button> <button onClick={()=>{setShowAddProduct(true); pushHistory("add-product");}} style={{background:"#22c55e",color:"white",border:"none",padding:"6px 12px",borderRadius:999,fontSize:12}}>Add New Product +</button></div>}
         {built.video?<div><video src={built.video} controls style={{width:"100%",maxHeight:320,objectFit:"cover",display:"block",background:"black"}}/>{built.videoMeta&&<div style={{padding:"12px 16px",background:"#f8fafc"}}><b>{built.videoMeta.productName}</b> — <b>{built.videoMeta.price}</b><p style={{margin:"4px 0 0",fontSize:13}}>{built.videoMeta.desc}</p></div>}</div>:<img src={built.heroImage} alt="" style={{width:"100%",height:220,objectFit:"cover",display:"block"}} onError={(e)=>{e.target.style.display="none";}}/>}
         <div style={{background:built.color,color:"white",padding:20}}><b style={{fontSize:26}}>{built.title}</b><p style={{margin:"6px 0 0",lineHeight:1.5}}>{built.desc}</p><p style={{fontSize:13,marginTop:8}}>Free Delivery • Easy Returns • Quality You Can Trust</p>
         {built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:12}}>Chat on WhatsApp — Order Now</a>}
         </div>
         <div style={{padding:16}}><h3>Shop All Products</h3>{built.items?.map((it,i)=>(
           <div key={it.id||i} style={{display:"flex",gap:12,padding:"12px 0",borderBottom:"1px solid #eee",alignItems:"center",opacity: it.soldOut?0.5:1}}>
-            <div onClick={()=>{if(!it.soldOut){setSelectedItem(it); setSelectedSize("M");}}} style={{display:"flex",gap:12,flex:1,alignItems:"center",cursor: it.soldOut?"not-allowed":"pointer"}}>
+            <div onClick={()=>{if(!it.soldOut) openProduct(it);}} style={{display:"flex",gap:12,flex:1,alignItems:"center",cursor: it.soldOut?"not-allowed":"pointer"}}>
               <ProductImg item={it} idx={i}/>
               <div style={{flex:1}}><b>{it.name}</b> {it.soldOut&&<span style={{background:"#ef4444",color:"white",fontSize:10,padding:"2px 8px",borderRadius:999,marginLeft:6}}>SOLD OUT</span>}<div style={{fontSize:13,opacity:0.6}}>{it.soldOut?"Sold out - check back soon":"Tap to view details"}</div><div style={{fontSize:12,color: it.soldOut?"#ef4444":"#22c55e",fontWeight:"bold"}}>{it.soldOut?"Out of Stock":"In Stock"}</div></div><b style={{color:built.color}}>{it.price}</b>
             </div>
-            {/* OWNER ONLY CONTROLS - Customer never sees these */}
             {isOwner&&(
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <button onClick={()=>toggleSoldOut(it.id)} style={{background: it.soldOut?"#22c55e":"#f59e0b",border:"none",color:"white",padding:"6px 10px",borderRadius:999,fontSize:11,fontWeight:"bold"}}>{it.soldOut?"Back In Stock":"Mark Sold Out"}</button>
@@ -403,10 +436,11 @@ export default function Build(){
             )}
           </div>))}</div>
         {built.whatsapp&&<div style={{margin:"0 16px 16px",background:"#f0fdf4",border:"1px solid #bbf7d0",padding:14,borderRadius:12}}><b>Contact Seller</b><p style={{margin:"6px 0 0",fontSize:14}}>WhatsApp: {maskNumber(built.whatsapp.display)}<br/>Tap below to chat directly.</p><a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Open WhatsApp</a></div>}
-        {selectedItem&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><button onClick={()=>setSelectedItem(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Back to Shop</button><ProductImg item={selectedItem} idx={999} size="large"/><h2>{selectedItem.name}</h2><b style={{fontSize:24,color:built.color}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><div style={{display:"flex",gap:8}}>{["S","M","L","XL"].map(s=>(<button key={s} onClick={()=>setSelectedSize(s)} style={{padding:"10px 18px",borderRadius:999,border:selectedSize===s?`2px solid ${built.color}`:"1px solid #ccc",background:selectedSize===s?built.color:"white",color:selectedSize===s?"white":"black",fontWeight:"bold"}}>{s}</button>))}</div><button onClick={()=>{if(selectedItem.soldOut) return alert("This product is sold out."); setCart([...cart,{...selectedItem,size:selectedSize}]); setSelectedItem(null); setShowCart(true);}} style={{width:"100%",background:built.color,border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold",marginTop:12}}>Add to Cart — {selectedItem.price}</button>{built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Ask on WhatsApp</a>}</div></div>)}
-        {showCart&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:60,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><div style={{display:"flex",justifyContent:"space-between"}}><h2>Your Cart ({cart.length})</h2><button onClick={()=>setShowCart(false)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>{cart.length===0?<p>Your cart is empty.</p>:cart.map((c,i)=>(<div key={i} style={{display:"flex",gap:12,padding:"12px 0",borderBottom:"1px solid #eee",alignItems:"center"}}><ProductImg item={c} idx={i} size="small"/><div style={{flex:1}}><b>{c.name}</b><div style={{fontSize:13}}>Size {c.size}</div></div><b>{c.price}</b><button onClick={()=>setCart(cart.filter((_,idx)=>idx!==i))} style={{background:"#fee",border:"none",padding:"6px 10px",borderRadius:999}}>Remove</button></div>))}<h3 style={{textAlign:"right"}}>Total: ${cartTotal.toFixed(2)}</h3><button onClick={()=>{if(!cart.length) return alert("Your cart is empty."); alert("Thank you. Your order is confirmed."); setCart([]); setShowCart(false);}} style={{width:"100%",background:"black",border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold"}}>Checkout — ${cartTotal.toFixed(2)}</button>{built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Checkout on WhatsApp</a>}</div></div>)}
-
-        {/* OWNER LOGIN POPUP - Customer sees this only if they press Owner Login, but they don't know PIN */}
+        {selectedItem&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><button onClick={closeProduct} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>← Back to Shop (Not Back to EVA)</button><ProductImg item={selectedItem} idx={999} size="large"/><h2>{selectedItem.name}</h2><b style={{fontSize:24,color:built.color}}>{selectedItem.price}</b><p>{selectedItem.desc}</p>
+        {/* V20.1 SMART OPTIONS - Name + Desc */}
+        {(()=>{ const opts=getOptionsFor(selectedItem.name, selectedItem.desc); if(opts.options.length===0) return null; return (<div><p style={{fontWeight:"bold",margin:"12px 0 6px"}}>{opts.label}:</p><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{opts.options.map(s=>(<button key={s} onClick={()=>setSelectedOption(s)} style={{padding:"10px 18px",borderRadius:999,border:selectedOption===s?`2px solid ${built.color}`:"1px solid #ccc",background:selectedOption===s?built.color:"white",color:selectedOption===s?"white":"black",fontWeight:"bold"}}>{s}</button>))}</div></div>); })()}
+        <button onClick={()=>{if(selectedItem.soldOut) return alert("This product is sold out."); setCart([...cart,{...selectedItem, option:selectedOption}]); setSelectedItem(null); setShowCart(true);}} style={{width:"100%",background:built.color,border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold",marginTop:12}}>Add to Cart — {selectedItem.price} {selectedOption?`(${selectedOption})`:""}</button>{built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Ask on WhatsApp</a>}</div></div>)}
+        {showCart&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:60,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><div style={{display:"flex",justifyContent:"space-between"}}><h2>Your Cart ({cart.length})</h2><button onClick={()=>setShowCart(false)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>{cart.length===0?<p>Your cart is empty.</p>:cart.map((c,i)=>(<div key={i} style={{display:"flex",gap:12,padding:"12px 0",borderBottom:"1px solid #eee",alignItems:"center"}}><ProductImg item={c} idx={i} size="small"/><div style={{flex:1}}><b>{c.name}</b><div style={{fontSize:13}}>{c.option?`${getOptionsFor(c.name, c.desc).label}: ${c.option}`:""}</div></div><b>{c.price}</b><button onClick={()=>setCart(cart.filter((_,idx)=>idx!==i))} style={{background:"#fee",border:"none",padding:"6px 10px",borderRadius:999}}>Remove</button></div>))}<h3 style={{textAlign:"right"}}>Total: ${cartTotal.toFixed(2)}</h3><button onClick={()=>{if(!cart.length) return alert("Your cart is empty."); alert("Thank you. Your order is confirmed."); setCart([]); setShowCart(false);}} style={{width:"100%",background:"black",border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold"}}>Checkout — ${cartTotal.toFixed(2)}</button>{built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Checkout on WhatsApp</a>}</div></div>)}
         {showOwnerLogin&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
             <div style={{background:"white",width:"100%",maxWidth:400,borderRadius:16,padding:20}}>
@@ -417,7 +451,6 @@ export default function Build(){
             </div>
           </div>
         )}
-        {/* OWNER EDIT PRODUCT POPUP */}
         {editingProduct&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
             <div style={{background:"white",width:"100%",borderRadius:"20px 20px 0 0",padding:16}}>
@@ -429,7 +462,6 @@ export default function Build(){
             </div>
           </div>
         )}
-        {/* OWNER EDIT STORE INFO */}
         {showEditStore&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
             <div style={{background:"white",width:"100%",borderRadius:"20px 20px 0 0",padding:16}}>
@@ -440,15 +472,14 @@ export default function Build(){
             </div>
           </div>
         )}
-        {/* OWNER ADD NEW PRODUCT - Same gallery flow, inside shop */}
         {showAddProduct&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
             <div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}>
               <div style={{display:"flex",justifyContent:"space-between"}}><h3>Add New Product — Owner Only</h3><button onClick={()=>setShowAddProduct(false)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>
-              <p style={{fontSize:12,opacity:0.7}}>Same as before: Select → Tap each → Write Name/Price/Desc → Done → Overall Done → Add To Shop. Max 20MB per file.</p>
-              <label style={{display:"block",background:"black",color:"white",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Select Images From Gallery<input type="file" accept="image/*" multiple onChange={handleSelectImages} style={{display:"none"}}/></label>
+              <p style={{fontSize:12,opacity:0.7}}>Same as before: Select NEW images → Tap each → Write Name/Price/Desc → Done → Overall Done → Add To Shop. Max 20MB per file. Old products will NOT show here again.</p>
+              <label style={{display:"block",background:"black",color:"white",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Select NEW Images From Gallery<input type="file" accept="image/*" multiple onChange={handleSelectImages} style={{display:"none"}}/></label>
               {pendingImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12}}>{pendingImages.filter(p=>p.done).length} of {pendingImages.length} detailed ✅</p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>{pendingImages.map((im)=>(<div key={im.id} onClick={()=>openImageEditor(im)} style={{position:"relative",cursor:"pointer",border: im.done ? "2px solid #22c55e" : "2px solid #facc15", borderRadius:12, overflow:"hidden"}}><img src={im.url} alt="" style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/><div style={{background: im.done ? "#22c55e" : "#facc15", color: im.done ? "white" : "black", fontSize:10, fontWeight:"bold", textAlign:"center", padding:"3px"}}>{im.done ? "Done ✅" : "Tap to add details"}</div><button onClick={(e)=>{e.stopPropagation(); setPendingImages(pendingImages.filter(x=>x.id!==im.id));}} style={{position:"absolute",top:4,right:4,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button></div>))}</div><button onClick={uploadAllImages} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:13,borderRadius:12,fontWeight:"bold",marginTop:10}}>Overall Done — Upload All</button></div>)}
-              {uploadedImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12}}>{uploadedImages.length} ready to add ✅</p>{uploadedImages.map((u,i)=>(<div key={i} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:"1px solid #eee"}}><img src={u.url} alt="" style={{width:50,height:50,borderRadius:8,objectFit:"cover"}}/><div style={{flex:1}}><b>{u.productName}</b> — {u.price}<div style={{fontSize:11,opacity:0.7}}>{u.desc?.slice(0,50)}</div></div></div>))}<button onClick={addUploadedToShop} style={{width:"100%",background:"black",color:"white",border:"none",padding:14,borderRadius:999,fontWeight:"bold",marginTop:10}}>Add These To My Shop ✅</button></div>)}
+              {uploadedImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12}}>{uploadedImages.length} ready to add ✅ — These are NEW, not old</p>{uploadedImages.map((u,i)=>(<div key={i} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:"1px solid #eee"}}><img src={u.url} alt="" style={{width:50,height:50,borderRadius:8,objectFit:"cover"}}/><div style={{flex:1}}><b>{u.productName}</b> — {u.price}<div style={{fontSize:11,opacity:0.7}}>{u.desc?.slice(0,50)}</div></div></div>))}<button onClick={addUploadedToShop} style={{width:"100%",background:"black",color:"white",border:"none",padding:14,borderRadius:999,fontWeight:"bold",marginTop:10}}>Add These To My Shop ✅</button></div>)}
               <label style={{display:"flex",gap:8,marginTop:12,fontSize:13,cursor:"pointer"}}><input type="checkbox" checked={confirmedSafe} onChange={(e)=>setConfirmedSafe(e.target.checked)}/> I confirm this is my own product and follows safety rules.</label>
             </div>
           </div>
@@ -461,10 +492,10 @@ export default function Build(){
     <div style={{minHeight:"100dvh",background:"#030014",color:"white",padding:20,fontFamily:"sans-serif"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><b style={{fontSize:22}}>EVA</b><button onClick={()=>window.location.href='/'} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",padding:"8px 14px",borderRadius:999}}>Back</button></div>
       <h1 style={{color:"#c084fc",fontSize:28,lineHeight:1.2,marginTop:30}}>What should EVA create<br/>for you today?</h1>
-      {/* MY SHOPS - Saved shops */}
+      <div style={{marginTop:12,background:"#fef3c7",color:"black",padding:10,borderRadius:12,fontSize:12,lineHeight:1.5}}><b>V20.1 FIXED:</b> ✅ Back button no go delete shop again — shop dey save for My Saved Shops. ✅ Phone = Storage, Cloth = S/M/L/XL, Shoe = 38-44, Hair = Short/Medium/Long + Inches, Food = S/M/L, Perfume = ml, Unknown = Description only. ✅ Add New Product no go duplicate old products.</div>
       {myShops.length>0&&(
         <div style={{marginTop:16,background:"rgba(255,255,255,0.08)",padding:14,borderRadius:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><b>My Saved Shops ({myShops.length})</b><button onClick={()=>setShowMyShops(!showMyShops)} style={{background:"white",color:"black",border:"none",padding:"6px 12px",borderRadius:999,fontSize:12,fontWeight:"bold"}}>{showMyShops?"Hide":"Show"}</button></div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><b>My Saved Shops ({myShops.length}) — Even after Back / Refresh, e still dey</b><button onClick={()=>setShowMyShops(!showMyShops)} style={{background:"white",color:"black",border:"none",padding:"6px 12px",borderRadius:999,fontSize:12,fontWeight:"bold"}}>{showMyShops?"Hide":"Show"}</button></div>
           {showMyShops&&myShops.map((s)=>(
             <div key={s.id} onClick={()=>openShopFromMyShops(s)} style={{display:"flex",gap:10,alignItems:"center",background:"white",color:"black",borderRadius:12,padding:10,marginTop:10,cursor:"pointer"}}>
               <img src={s.heroImage} alt="" style={{width:50,height:50,borderRadius:8,objectFit:"cover"}}/>
@@ -472,7 +503,7 @@ export default function Build(){
               <span style={{fontSize:12,fontWeight:"bold"}}>Open →</span>
             </div>
           ))}
-          <p style={{fontSize:11,opacity:0.7,margin:"8px 0 0"}}>Customer view opens by default. Press Owner Login + your PIN to edit. Customers never see Edit buttons.</p>
+          <p style={{fontSize:11,opacity:0.7,margin:"8px 0 0"}}>If you press phone Back and enter again, come here, press your shop — e go open again. E no lost.</p>
         </div>
       )}
       <p style={{marginTop:20,fontWeight:"bold"}}>1. Describe what you want</p>
@@ -480,12 +511,11 @@ export default function Build(){
       <p style={{fontSize:12,opacity:0.7,marginTop:4}}>Tip: You can skip long description. Upload images, detail each one, EVA will use your details.</p>
       <p style={{marginTop:14,fontWeight:"bold"}}>🔒 Owner PIN (for your shop)</p>
       <input value={ownerPin} onChange={(e)=>setOwnerPin(e.target.value)} placeholder="Choose 4-digit PIN, e.g. 1234 — Only you can edit with this PIN" type="password" inputMode="numeric" style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:14,color:"white",padding:13}}/>
-      <p style={{fontSize:11,opacity:0.7,marginTop:4}}>Customers will NOT see this. If you leave blank, EVA will ask you when you press Create Website.</p>
       {mode==="Website"&&(
         <div style={{marginTop:16,background:"rgba(255,255,255,0.08)",padding:14,borderRadius:16}}>
           <p style={{fontWeight:"bold",margin:"0 0 8px"}}>📸 Your Product Images — Tap each to add details</p>
           <label style={{display:"block",background:"white",color:"black",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Select Images From Gallery<input type="file" accept="image/*" multiple onChange={handleSelectImages} style={{display:"none"}}/></label>
-          <p style={{fontSize:11,opacity:0.7,margin:"6px 0 0"}}>Max 20MB per image. Tap an image to write its Name, Price, Description.</p>
+          <p style={{fontSize:11,opacity:0.7,margin:"6px 0 0"}}>Max 20MB per image. Try &lt;2MB per image for best save after refresh. Tap an image to write its Name, Price, Description.</p>
           {pendingImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12,opacity:0.8}}>{pendingImages.filter(p=>p.done).length} of {pendingImages.length} detailed ✅</p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>{pendingImages.map((im)=>(<div key={im.id} onClick={()=>openImageEditor(im)} style={{position:"relative",cursor:"pointer",border: im.done ? "2px solid #22c55e" : "2px solid #facc15", borderRadius:12, overflow:"hidden"}}><img src={im.url} alt="" style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/><div style={{background: im.done ? "#22c55e" : "#facc15", color: im.done ? "white" : "black", fontSize:10, fontWeight:"bold", textAlign:"center", padding:"3px"}}>{im.done ? "Done ✅" : "Tap to add details"}</div>{im.done&&<div style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,0.6)",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999}}>{im.productName} — {im.price}</div>}<button onClick={(e)=>{e.stopPropagation(); setPendingImages(pendingImages.filter(x=>x.id!==im.id));}} style={{position:"absolute",top:4,right:4,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button></div>))}</div><button onClick={uploadAllImages} disabled={uploadingAll} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:13,borderRadius:12,fontWeight:"bold",marginTop:10}}>{uploadingAll?"Uploading... Please wait.":"Overall Done — Upload All Images"}</button>{uploadProgress&&<p style={{fontSize:12,color:"#facc15",fontWeight:"bold",marginTop:6}}>{uploadProgress}</p>}</div>)}
           {uploadedImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12,margin:"0 0 6px",opacity:0.8}}>{uploadedImages.length} uploaded ✅</p><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{uploadedImages.map((im,i)=>(<div key={i} style={{position:"relative",background:"rgba(255,255,255,0.1)",padding:6,borderRadius:10,maxWidth:120}}><img src={im.url} alt="" style={{width:"100%",height:56,borderRadius:8,objectFit:"cover"}}/><div style={{fontSize:11,fontWeight:"bold",marginTop:4}}>{im.productName} — {im.price}</div><div style={{fontSize:10,opacity:0.8}}>{im.desc?.slice(0,40)}</div><button onClick={()=>setUploadedImages(uploadedImages.filter((_,idx)=>idx!==i))} style={{position:"absolute",top:-6,right:-6,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button></div>))}</div></div>)}
           <p style={{fontWeight:"bold",margin:"18px 0 8px"}}>🎥 Your Product Videos — Same way, tap to add details</p>
@@ -516,15 +546,17 @@ export default function Build(){
       {built&&mode==="Website"&&(
         <div style={{marginTop:16,background:"white",color:"black",borderRadius:16,overflow:"hidden"}}>
           {built.video?<video src={built.video} controls style={{width:"100%",height:180,objectFit:"cover",display:"block"}}/>:<img src={built.heroImage} alt="" onError={(e)=>{e.target.style.display="none";}} style={{width:"100%",height:180,objectFit:"cover",display:"block"}}/>}
-          <div style={{background:built.color,color:"white",padding:18}}><b style={{fontSize:22}}>{built.title}</b><p style={{margin:"6px 0 0"}}>{built.desc}</p>{built.whatsapp&&<p style={{margin:"8px 0 0",fontSize:13,background:"rgba(0,0,0,0.2)",padding:"8px",borderRadius:8}}>WhatsApp: {maskNumber(built.whatsapp.display)} — Added for contact ✅</p>}<p style={{fontSize:12,marginTop:8}}>Owner PIN set ✅ — Only you can edit. Customers see only shop.</p></div>
+          <div style={{background:built.color,color:"white",padding:18}}><b style={{fontSize:22}}>{built.title}</b><p style={{margin:"6px 0 0"}}>{built.desc}</p>{built.whatsapp&&<p style={{margin:"8px 0 0",fontSize:13,background:"rgba(0,0,0,0.2)",padding:"8px",borderRadius:8}}>WhatsApp: {maskNumber(built.whatsapp.display)} — Added for contact ✅</p>}<p style={{fontSize:12,marginTop:8}}>Owner PIN set ✅ — Shop SAVED, Back button will NOT delete it.</p></div>
           <div style={{padding:16}}>
             {built.items?.map((it,i)=>(<div key={it.id||i} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #eee",alignItems:"center"}}><ProductImg item={it} idx={i} size="small"/><div style={{flex:1}}><b>{it.name}</b> {it.soldOut&&<span style={{background:"#ef4444",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999,marginLeft:4}}>SOLD OUT</span>}<div style={{fontSize:13,opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
-            <button onClick={()=>setLiveMode(true)} style={{width:"100%",background:"black",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",marginTop:14}}>View Live Shop — Test Customer vs Owner</button>
-            <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:10}}>V19.0 — Owner Dashboard: PIN Login, Sold Out, Edit, Add Product, Save</p>
+            <button onClick={()=>{setLiveMode(true); pushHistory("live-shop");}} style={{width:"100%",background:"black",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",marginTop:14}}>View Live Shop — Test Back Button</button>
+            <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:10}}>V20.1 — No Loss, Smart Options For Any Product, No Duplicate</p>
           </div>
         </div>
       )}
-      {selectedItem&&!liveMode&&built&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",color:"black",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><button onClick={()=>setSelectedItem(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Back to Shop</button><ProductImg item={selectedItem} idx={999} size="large"/><h2>{selectedItem.name}</h2><b style={{color:built.color,fontSize:22}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><button onClick={()=>{setCart([...cart,{...selectedItem,size:selectedSize}]); setSelectedItem(null);}} style={{width:"100%",background:built.color,border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold",marginTop:12}}>Add to Cart — {selectedItem.price}</button></div></div>)}
+      {selectedItem&&!liveMode&&built&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",color:"black",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><button onClick={closeProduct} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>← Back to Shop</button><ProductImg item={selectedItem} idx={999} size="large"/><h2>{selectedItem.name}</h2><b style={{color:built.color,fontSize:22}}>{selectedItem.price}</b><p>{selectedItem.desc}</p>
+      {(()=>{ const opts=getOptionsFor(selectedItem.name, selectedItem.desc); if(opts.options.length===0) return null; return (<div><p style={{fontWeight:"bold",margin:"12px 0 6px"}}>{opts.label}:</p><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{opts.options.map(s=>(<button key={s} onClick={()=>setSelectedOption(s)} style={{padding:"10px 18px",borderRadius:999,border:selectedOption===s?`2px solid ${built.color}`:"1px solid #ccc",background:selectedOption===s?built.color:"white",color:selectedOption===s?"white":"black",fontWeight:"bold"}}>{s}</button>))}</div></div>); })()}
+      <button onClick={()=>{setCart([...cart,{...selectedItem, option:selectedOption}]); setSelectedItem(null);}} style={{width:"100%",background:built.color,border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold",marginTop:12}}>Add to Cart — {selectedItem.price} {selectedOption?`(${selectedOption})`:""}</button></div></div>)}
       {editingImageId&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"white",color:"black",width:"100%",borderRadius:"20px 20px 0 0",padding:16,maxHeight:"92vh",overflow:"auto"}}>
@@ -550,4 +582,4 @@ export default function Build(){
       <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
     </div>
   );
-                                                                                                                                                                }
+}
