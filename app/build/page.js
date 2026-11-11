@@ -1,19 +1,20 @@
 "use client";
 import { useState, useRef } from "react";
 
-// V15.7 - ONE BOX ONLY: Everything in first box. No extra WhatsApp box.
-// Images fixed: AI product photos, no more beach/car for underwear
+// V15.8 - PICTURE FIX: No more Pollinations (it shows "Free limit reached" yellow card).
+// Use stable Pexels pictures - 4 DIFFERENT pictures, plus clean fallback if any fail.
 const IMG_DRESS = "https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=800&q=80";
 const IMG_BAG = "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=800&q=80";
 const IMG_SHOE = "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=800&q=80";
 const IMG_JEWELRY = "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=800&q=80";
 const IMG_HERO = "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80";
 
-const IMG_BRA = "https://image.pollinations.ai/prompt/lace%20bra%20set%20for%20women%20product%20photo%20on%20white%20background%20ecommerce?width=800&height=800&seed=101";
-const IMG_PANT = "https://image.pollinations.ai/prompt/women%20cotton%20underwear%20panties%203%20pack%20product%20photo%20flat%20lay%20on%20white%20background?width=800&height=800&seed=102";
-const IMG_BIKINI = "https://image.pollinations.ai/prompt/women%20bikini%20set%20product%20photo%20on%20white%20background%20ecommerce?width=800&height=800&seed=103";
-const IMG_SWIM = "https://image.pollinations.ai/prompt/women%20one%20piece%20swimwear%20product%20photo%20on%20white%20background%20ecommerce?width=800&height=800&seed=104";
-const IMG_LINGERIE_HERO = "https://image.pollinations.ai/prompt/elegant%20women%20lingerie%20and%20underwear%20store%20display%20soft%20pink%20background?width=800&height=600&seed=105";
+// Pexels - stable, no free-limit, each one different
+const IMG_BRA = "https://images.pexels.com/photos/1021693/pexels-photo-1021693.jpeg?auto=compress&cs=tinysrgb&w=800";
+const IMG_PANT = "https://images.pexels.com/photos/1462637/pexels-photo-1462637.jpeg?auto=compress&cs=tinysrgb&w=800";
+const IMG_BIKINI = "https://images.pexels.com/photos/1533649/pexels-photo-1533649.jpeg?auto=compress&cs=tinysrgb&w=800";
+const IMG_SWIM = "https://images.pexels.com/photos/1316484/pexels-photo-1316484.jpeg?auto=compress&cs=tinysrgb&w=800";
+const IMG_LINGERIE_HERO = "https://images.pexels.com/photos/1021693/pexels-photo-1021693.jpeg?auto=compress&cs=tinysrgb&w=800";
 
 const SAFE_IMAGES = [IMG_DRESS, IMG_BAG, IMG_SHOE, IMG_JEWELRY, IMG_HERO];
 const DEFAULT_ITEMS = [
@@ -35,7 +36,7 @@ const BLOCKED_FILE = ["nude","naked","porn","xxx","onlyfans","escort","bank","pa
 const BLOCKED_OCR = ["bank","account number","credit card","debit card","password","otp","pin code","passport","national id","id card","sort code","routing number","iban","swift"];
 const LINGERIE_WORDS = ["underwear","pikini","pant","bra","lingerie","bikini","swimwear","swimsuit","panties","boxer","brief"];
 
-// V15.7 - WHATSAPP: Read from FIRST BOX (prompt) first
+// V15.8 - WHATSAPP: From FIRST BOX only, as you said
 function extractWhatsApp(text) {
   if (!text) return null;
   const cleaned = String(text).replace(/[\s\-\(\)]/g,"");
@@ -86,6 +87,23 @@ function makeShortTitle(prompt, aiTitle) {
   if (words.length === 1) return words[0].charAt(0).toUpperCase()+words[0].slice(1) + " Store";
   return "My Store";
 }
+// V15.8 - Clean fallback color per product, if image ever fails (no more yellow "Free limit" card)
+function fallbackColor(name) {
+  const n = (name||"").toLowerCase();
+  if (n.includes("bra")) return "#fbcfe8";
+  if (n.includes("pant")) return "#ddd6fe";
+  if (n.includes("bikini")) return "#fecaca";
+  if (n.includes("swim")) return "#bfdbfe";
+  return "#e5e7eb";
+}
+function fallbackEmoji(name) {
+  const n = (name||"").toLowerCase();
+  if (n.includes("bra")) return "👙";
+  if (n.includes("pant")) return "🩲";
+  if (n.includes("bikini")) return "👙";
+  if (n.includes("swim")) return "🏊‍♀️";
+  return "🛍️";
+}
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) return resolve();
@@ -97,7 +115,6 @@ export default function Build() {
   const [prompt, setPrompt] = useState("");
   const [inspiredBy, setInspiredBy] = useState("");
   const [changes, setChanges] = useState("");
-  // V15.7 - NO whatsappInput anymore. Everything from first box (prompt).
   const [mode, setMode] = useState("Website");
   const [building, setBuilding] = useState(false);
   const [built, setBuilt] = useState(null);
@@ -115,13 +132,15 @@ export default function Build() {
   const [checking, setChecking] = useState(false);
   const [checkStatus, setCheckStatus] = useState("");
   const [showSafety, setShowSafety] = useState(false);
+  const [failedImgs, setFailedImgs] = useState({});
   const modelRef = useRef(null);
 
   const getPriceNum = (p) => { const n = parseFloat(String(p||"").replace(/[^0-9.]/g,"")); return isNaN(n)?0:n; };
   const cartTotal = cart.reduce((sum,c)=> sum + getPriceNum(c.price), 0);
-  const fixImg = (url, i) => { if (!url || !url.includes("http")) return SAFE_IMAGES[i % SAFE_IMAGES.length]; return url; };
+  const fixImg = (url, i) => { if (!url || !url.includes("http") || url.includes("pollinations")) return SAFE_IMAGES[i % SAFE_IMAGES.length]; return url; };
   const correctImageByName = (name, img, i) => {
     const n = (name||"").toLowerCase();
+    // V15.8 - NEVER use Pollinations, NEVER use beach/car. Always Pexels product photo.
     if (n.includes("bra")) return IMG_BRA;
     if (n.includes("pant") || n.includes("underwear") || n.includes("brief") || n.includes("boxer")) return IMG_PANT;
     if (n.includes("bikini")) return IMG_BIKINI;
@@ -133,7 +152,22 @@ export default function Build() {
     if (n.includes("jewel")||n.includes("gold")||n.includes("ring")||n.includes("necklace")) return IMG_JEWELRY;
     return fixImg(img,i);
   };
-  const handleImgError = (e, name) => { e.target.src = correctImageByName(name, "", 0); e.target.onerror = null; };
+  const handleImgError = (e, name, key) => {
+    // If Pexels fails, hide img and show clean colour box instead - no yellow card
+    if (key) setFailedImgs(prev => ({...prev, [key]: true}));
+    e.target.style.display = "none";
+  };
+  // Small component for product image with clean fallback
+  const ProductImg = ({ item, idx, size }) => {
+    const key = `${item.name}-${idx}`;
+    const isFailed = failedImgs[key];
+    const w = size === "large" ? "100%" : size === "small" ? 60 : 80;
+    const h = size === "large" ? 300 : size === "small" ? 60 : 80;
+    if (isFailed) {
+      return <div style={{width:w, height:h, minWidth:w, background:fallbackColor(item.name), borderRadius: size==="large"?14:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize: size==="large"?64:28, flexShrink:0}}>{fallbackEmoji(item.name)}</div>;
+    }
+    return <img src={item.img} alt={item.name} onError={(e)=>handleImgError(e,item.name,key)} style={{width:w, height:h, minWidth:w, borderRadius: size==="large"?14:12, objectFit:"cover", flexShrink:0}} />;
+  };
 
   const loadNSFWModel = async () => {
     if (modelRef.current) return modelRef.current;
@@ -205,13 +239,12 @@ export default function Build() {
     if (isChildModelRequest(allText)) { setChat("This request cannot be completed. Children cannot be used as models for underwear, swimwear, or bikini. For kids products, please use flat lay photos or a mannequin, not a child model."); return; }
     const found = BLOCKED_TEXT.find(w => allText.includes(w));
     if (found) { setChat(`This request cannot be completed. It may contain restricted content: "${found}". Please try a safe, original website idea.`); return; }
-    setBuilding(true); setBuilt(null); setChat(""); setSelectedItem(null); setCart([]);
+    setBuilding(true); setBuilt(null); setChat(""); setSelectedItem(null); setCart([]); setFailedImgs({});
     let fullPrompt = prompt;
     if (inspiredBy.trim()) fullPrompt += `. Inspired by the style of ${inspiredBy}, but with original content.`;
     if (changes.trim()) fullPrompt += `. Changes: ${changes}.`;
     if (uploadedImages.length > 0) fullPrompt += `. User uploaded ${uploadedImages.length} real product images.`;
     const priceRange = parsePriceRange(prompt + " " + changes);
-    // V15.7 - WhatsApp from FIRST BOX first, then others if first box no get am
     const waInfo = extractWhatsApp(prompt) || extractWhatsApp(inspiredBy + " " + changes);
     if (priceRange) fullPrompt += `. IMPORTANT: All product prices MUST be between $${priceRange.min} and $${priceRange.max}.`;
     if (waInfo) fullPrompt += `. IMPORTANT: Seller WhatsApp is ${waInfo.display}. Show WhatsApp contact button.`;
@@ -258,12 +291,12 @@ export default function Build() {
         </div>
         <div style={{padding:16}}><h3>Shop All Products</h3>{built.items?.map((it,i)=>(
           <div key={i} onClick={()=>{ setSelectedItem(it); setSelectedSize("M"); }} style={{display:"flex", gap:12, padding:"12px 0", borderBottom:"1px solid #eee", alignItems:"center", cursor:"pointer"}}>
-            <img src={it.img} alt="" onError={(e)=>handleImgError(e,it.name)} style={{width:80, height:80, borderRadius:12, objectFit:"cover"}} />
+            <ProductImg item={it} idx={i} />
             <div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13, opacity:0.6}}>Tap to view details</div><div style={{fontSize:12, color:"#22c55e", fontWeight:"bold"}}>In Stock</div></div><b style={{color:built.color}}>{it.price}</b>
           </div>))}</div>
         {built.whatsapp && <div style={{margin:"0 16px 16px", background:"#f0fdf4", border:"1px solid #bbf7d0", padding:14, borderRadius:12}}><b>Contact Seller</b><p style={{margin:"6px 0 0", fontSize:14}}>WhatsApp: {maskNumber(built.whatsapp.display)}<br/>Tap below to chat directly.</p><a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block", background:"#25D366", color:"white", textAlign:"center", padding:"12px", borderRadius:999, fontWeight:"bold", textDecoration:"none", marginTop:10}}>Open WhatsApp</a></div>}
-        {selectedItem && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:50, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><button onClick={()=> setSelectedItem(null)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Back to Shop</button><img src={selectedItem.img} alt="" onError={(e)=>handleImgError(e,selectedItem.name)} style={{width:"100%", height:300, objectFit:"cover", borderRadius:14, marginTop:12}} /><h2>{selectedItem.name}</h2><b style={{fontSize:24, color:built.color}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><div style={{display:"flex", gap:8}}>{["S","M","L","XL"].map(s=>(<button key={s} onClick={()=> setSelectedSize(s)} style={{padding:"10px 18px", borderRadius:999, border: selectedSize===s ? `2px solid ${built.color}` : "1px solid #ccc", background: selectedSize===s ? built.color : "white", color: selectedSize===s ? "white":"black", fontWeight:"bold"}}>{s}</button>))}</div><button onClick={()=>{ setCart([...cart, {...selectedItem, size:selectedSize}]); setSelectedItem(null); setShowCart(true); }} style={{width:"100%", background:built.color, border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold", marginTop:12}}>Add to Cart — {selectedItem.price}</button>{built.whatsapp && <a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block", background:"#25D366", color:"white", textAlign:"center", padding:"12px", borderRadius:999, fontWeight:"bold", textDecoration:"none", marginTop:10}}>Ask on WhatsApp</a>}</div></div>)}
-        {showCart && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:60, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><div style={{display:"flex", justifyContent:"space-between"}}><h2>Your Cart ({cart.length})</h2><button onClick={()=> setShowCart(false)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Close</button></div>{cart.length===0 ? <p>Your cart is empty.</p> : cart.map((c,i)=>(<div key={i} style={{display:"flex", gap:12, padding:"12px 0", borderBottom:"1px solid #eee", alignItems:"center"}}><img src={c.img} alt="" onError={(e)=>handleImgError(e,c.name)} style={{width:55, height:55, borderRadius:10, objectFit:"cover"}} /><div style={{flex:1}}><b>{c.name}</b><div style={{fontSize:13}}>Size {c.size}</div></div><b>{c.price}</b><button onClick={()=> setCart(cart.filter((_,idx)=> idx!==i))} style={{background:"#fee", border:"none", padding:"6px 10px", borderRadius:999}}>Remove</button></div>))}<h3 style={{textAlign:"right"}}>Total: ${cartTotal.toFixed(2)}</h3><button onClick={()=>{ if(!cart.length) return alert("Your cart is empty."); alert("Thank you. Your order is confirmed."); setCart([]); setShowCart(false); }} style={{width:"100%", background:"black", border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold"}}>Checkout — ${cartTotal.toFixed(2)}</button>{built.whatsapp && <a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block", background:"#25D366", color:"white", textAlign:"center", padding:"12px", borderRadius:999, fontWeight:"bold", textDecoration:"none", marginTop:10}}>Checkout on WhatsApp</a>}</div></div>)}
+        {selectedItem && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:50, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><button onClick={()=> setSelectedItem(null)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Back to Shop</button><ProductImg item={selectedItem} idx={999} size="large" /><h2>{selectedItem.name}</h2><b style={{fontSize:24, color:built.color}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><div style={{display:"flex", gap:8}}>{["S","M","L","XL"].map(s=>(<button key={s} onClick={()=> setSelectedSize(s)} style={{padding:"10px 18px", borderRadius:999, border: selectedSize===s ? `2px solid ${built.color}` : "1px solid #ccc", background: selectedSize===s ? built.color : "white", color: selectedSize===s ? "white":"black", fontWeight:"bold"}}>{s}</button>))}</div><button onClick={()=>{ setCart([...cart, {...selectedItem, size:selectedSize}]); setSelectedItem(null); setShowCart(true); }} style={{width:"100%", background:built.color, border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold", marginTop:12}}>Add to Cart — {selectedItem.price}</button>{built.whatsapp && <a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block", background:"#25D366", color:"white", textAlign:"center", padding:"12px", borderRadius:999, fontWeight:"bold", textDecoration:"none", marginTop:10}}>Ask on WhatsApp</a>}</div></div>)}
+        {showCart && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:60, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><div style={{display:"flex", justifyContent:"space-between"}}><h2>Your Cart ({cart.length})</h2><button onClick={()=> setShowCart(false)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Close</button></div>{cart.length===0 ? <p>Your cart is empty.</p> : cart.map((c,i)=>(<div key={i} style={{display:"flex", gap:12, padding:"12px 0", borderBottom:"1px solid #eee", alignItems:"center"}}><ProductImg item={c} idx={i} size="small" /><div style={{flex:1}}><b>{c.name}</b><div style={{fontSize:13}}>Size {c.size}</div></div><b>{c.price}</b><button onClick={()=> setCart(cart.filter((_,idx)=> idx!==i))} style={{background:"#fee", border:"none", padding:"6px 10px", borderRadius:999}}>Remove</button></div>))}<h3 style={{textAlign:"right"}}>Total: ${cartTotal.toFixed(2)}</h3><button onClick={()=>{ if(!cart.length) return alert("Your cart is empty."); alert("Thank you. Your order is confirmed."); setCart([]); setShowCart(false); }} style={{width:"100%", background:"black", border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold"}}>Checkout — ${cartTotal.toFixed(2)}</button>{built.whatsapp && <a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block", background:"#25D366", color:"white", textAlign:"center", padding:"12px", borderRadius:999, fontWeight:"bold", textDecoration:"none", marginTop:10}}>Checkout on WhatsApp</a>}</div></div>)}
       </div>
     );
   }
@@ -273,10 +306,8 @@ export default function Build() {
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}><b style={{fontSize:22}}>EVA</b><button onClick={()=> window.location.href='/'} style={{background:"rgba(255,255,255,0.15)", border:"none", color:"white", padding:"8px 14px", borderRadius:999}}>Back</button></div>
       <h1 style={{color:"#c084fc", fontSize:28, lineHeight:1.2, marginTop:30}}>What should EVA create<br/>for you today?</h1>
       <p style={{marginTop:20, fontWeight:"bold"}}>1. Describe what you want</p>
-      {/* V15.7 - FIRST BOX = EVERYTHING: prompt + price + WhatsApp all here */}
       <textarea value={prompt} onChange={(e)=> setPrompt(e.target.value)} placeholder={mode==="Website" ? "Example: Female underwear website $50 to $80, my WhatsApp 090... for contact" : mode==="Image" ? "Example: A red dress for women, luxury style" : "Example: A woman wearing a red dress walking in New York"} style={{width:"100%", background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.25)", borderRadius:16, color:"white", padding:14, fontSize:15, minHeight:90}} />
       <p style={{fontSize:12, opacity:0.7, marginTop:4}}>Type everything here: what you sell, price, and your WhatsApp for contact. Example: “Female underwear $50 to $80, my WhatsApp 090...”</p>
-
       {mode==="Website" && (
         <div style={{marginTop:16, background:"rgba(255,255,255,0.08)", padding:14, borderRadius:16}}>
           <label style={{display:"block", background:"white", color:"black", textAlign:"center", padding:12, borderRadius:12, fontWeight:"bold", cursor:"pointer"}}>Upload your image<input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{display:"none"}} /></label>
@@ -309,14 +340,14 @@ export default function Build() {
           {built.video ? <video src={built.video} controls style={{width:"100%", height:180, objectFit:"cover", display:"block"}} /> : <img src={built.heroImage} alt="" onError={(e)=>{e.target.src=IMG_HERO; e.target.onerror=null;}} style={{width:"100%", height:180, objectFit:"cover", display:"block"}} />}
           <div style={{background:built.color, color:"white", padding:18}}><b style={{fontSize:22}}>{built.title}</b><p style={{margin:"6px 0 0"}}>{built.desc}</p>{built.whatsapp && <p style={{margin:"8px 0 0", fontSize:13, background:"rgba(0,0,0,0.2)", padding:"8px", borderRadius:8}}>WhatsApp: {maskNumber(built.whatsapp.display)} — Added for contact ✅</p>}</div>
           <div style={{padding:16}}>
-            {built.items?.map((it,i)=>(<div key={i} onClick={()=>{ setSelectedItem(it); setSelectedSize("M"); }} style={{display:"flex", gap:12, padding:"10px 0", borderBottom:"1px solid #eee", alignItems:"center", cursor:"pointer"}}><img src={it.img} alt="" onError={(e)=>handleImgError(e,it.name)} style={{width:60, height:60, borderRadius:10, objectFit:"cover"}} /><div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13, opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
+            {built.items?.map((it,i)=>(<div key={i} onClick={()=>{ setSelectedItem(it); setSelectedSize("M"); }} style={{display:"flex", gap:12, padding:"10px 0", borderBottom:"1px solid #eee", alignItems:"center", cursor:"pointer"}}><ProductImg item={it} idx={i} size="small" /><div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13, opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
             <button onClick={()=> setLiveMode(true)} style={{width:"100%", background:"black", border:"none", color:"white", padding:14, borderRadius:999, fontWeight:"bold", marginTop:14}}>View Live Shop</button>
-            <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:10}}>V15.7 — One Box Only • No Extra WhatsApp Box</p>
+            <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:10}}>V15.8 — Picture Fix: No More Yellow Free Limit Card</p>
           </div>
         </div>
       )}
-      {selectedItem && !liveMode && built && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:50, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", color:"black", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><button onClick={()=> setSelectedItem(null)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Back to Shop</button><img src={selectedItem.img} alt="" onError={(e)=>handleImgError(e,selectedItem.name)} style={{width:"100%", height:280, objectFit:"cover", borderRadius:14, marginTop:12}} /><h2>{selectedItem.name}</h2><b style={{color:built.color, fontSize:22}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><button onClick={()=>{ setCart([...cart, {...selectedItem, size:selectedSize}]); setSelectedItem(null); }} style={{width:"100%", background:built.color, border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold", marginTop:12}}>Add to Cart — {selectedItem.price}</button></div></div>)}
+      {selectedItem && !liveMode && built && (<div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:50, display:"flex", alignItems:"flex-end", justifyContent:"center"}}><div style={{background:"white", color:"black", width:"100%", maxHeight:"92vh", overflow:"auto", borderRadius:"20px 20px 0 0", padding:16}}><button onClick={()=> setSelectedItem(null)} style={{background:"#eee", border:"none", padding:"8px 14px", borderRadius:999}}>Back to Shop</button><ProductImg item={selectedItem} idx={999} size="large" /><h2>{selectedItem.name}</h2><b style={{color:built.color, fontSize:22}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><button onClick={()=>{ setCart([...cart, {...selectedItem, size:selectedSize}]); setSelectedItem(null); }} style={{width:"100%", background:built.color, border:"none", color:"white", padding:15, borderRadius:999, fontWeight:"bold", marginTop:12}}>Add to Cart — {selectedItem.price}</button></div></div>)}
       <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
     </div>
   );
-}
+    }
