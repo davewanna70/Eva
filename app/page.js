@@ -450,6 +450,7 @@ export default function EVA() {
       `}</style>
       <img src="/eva-bg.jpg" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", zIndex: 0 }} />
       {showMenu && (<div style={{ position: "fixed", inset: 0, zIndex: 35, background: "transparent" }} onClick={() => setShowMenu(false)} />)}
+      {/* FIXED HEADER - Temu style: Logo left, Menu by the side, NO BUILD on top-top */}
       <div style={{ position: "relative", zIndex: 50, flexShrink: 0, flexGrow: 0, background: "rgba(3,0,20,0.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", paddingTop: "env(safe-area-inset-top)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
         <div style={{ display: "flex", padding: "12px 18px 12px", alignItems: "center", justifyContent: "space-between", minHeight: 56, boxSizing: "border-box" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -457,10 +458,10 @@ export default function EVA() {
             <b style={{ fontSize: 20, letterSpacing: 2, lineHeight: 1 }}>EVA</b>
           </div>
           <div style={{ position: "relative", flexShrink: 0, zIndex: 70, display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={()=> window.location.href='/build'} style={{background:"#c084fc", border:"none", color:"black", padding:"6px 12px", borderRadius:999, fontWeight:"bold", fontSize:13}}>🔨 BUILD</button>
             <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} style={{ width: 42, height: 42, borderRadius: 999, background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", fontSize: 22, lineHeight: 1 }}>⋮</button>
             {showMenu && (
               <div style={{ position: "absolute", top: 50, right: 0, width: 210, background: "rgba(10,10,20,0.98)", borderRadius: 14, overflow: "hidden", zIndex: 80, boxShadow: "0 10px 30px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.12)" }} onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => { setShowMenu(false); window.location.href='/build'; }} style={{ width: "100%", textAlign: "left", background: "#c084fc", border: "none", color: "black", padding: "13px 16px", fontSize: 14, fontWeight: "bold", borderBottom: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>🔨 BUILD</button>
                 <button onClick={() => { setShowMenu(false); setShowSearch(true); setSearchQuery(""); setTimeout(() => { const inp = document.getElementById("eva-search-input"); if (inp) inp.focus(); }, 100); }} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "white", padding: "13px 16px", fontSize: 14, borderBottom: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>🔍 Search</button>
                 <button onClick={() => { setShowMenu(false); setShowMedia(true); }} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "white", padding: "13px 16px", fontSize: 14, borderBottom: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>🖼️ Media, links, and docs</button>
                 <button onClick={openClearSheet} style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", color: "#ff8080", padding: "13px 16px", fontSize: 14, cursor: "pointer" }}>🗑️ Clear Chat</button>
@@ -469,6 +470,8 @@ export default function EVA() {
           </div>
         </div>
       </div>
+      {/* BUILD by the SIDE - like Temu Cart, NOT on top-top */}
+      <button onClick={()=> window.location.href='/build'} style={{ position: "fixed", right: 12, top: "50%", transform: "translateY(-50%)", zIndex: 60, background:"#c084fc", border:"none", color:"black", padding:"10px 12px", borderRadius:999, fontWeight:"bold", fontSize:13, boxShadow:"0 6px 20px rgba(0,0,0,0.5)" }}>🔨<br/>BUILD</button>
       {showSearch && (
         <div style={{ position: "relative", zIndex: 40, flex: 1, minHeight: 0, background: "#0a0a15", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.1)", flexShrink: 0 }}>
