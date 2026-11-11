@@ -10,16 +10,39 @@ export default function Build() {
   const [built, setBuilt] = useState(null);
   const [chat, setChat] = useState("");
 
+  const BLOCKED = [
+    "nude", "naked", "porn", "sex", "xxx", "onlyfans", "escort", "prostitut",
+    "minor", "child", "kid", "teen", "school girl", "schoolgirl",
+    "clone", "copy exactly", "exact copy", "replica", "pirate", "crack",
+    "fake bank", "phishing", "fake login", "steal password", "fake paypal", "fake crypto", "scam", "fake shop",
+    "bomb", "hack", "ddos", "fake id", "fake passport", "drugs", "how to steal", "weapon",
+    "kill", "murder", "terror", "hate",
+  ];
+
   const makeSmartSite = async () => {
     if (!prompt.trim()) return alert("Please describe what you want EVA to build");
+
+    // --- PROTECTION 1: Blocked words ---
+    const allText = (prompt + " " + inspiredBy + " " + changes).toLowerCase();
+    const found = BLOCKED.find(w => allText.includes(w));
+    if (found) {
+      setChat(`I cannot build that. That request is not allowed because it may involve "${found}" content. I can help you build a safe, original website instead — e.g. a fashion store, restaurant, portfolio, or business site. What would you like to build?`);
+      return;
+    }
+
+    // --- PROTECTION 2: Do not allow exact copy of any brand ---
+    if (inspiredBy.trim() && (allText.includes("copy exactly") || allText.includes("exact copy") || allText.includes("clone"))) {
+      setChat(`I cannot copy that website exactly. I can create a website inspired by its style — clean, modern, original design with your own name and content. Want me to do that?`);
+      return;
+    }
+
     setBuilding(true);
     setBuilt(null);
     setChat("");
 
-    // Build full instruction for EVA - from scratch OR inspired by
     let fullPrompt = prompt;
     if (inspiredBy.trim()) {
-      fullPrompt += `. Make it inspired by the style of ${inspiredBy} - same feeling, layout vibe and quality, but original content, original name, original text. Do NOT copy their text or images.`;
+      fullPrompt += `. Make it inspired by the style of ${inspiredBy} - same feeling, layout vibe and quality, but original content, original name, original text. Do NOT copy their text, logo, or images.`;
     }
     if (changes.trim()) {
       fullPrompt += `. User wants these changes: ${changes}. Apply them.`;
@@ -30,7 +53,7 @@ export default function Build() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: `You are EVA Builder, international app. User wants: "${fullPrompt}" for ${mode}. Use US DOLLARS only, e.g $25, $45. No Naira. Use pure English.
+          message: `You are EVA Builder, international app. User wants: "${fullPrompt}" for ${mode}. Use US DOLLARS only, e.g $25, $45. No Naira. Use pure English. Create original design only, do not copy any brand.
           Return ONLY valid JSON, no extra text:
           {"title":"...","desc":"...","color":"#hex","heroImage":"https://images.unsplash.com/photo-...","items":[{"name":"...","price":"$25","img":"https://images.unsplash.com/photo-..."}],"cta":"Shop Now","extra":"One sentence why people will love it"}`,
           history: [],
@@ -82,15 +105,9 @@ export default function Build() {
 
       <p style={{marginTop:18, fontWeight:"bold"}}>2. Inspired by a website? <span style={{fontWeight:"normal", opacity:0.6}}>(Optional)</span></p>
       <input value={inspiredBy} onChange={(e)=> setInspiredBy(e.target.value)}
-        placeholder="E.g. bobby.com, nike.com — leave empty for your own design"
+        placeholder="Type a website name or link — leave empty for your own design"
         style={{width:"100%", background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.25)", borderRadius:14, color:"white", padding:13, fontSize:14}}
       />
-      <div style={{display:"flex", flexWrap:"wrap", gap:8, marginTop:8}}>
-        {["bobby.com","nike.com","shopify.com","airbnb.com"].map(s=>(
-          <button key={s} onClick={()=> setInspiredBy(s)} style={{background: inspiredBy===s ? "#c084fc":"transparent", border:"1px solid #a78bfa", color: inspiredBy===s ? "black":"white", padding:"6px 12px", borderRadius:999, fontSize:13}}>{s}</button>
-        ))}
-        <button onClick={()=> setInspiredBy("")} style={{background:"transparent", border:"1px solid rgba(255,255,255,0.3)", color:"white", padding:"6px 12px", borderRadius:999, fontSize:13}}>Clear ✕</button>
-      </div>
 
       <p style={{marginTop:18, fontWeight:"bold"}}>3. What to change / remove / add? <span style={{fontWeight:"normal", opacity:0.6}}>(Optional)</span></p>
       <input value={changes} onChange={(e)=> setChanges(e.target.value)}
@@ -135,7 +152,8 @@ export default function Build() {
         </div>
       )}
 
-      <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:12}}>EVA will generate and you can edit anytime</p>
+      <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
+      <p style={{textAlign:"center", fontSize:12, opacity:0.6, marginTop:6}}>EVA will generate and you can edit anytime</p>
     </div>
   );
-}
+          }
