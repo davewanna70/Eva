@@ -16,12 +16,15 @@ const DEFAULT_ITEMS = [
   { name: "Gold Jewelry Set", price: "$35", img: SAFE_IMAGES[4] },
 ];
 
+function userWantsLong(prompt, changes) {
+  const t = (prompt + " " + changes).toLowerCase();
+  return t.includes("long") || t.includes("full detail") || t.includes("full description") || t.includes("show everything") || t.includes("show all") || t.includes("detailed") || t.includes("more details") || t.includes("don't cut") || t.includes("dont cut") || t.includes("do not cut") || t.includes("show my full") || t.includes("keep my description");
+}
+
 function makeShortTitle(prompt, aiTitle) {
-  // If AI title is short and fine, use it
   if (aiTitle && aiTitle.length <= 30 && !aiTitle.toLowerCase().includes("a luxury") && !aiTitle.toLowerCase().includes("store for")) {
     return aiTitle;
   }
-  // Else make short title from prompt
   const p = prompt.toLowerCase();
   if (p.includes("new york")) return "New York Luxe";
   if (p.includes("fashion") && p.includes("women")) return "Luxe Fashion";
@@ -32,9 +35,34 @@ function makeShortTitle(prompt, aiTitle) {
   if (p.includes("jewelry") || p.includes("jewellery")) return "Golden Glow";
   if (p.includes("tech") || p.includes("phone")) return "Tech World";
   if (p.includes("fitness") || p.includes("gym")) return "Fit Life";
-  // Fallback: take first 2-3 words and clean it
   const words = prompt.trim().split(" ").filter(w => !["a","an","the","for","my"].includes(w.toLowerCase())).slice(0,2);
   return words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") || "My Store";
+}
+
+function makeSmartDesc(prompt, changes, aiDesc) {
+  const wantsLong = userWantsLong(prompt, changes);
+  // USER WANTS LONG = RESPECT HER, DON'T CUT
+  if (wantsLong) {
+    // If AI gave a good long desc, use it
+    if (aiDesc && aiDesc.length > 20) return aiDesc.slice(0, 400);
+    // Else use her own words as desc
+    return prompt.trim().slice(0, 400);
+  }
+  // DEFAULT = SHORT BRAND STYLE
+  if (aiDesc && aiDesc.length <= 110 && aiDesc.length > 10) return aiDesc;
+  const p = prompt.toLowerCase();
+  if (p.includes("new york") && p.includes("fashion")) return "Luxury fashion for modern women in New York.";
+  if (p.includes("fashion") && p.includes("women")) return "Elegant fashion made for modern women.";
+  if (p.includes("fashion")) return "Modern fashion, made to make you stand out.";
+  if (p.includes("restaurant") || p.includes("food")) return "Delicious food, made fresh for you every day.";
+  if (p.includes("hair") || p.includes("salon") || p.includes("beauty")) return "Beauty and care that makes you glow.";
+  if (p.includes("shoe")) return "Stylish shoes for every step you take.";
+  if (p.includes("jewelry") || p.includes("jewellery")) return "Timeless jewelry that shines with you.";
+  if (p.includes("tech") || p.includes("phone")) return "Smart tech, simple prices, fast delivery.";
+  if (p.includes("fitness") || p.includes("gym")) return "Train strong. Live better. Every day.";
+  let first = (aiDesc || prompt).split(".")[0].trim();
+  if (first.length > 90) first = first.slice(0, 87) + "...";
+  return first + ".";
 }
 
 export default function Build() {
@@ -80,12 +108,17 @@ export default function Build() {
     if (inspiredBy.trim()) fullPrompt += `. Make it inspired by the style of ${inspiredBy} - same feeling, layout vibe and quality, but original content, original name, original text. Do NOT copy their text, logo, or images.`;
     if (changes.trim()) fullPrompt += `. User wants these changes: ${changes}. Apply them.`;
 
+    const wantsLong = userWantsLong(prompt, changes);
+    const descInstruction = wantsLong
+      ? `desc must be LONG and DETAILED, use user's own words, show full details she typed, up to 3 sentences. DO NOT shorten or cut it.`
+      : `desc must be ONE SHORT sentence, max 15 words, e.g "Luxury fashion for modern women in New York." NEVER use the full user description as title or desc.`;
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: `You are EVA Builder, international app. User wants: "${fullPrompt}" for ${mode}. Use US DOLLARS only, e.g $25, $45. No Naira. Use pure English. Create original design only, do not copy any brand. IMPORTANT: title must be SHORT brand name, 2-3 words ONLY, e.g "New York Luxe", "Luxe Fashion". NEVER use the full user description as title. desc must be 1 short sentence. Return ONLY valid JSON: {"title":"New York Luxe","desc":"...","color":"#a78bfa","heroImage":"https://images.unsplash.com/photo-1445205170230-053b83016050?w=800","items":[{"name":"...","price":"$25","img":"https://images.unsplash.com/photo-1445205170230-053b83016050?w=400"}],"cta":"Shop Now","extra":"One sentence why people will love it"}`,
+          message: `You are EVA Builder, international app. User wants: "${fullPrompt}" for ${mode}. Use US DOLLARS only, e.g $25, $45. No Naira. Use pure English. Create original design only, do not copy any brand. IMPORTANT: title must be SHORT brand name, 2-3 words ONLY, e.g "New York Luxe". ${descInstruction} Return ONLY valid JSON: {"title":"New York Luxe","desc":"...","color":"#a78bfa","heroImage":"https://images.unsplash.com/photo-1445205170230-053b83016050?w=800","items":[{"name":"...","price":"$25","img":"https://images.unsplash.com/photo-1445205170230-053b83016050?w=400"}],"cta":"Shop Now","extra":"One sentence why people will love it"}`,
           history: [],
         }),
       });
@@ -96,6 +129,7 @@ export default function Build() {
       if (start !== -1 && end !== -1) {
         let site = JSON.parse(text.slice(start, end + 1));
         site.title = makeShortTitle(prompt, site.title);
+        site.desc = makeSmartDesc(prompt, changes, site.desc);
         site.heroImage = fixImg(site.heroImage, 0);
         if (!site.items || site.items.length === 0) site.items = DEFAULT_ITEMS;
         else site.items = site.items.map((it, i) => ({ name: it.name || "Product", price: it.price || "$35", img: fixImg(it.img, i) }));
@@ -106,7 +140,7 @@ export default function Build() {
     } catch (e) {
       setBuilt({
         title: makeShortTitle(prompt, ""),
-        desc: prompt,
+        desc: makeSmartDesc(prompt, changes, ""),
         color: "#a78bfa",
         heroImage: SAFE_IMAGES[2],
         items: DEFAULT_ITEMS,
@@ -130,8 +164,8 @@ export default function Build() {
       <p style={{marginTop:18, fontWeight:"bold"}}>2. Inspired by a website? <span style={{fontWeight:"normal", opacity:0.6}}>(Optional)</span></p>
       <input value={inspiredBy} onChange={(e)=> setInspiredBy(e.target.value)} placeholder="Type a website name or link — leave empty for your own design" style={{width:"100%", background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.25)", borderRadius:14, color:"white", padding:13, fontSize:14}} />
       <p style={{marginTop:18, fontWeight:"bold"}}>3. What to change / remove / add? <span style={{fontWeight:"normal", opacity:0.6}}>(Optional)</span></p>
-      <input value={changes} onChange={(e)=> setChanges(e.target.value)} placeholder="E.g. Remove blog, change color to purple, add WhatsApp order" style={{width:"100%", background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.25)", borderRadius:14, color:"white", padding:13, fontSize:14}} />
-      <p style={{marginTop:14, fontSize:13, opacity:0.7}}>Tip: The more details you write, the better your website will look.</p>
+      <input value={changes} onChange={(e)=> setChanges(e.target.value)} placeholder="E.g. Show full details, long description, add WhatsApp order" style={{width:"100%", background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.25)", borderRadius:14, color:"white", padding:13, fontSize:14}} />
+      <p style={{marginTop:14, fontSize:13, opacity:0.7}}>Tip: Want long description? Type "show full details" in box 3. Want short? Leave it empty.</p>
       <p style={{marginTop:20}}>Create</p>
       <div style={{display:"flex", gap:10}}>
         {["Website","Image","Video"].map(m=>(
@@ -145,7 +179,7 @@ export default function Build() {
           <img src={built.heroImage} alt="" onError={(e)=>{e.target.src = SAFE_IMAGES[2]}} style={{width:"100%", height:180, objectFit:"cover", display:"block"}} />
           <div style={{background:built.color, color:"white", padding:18}}>
             <b style={{fontSize:22}}>{built.title}</b>
-            <p style={{margin:"6px 0 0", opacity:0.9}}>{built.desc}</p>
+            <p style={{margin:"6px 0 0", opacity:0.9, lineHeight:1.5}}>{built.desc}</p>
             {inspiredBy && <p style={{fontSize:12, marginTop:8, opacity:0.8}}>Style inspired by {inspiredBy} • Original design by EVA</p>}
           </div>
           <div style={{padding:16}}>
