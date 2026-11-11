@@ -1,9 +1,8 @@
 "use client";
 import { useState, useRef } from "react";
 
-// V17.0 - GENERIC: No more hard-coded Dress/Sneaker/Underwear list.
-// EVA reads YOUR prompt and creates products from YOUR words. Works for Phone, Hair, Food, Sneaker, Anything.
-// How: It looks for "Sell 4 products: Name $Price, Name $Price" in your prompt.
+// V17.1 FULL - GENERIC: No hard-coded list. EVA reads YOUR products comma-by-comma.
+// Works for Phone, Sneaker, Hair, Food, Anything. Smart brain will come later, this one works without it.
 
 function extractWhatsApp(text) {
   if (!text) return null;
@@ -24,42 +23,49 @@ function parsePriceRange(text){
   if(m){ let min=parseInt(m[1]); let max=parseInt(m[2]); if(min>max)[min,max]=[max,min]; return {min,max}; }
   return null;
 }
-// V17 GENERIC: Extract store name after "called"
 function makeShortTitle(prompt,aiTitle){
   const called = (prompt||"").match(/called\s+([A-Za-z0-9\s&'-]+?)(?:\s+for\s+|\s+in\s+|\s*,|\s*\.)/i);
   if(called && called[1]) return called[1].trim().split(/\s+/).slice(0,4).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ");
   if(aiTitle && aiTitle.length<=30 && !aiTitle.toLowerCase().includes("modern called")) return aiTitle;
   return "My Store";
 }
-// V17 GENERIC: Read products from YOUR prompt - "Sell 4 products: White Air Sneakers $40, Black Running Shoes $45..."
+// V17.1 FIX - Read products comma-by-comma
 function parseProductsFromPrompt(prompt){
-  // Find after "Sell" or "products:"
-  const after = (prompt||"").split(/sell|products:/i)[1] || prompt;
-  // Match pattern: Name $Price
-  const regex = /([A-Z][A-Za-z0-9\s&'-]{2,40}?)\s*\$?\s*(\d+)/g;
-  let matches = [...after.matchAll(regex)];
-  // Filter out WhatsApp numbers, price-range numbers, "between $40 and $60"
-  matches = matches.filter(m=>{
-    const name = m[1].trim().toLowerCase();
-    if(name.includes("whatsapp")||name.includes("between")||name.includes("price")||name.includes("prices")) return false;
-    if(m[1].trim().length < 3) return false;
-    if(/^\d+$/.test(m[1].trim())) return false;
-    return true;
-  });
-  // If we found at least 2 products, use them - this is YOUR list, not coded list
-  if(matches.length >= 2){
-    return matches.slice(0,6).map(m=>{
-      const name = m[1].trim().replace(/^(and|with|,)\s*/i,"").trim();
-      const price = `$${m[2]}`;
-      // Generic keyword image - works for ANY product: phone, sneaker, wig, food
-      const keyword = encodeURIComponent(name);
-      const img = `https://loremflickr.com/800/600/${keyword}?lock=${Math.floor(Math.random()*1000)}`;
-      return { name: name.charAt(0).toUpperCase()+name.slice(1), price, img, desc: `${name} - Quality product. Fast delivery. In Stock.` };
+  const full = prompt || "";
+  let after = full;
+  const idx = full.toLowerCase().indexOf("products:");
+  if(idx !== -1) after = full.slice(idx + 9);
+  else {
+    const idx2 = full.toLowerCase().indexOf("sell");
+    if(idx2 !== -1) after = full.slice(idx2 + 4);
+  }
+  const waIdx = after.toLowerCase().indexOf("whatsapp");
+  if(waIdx !== -1) after = after.slice(0, waIdx);
+  const priceIdx = after.toLowerCase().indexOf("prices must");
+  if(priceIdx !== -1) after = after.slice(0, priceIdx);
+  const parts = after.split(",").map(s=>s.trim()).filter(Boolean);
+  const items = [];
+  for(let part of parts){
+    const m = part.match(/^(.+?)\s*\$?\s*(\d+)\s*\.?\s*$/);
+    if(!m) continue;
+    let name = m[1].trim().replace(/^(and|sell|4 products:|products:)\s*/i,"").trim();
+    let price = m[2];
+    if(!name || name.length < 2) continue;
+    if(/^\d+$/.test(name)) continue;
+    if(name.toLowerCase().includes("between")) continue;
+    if(name.toLowerCase().includes("whatsapp")) continue;
+    if(name.toLowerCase().includes("price")) continue;
+    name = name.replace(/^\d+\s+products:\s*/i,"").trim();
+    items.push({
+      name: name.charAt(0).toUpperCase()+name.slice(1),
+      price: `$${price}`,
+      img: `https://loremflickr.com/800/600/${encodeURIComponent(name)}?lock=${Math.floor(Math.random()*1000)}`,
+      desc: `${name} - Quality product. Fast delivery. In Stock.`
     });
   }
+  if(items.length >= 2) return items.slice(0,6);
   return null;
 }
-// Generic fallback if user did not list products - create from category word, not hard-coded list
 function genericFallback(prompt){
   const t=(prompt||"").toLowerCase();
   let cat = "Product";
@@ -180,14 +186,10 @@ export default function Build(){
     const found=BLOCKED_TEXT.find(w=>allText.includes(w));
     if(found){ setChat(`This request cannot be completed. It may contain restricted content: "${found}".`); return; }
     setBuilding(true); setBuilt(null); setChat(""); setSelectedItem(null); setCart([]); setFailedImgs({});
-    // V17 - FIRST, try to read products from YOUR prompt. If you listed them, use them. No hard-coded list.
     let myProducts = parseProductsFromPrompt(prompt+" "+changes);
     const priceRange=parsePriceRange(prompt+" "+changes);
     const waInfo=extractWhatsApp(prompt)||extractWhatsApp(inspiredBy+" "+changes);
-    // If you did NOT list products, use generic fallback based on your category word
     if(!myProducts) myProducts = genericFallback(prompt);
-    // If price range exists, keep YOUR listed prices if they already exist, else apply range
-    // Do NOT overwrite your exact prices like $40, $45 with generic range
     let items = myProducts;
     const title = makeShortTitle(prompt,"");
     const heroKeyword = encodeURIComponent(title || "store");
@@ -196,14 +198,12 @@ export default function Build(){
     if(waInfo){ site.whatsapp=waInfo; site.extra=`WhatsApp contact added: ${maskNumber(waInfo.display)}. Customers can order on WhatsApp.`; }
     if(uploadedImages.length>0){
       site.items = uploadedImages.map((up,i)=>{ const orig=site.items[i] || site.items[0]; return { name: orig.name, price: orig.price, img: up.url, desc: orig.desc + " - Your product photo." }; });
-      // If you uploaded fewer photos than products, keep remaining products with keyword images
       if(uploadedImages.length < myProducts.length){
         const remaining = myProducts.slice(uploadedImages.length);
         site.items = [...site.items, ...remaining];
       }
       site.extra=(site.extra||"")+" Your website is ready with your uploaded images.";
     }
-    // Try AI for description only, but NEVER let AI overwrite YOUR products
     try{
       const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:`Write a short 1-sentence store description for: "${prompt}". Return ONLY JSON: {"desc":"..."}` ,history:[]})});
       const data=await res.json(); let text=data.reply||data.text||""; const s=text.indexOf("{"); const e=text.lastIndexOf("}");
@@ -244,7 +244,7 @@ export default function Build(){
       <h1 style={{color:"#c084fc",fontSize:28,lineHeight:1.2,marginTop:30}}>What should EVA create<br/>for you today?</h1>
       <p style={{marginTop:20,fontWeight:"bold"}}>1. Describe what you want</p>
       <textarea value={prompt} onChange={(e)=>setPrompt(e.target.value)} placeholder="Example: Create store called Lagos Phone Hub, Sell 4 products: iPhone 13 $400, Samsung S24 $500, Tecno Spark $150, Infinix Note $180. WhatsApp 090... for contact" style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:16,color:"white",padding:14,fontSize:15,minHeight:90}} />
-      <p style={{fontSize:12,opacity:0.7,marginTop:4}}>Tip: List your products like this: Sell 4 products: Name $Price, Name $Price. EVA will use YOUR list, no need to code phone, sneaker, etc.</p>
+      <p style={{fontSize:12,opacity:0.7,marginTop:4}}>Tip: List your products like this: Sell 4 products: Name $Price, Name $Price. EVA will use YOUR list.</p>
       {mode==="Website"&&(
         <div style={{marginTop:16,background:"rgba(255,255,255,0.08)",padding:14,borderRadius:16}}>
           <label style={{display:"block",background:"white",color:"black",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Upload your image<input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{display:"none"}}/></label>
@@ -278,7 +278,7 @@ export default function Build(){
           <div style={{padding:16}}>
             {built.items?.map((it,i)=>(<div key={i} onClick={()=>{setSelectedItem(it); setSelectedSize("M");}} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #eee",alignItems:"center",cursor:"pointer"}}><ProductImg item={it} idx={i} size="small"/><div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13,opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
             <button onClick={()=>setLiveMode(true)} style={{width:"100%",background:"black",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",marginTop:14}}>View Live Shop</button>
-            <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:10}}>V17.0 — Generic: Works for Phone, Sneaker, Hair, Food, Anything</p>
+            <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:10}}>V17.1 — Generic: Works for Phone, Sneaker, Hair, Food, Anything</p>
           </div>
         </div>
       )}
@@ -286,4 +286,4 @@ export default function Build(){
       <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
     </div>
   );
-         }
+       }
