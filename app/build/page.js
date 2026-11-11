@@ -1,9 +1,10 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
-// V18.0 - GALLERY + PER-IMAGE DETAILS
-// User selects many images -> gallery shows them -> click one -> write Name/Price/Desc -> Done (marked) -> next -> Overall Done uploads all.
-// Same for Video. Same rules: max 20MB per file, safety check, no nudity / bank docs / children models.
+// V19.0 - OWNER DASHBOARD + LOGIN + SAVE
+// Customer sees ONLY shop. Owner sees shop + Edit after PIN login.
+// Owner can: Mark Sold Out, Edit Price, Add New Product (gallery details), Delete, Edit Store Info, Save Shop (no loss after refresh).
+// Same rules: Max 20MB per file, safety check.
 
 function extractWhatsApp(text) {
   if (!text) return null;
@@ -35,10 +36,7 @@ function parseProductsFromPrompt(prompt){
   let after = full;
   const idx = full.toLowerCase().indexOf("products:");
   if(idx !== -1) after = full.slice(idx + 9);
-  else {
-    const idx2 = full.toLowerCase().indexOf("sell");
-    if(idx2 !== -1) after = full.slice(idx2 + 4);
-  }
+  else { const idx2 = full.toLowerCase().indexOf("sell"); if(idx2 !== -1) after = full.slice(idx2 + 4); }
   const waIdx = after.toLowerCase().indexOf("whatsapp");
   if(waIdx !== -1) after = after.slice(0, waIdx);
   const priceIdx = after.toLowerCase().indexOf("prices must");
@@ -56,7 +54,7 @@ function parseProductsFromPrompt(prompt){
     if(name.toLowerCase().includes("whatsapp")) continue;
     if(name.toLowerCase().includes("price")) continue;
     name = name.replace(/^\d+\s+products:\s*/i,"").trim();
-    items.push({ name: name.charAt(0).toUpperCase()+name.slice(1), price: `$${price}`, img: `https://loremflickr.com/800/600/${encodeURIComponent(name)}?lock=${Math.floor(Math.random()*1000)}`, desc: `${name} - Quality product. Fast delivery. In Stock.` });
+    items.push({ name: name.charAt(0).toUpperCase()+name.slice(1), price: `$${price}`, img: `https://loremflickr.com/800/600/${encodeURIComponent(name)}?lock=${Math.floor(Math.random()*1000)}`, desc: `${name} - Quality product. Fast delivery. In Stock.`, soldOut:false, id: Date.now()+"-"+Math.random() });
   }
   if(items.length >= 2) return items.slice(0,6);
   return null;
@@ -70,7 +68,7 @@ function genericFallback(prompt){
   else if(t.includes("dress")) cat="Dress";
   else if(t.includes("underwear")||t.includes("bra")) cat="Underwear";
   else if(t.includes("food")||t.includes("cake")) cat="Food";
-  return [1,2,3,4].map(i=>({ name:`${cat} ${i}`, price:`$${30+i*5}`, img:`https://loremflickr.com/800/600/${encodeURIComponent(cat)}?lock=${i}`, desc:`Quality ${cat} - Best seller. Fast delivery.` }));
+  return [1,2,3,4].map(i=>({ name:`${cat} ${i}`, price:`$${30+i*5}`, img:`https://loremflickr.com/800/600/${encodeURIComponent(cat)}?lock=${i}`, desc:`Quality ${cat} - Best seller. Fast delivery.`, soldOut:false, id: Date.now()+"-"+i }));
 }
 function emojiFor(name){
   const n=(name||"").toLowerCase();
@@ -122,9 +120,25 @@ export default function Build(){
   const [failedImgs,setFailedImgs]=useState({});
   const modelRef=useRef(null);
 
-  // V18 - Gallery staging
-  const [pendingImages,setPendingImages]=useState([]); // {id, url, file, fileName, productName, price, desc, done}
-  const [pendingVideos,setPendingVideos]=useState([]); // same for video
+  // V19 - Owner
+  const [ownerPin,setOwnerPin]=useState(""); // PIN owner chooses when creating shop
+  const [isOwner,setIsOwner]=useState(false); // true only after PIN correct - controls what user sees
+  const [showOwnerLogin,setShowOwnerLogin]=useState(false);
+  const [loginPinInput,setLoginPinInput]=useState("");
+  const [myShops,setMyShops]=useState([]); // saved shops
+  const [showMyShops,setShowMyShops]=useState(false);
+  const [editingProduct,setEditingProduct]=useState(null); // product being edited by owner
+  const [editProdName,setEditProdName]=useState("");
+  const [editProdPrice,setEditProdPrice]=useState("");
+  const [editProdDesc,setEditProdDesc]=useState("");
+  const [showAddProduct,setShowAddProduct]=useState(false); // owner add product panel inside shop
+  const [showEditStore,setShowEditStore]=useState(false);
+  const [editStoreTitle,setEditStoreTitle]=useState("");
+  const [editStoreDesc,setEditStoreDesc]=useState("");
+
+  // V18 Gallery staging
+  const [pendingImages,setPendingImages]=useState([]);
+  const [pendingVideos,setPendingVideos]=useState([]);
   const [editingImageId,setEditingImageId]=useState(null);
   const [editingVideoId,setEditingVideoId]=useState(null);
   const [editName,setEditName]=useState("");
@@ -132,6 +146,24 @@ export default function Build(){
   const [editDesc,setEditDesc]=useState("");
   const [uploadingAll,setUploadingAll]=useState(false);
   const [uploadProgress,setUploadProgress]=useState("");
+
+  // V19 - Load saved shops on start
+  useEffect(()=>{
+    try{
+      const saved = JSON.parse(localStorage.getItem("eva_my_shops")||"[]");
+      setMyShops(saved);
+    }catch(e){}
+  },[]);
+  const saveShopToStorage=(site)=>{
+    try{
+      const all = JSON.parse(localStorage.getItem("eva_my_shops")||"[]");
+      const existingIdx = all.findIndex(s=>s.id===site.id);
+      if(existingIdx>=0) all[existingIdx]=site;
+      else all.unshift(site);
+      localStorage.setItem("eva_my_shops", JSON.stringify(all.slice(0,20)));
+      setMyShops(all.slice(0,20));
+    }catch(e){}
+  };
 
   const getPriceNum=(p)=>{ const n=parseFloat(String(p||"").replace(/[^0-9.]/g,"")); return isNaN(n)?0:n; };
   const cartTotal=cart.reduce((s,c)=>s+getPriceNum(c.price),0);
@@ -150,13 +182,13 @@ export default function Build(){
   const checkTextWithOCR=async(u)=>{ try{ await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"); const w=await window.Tesseract.createWorker("eng"); const r=await w.recognize(u); await w.terminate(); const t=(r.data.text||"").toLowerCase(); const f=BLOCKED_OCR.find(x=>t.includes(x)); if(f) return {blocked:true,reason:`Document text detected: "${f}"`}; return {blocked:false,reason:""}; }catch(e){ return {blocked:false,reason:""}; } };
   const isChildModelRequest=(t)=>{ const s=(t||"").toLowerCase(); const hc=BLOCKED_CHILD_MODEL.some(w=>s.includes(w)); const hu=LINGERIE_WORDS.some(w=>s.includes(w))||s.includes("model")||s.includes("showroom")||s.includes("wearing"); return hc&&hu; };
 
-  // V18 - Step 1: Select from gallery, do NOT upload yet. Just stage them.
+  // V18 Gallery
   const handleSelectImages=(e)=>{
     const files=Array.from(e.target.files||[]);
     const newItems=[];
     for(const f of files){
       if(!f.type.startsWith("image/")){ alert("Please select an image file only."); continue; }
-      if(f.size>20*1024*1024){ alert(`"${f.name}" is too large. Maximum is 20MB per file. This one was skipped.`); continue; }
+      if(f.size>20*1024*1024){ alert(`"${f.name}" is too large. Maximum is 20MB per file.`); continue; }
       const fname=f.name.toLowerCase(); const bad=BLOCKED_FILE.find(w=>fname.includes(w));
       if(bad){ alert(`"${f.name}" cannot be used. File name contains blocked word: "${bad}".`); continue; }
       const url=URL.createObjectURL(f);
@@ -170,7 +202,7 @@ export default function Build(){
     const newItems=[];
     for(const f of files){
       if(!f.type.startsWith("video/")){ alert("Please select a video file only."); continue; }
-      if(f.size>20*1024*1024){ alert(`"${f.name}" is too large. Maximum is 20MB per file. This one was skipped.`); continue; }
+      if(f.size>20*1024*1024){ alert(`"${f.name}" is too large. Maximum is 20MB per file.`); continue; }
       const fname=f.name.toLowerCase(); const bad=BLOCKED_FILE.find(w=>fname.includes(w));
       if(bad){ alert(`"${f.name}" cannot be used. File name contains blocked word: "${bad}".`); continue; }
       const url=URL.createObjectURL(f);
@@ -179,44 +211,34 @@ export default function Build(){
     if(newItems.length>0) setPendingVideos(p=>[...p,...newItems]);
     e.target.value="";
   };
-  // V18 - Step 2: Click one image -> open small box
-  const openImageEditor=(item)=>{
-    setEditingImageId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||"");
-  };
-  const openVideoEditor=(item)=>{
-    setEditingVideoId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||"");
-  };
-  // V18 - Step 3: Press Done for that one -> mark it
+  const openImageEditor=(item)=>{ setEditingImageId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||""); };
+  const openVideoEditor=(item)=>{ setEditingVideoId(item.id); setEditName(item.productName||""); setEditPrice(item.price||""); setEditDesc(item.desc||""); };
   const saveImageDetail=()=>{
-    if(!editName.trim()){ alert("Please write Product Name, e.g. iPhone 13 or Red Dress."); return; }
-    if(!editPrice.trim()){ alert("Please write Price, e.g. $400 or 400."); return; }
+    if(!editName.trim()){ alert("Please write Product Name."); return; }
+    if(!editPrice.trim()){ alert("Please write Price."); return; }
     setPendingImages(p=>p.map(it=> it.id===editingImageId ? {...it, productName: editName.trim(), price: editPrice.trim().startsWith("$")?editPrice.trim():`$${editPrice.trim()}`, desc: editDesc.trim()||`${editName.trim()} - Quality product. Fast delivery.`, done:true} : it));
     setEditingImageId(null); setEditName(""); setEditPrice(""); setEditDesc("");
   };
   const saveVideoDetail=()=>{
-    if(!editName.trim()){ alert("Please write Video Title, e.g. iPhone 13 Promo."); return; }
-    if(!editPrice.trim()){ alert("Please write Price, e.g. $400."); return; }
+    if(!editName.trim()){ alert("Please write Video Title."); return; }
+    if(!editPrice.trim()){ alert("Please write Price."); return; }
     setPendingVideos(p=>p.map(it=> it.id===editingVideoId ? {...it, productName: editName.trim(), price: editPrice.trim().startsWith("$")?editPrice.trim():`$${editPrice.trim()}`, desc: editDesc.trim()||`${editName.trim()} - Watch this product video.`, done:true} : it));
     setEditingVideoId(null); setEditName(""); setEditPrice(""); setEditDesc("");
   };
-  // V18 - Step 4: Overall Done -> start uploading all, with safety check
   const uploadAllImages=async()=>{
-    if(pendingImages.length===0) return alert("No images selected yet. Select images from gallery first.");
+    if(pendingImages.length===0) return alert("No images selected yet.");
     if(!confirmedSafe) return alert("Please confirm that these are your own product images and they follow the safety rules.");
     const notDone = pendingImages.filter(p=>!p.done);
-    if(notDone.length>0){
-      const go = window.confirm(`${notDone.length} image(s) have no details yet. Do you want to upload them with auto name? Press OK to continue, or Cancel to add details first.`);
-      if(!go) return;
-    }
+    if(notDone.length>0){ const go = window.confirm(`${notDone.length} image(s) have no details yet. Upload with auto name? Press OK to continue, Cancel to add details first.`); if(!go) return; }
     setUploadingAll(true); setChecking(true);
     for(let i=0;i<pendingImages.length;i++){
       const it = pendingImages[i];
       setUploadProgress(`Checking image ${i+1} of ${pendingImages.length}...`);
       setCheckStatus(`Checking image ${i+1} of ${pendingImages.length}. Please wait...`);
       const ai=await checkImageWithAI(it.url);
-      if(ai.blocked){ alert(`"${it.productName||it.fileName}" was rejected. Reason: ${ai.reason}. It was skipped.`); continue; }
+      if(ai.blocked){ alert(`"${it.productName||it.fileName}" was rejected. Reason: ${ai.reason}. Skipped.`); continue; }
       const ocr=await checkTextWithOCR(it.url);
-      if(ocr.blocked){ alert(`"${it.productName||it.fileName}" was rejected. Reason: ${ocr.reason}. It was skipped.`); continue; }
+      if(ocr.blocked){ alert(`"${it.productName||it.fileName}" was rejected. Reason: ${ocr.reason}. Skipped.`); continue; }
       const name = it.productName || `Product ${uploadedImages.length+i+1}`;
       const price = it.price || "$35";
       const desc = it.desc || `${name} - Quality product. Fast delivery.`;
@@ -229,18 +251,14 @@ export default function Build(){
     if(pendingVideos.length===0) return alert("No video selected yet.");
     if(!confirmedSafe) return alert("Please confirm that this is your own product video and it follows the safety rules.");
     const notDone = pendingVideos.filter(p=>!p.done);
-    if(notDone.length>0){
-      const go = window.confirm(`${notDone.length} video(s) have no details yet. Do you want to upload with auto name? Press OK to continue, or Cancel to add details first.`);
-      if(!go) return;
-    }
+    if(notDone.length>0){ const go = window.confirm(`${notDone.length} video(s) have no details yet. Upload with auto name?`); if(!go) return; }
     setUploadingAll(true); setChecking(true);
     for(let i=0;i<pendingVideos.length;i++){
       const it = pendingVideos[i];
       setUploadProgress(`Checking video ${i+1} of ${pendingVideos.length}...`);
       setCheckStatus(`Checking video ${i+1} of ${pendingVideos.length}. AI is checking 3 frames. Please wait...`);
       const ai=await checkVideoWithAI(it.url);
-      if(ai.blocked){ alert(`Video "${it.productName||it.fileName}" was rejected. Reason: ${ai.reason}. It was skipped.`); continue; }
-      // Use first video as main shop video, with its details
+      if(ai.blocked){ alert(`Video "${it.productName||it.fileName}" was rejected. Reason: ${ai.reason}. Skipped.`); continue; }
       setUploadedVideo(it.url);
       setUploadedVideoMeta({ productName: it.productName||"Product Video", price: it.price||"$35", desc: it.desc||"Watch this product video." });
     }
@@ -263,51 +281,178 @@ export default function Build(){
     if(isChildModelRequest(allText)){ setChat("This request cannot be completed. Children cannot be used as models for underwear, swimwear, or bikini."); return; }
     const found=BLOCKED_TEXT.find(w=>allText.includes(w));
     if(found){ setChat(`This request cannot be completed. It may contain restricted content: "${found}".`); return; }
-    setBuilding(true); setBuilt(null); setChat(""); setSelectedItem(null); setCart([]); setFailedImgs({});
-    // V18 PRIORITY: If user detailed images in gallery, use THOSE names/prices/descs - no guessing
+    // V19 - Owner must set PIN before creating shop, so only owner can edit later
+    let pin = ownerPin.trim();
+    if(!pin){
+      const p = window.prompt("OWNER SETUP: Choose a 4-digit PIN for your shop (e.g. 1234). Only you with this PIN can edit your shop. Customers will NOT see this. Enter your PIN:");
+      if(!p || p.length<4){ alert("Please choose a 4-digit PIN to protect your shop."); return; }
+      pin = p.trim(); setOwnerPin(pin);
+    }
+    setBuilding(true); setBuilt(null); setChat(""); setSelectedItem(null); setCart([]); setFailedImgs({}); setIsOwner(true); // creator is owner
     let myProducts = null;
     if(uploadedImages.length>0){
-      myProducts = uploadedImages.map(up=>({ name: up.productName||up.name||"Product", price: up.price||"$35", img: up.url, desc: up.desc||"Quality product. Fast delivery." }));
+      myProducts = uploadedImages.map((up,i)=>({ id: Date.now()+"-"+i+"-"+Math.random(), name: up.productName||up.name||"Product", price: up.price||"$35", img: up.url, desc: up.desc||"Quality product. Fast delivery.", soldOut:false }));
     } else {
       myProducts = parseProductsFromPrompt(prompt+" "+changes) || genericFallback(prompt);
     }
-    const priceRange=parsePriceRange(prompt+" "+changes);
     const waInfo=extractWhatsApp(prompt)||extractWhatsApp(inspiredBy+" "+changes);
     const title = makeShortTitle(prompt,"");
     const heroKeyword = encodeURIComponent(title || "store");
     const heroImage = uploadedImages.length>0 ? uploadedImages[0].url : `https://loremflickr.com/1200/600/${heroKeyword}?lock=999`;
-    const site = { title, desc:"Quality products for modern customers. Free Delivery • Easy Returns • Quality You Can Trust.", color:"#a78bfa", heroImage, items: myProducts, cta:"Shop Now", extra:"Your website is ready with your product details.", video: uploadedVideo || null, videoMeta: uploadedVideoMeta || null };
-    if(waInfo){ site.whatsapp=waInfo; site.extra=`WhatsApp contact added: ${maskNumber(waInfo.display)}. Customers can order on WhatsApp.`; }
+    const site = { id: Date.now().toString(), title, desc:"Quality products for modern customers. Free Delivery • Easy Returns • Quality You Can Trust.", color:"#a78bfa", heroImage, items: myProducts, cta:"Shop Now", extra:"Your website is ready with your product details.", video: uploadedVideo || null, videoMeta: uploadedVideoMeta || null, ownerPin: pin, whatsapp: waInfo || null, createdAt: new Date().toLocaleString() };
+    if(waInfo){ site.extra=`WhatsApp contact added: ${maskNumber(waInfo.display)}. Customers can order on WhatsApp.`; }
     try{
       const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:`Write a short 1-sentence store description for: "${prompt}". Return ONLY JSON: {"desc":"..."}` ,history:[]})});
       const data=await res.json(); let text=data.reply||data.text||""; const s=text.indexOf("{"); const e=text.lastIndexOf("}");
       if(s!==-1&&e!==-1){ const j=JSON.parse(text.slice(s,e+1)); if(j.desc) site.desc=j.desc.slice(0,110); }
     }catch(e){}
-    setBuilt(site); setChat(site.extra); setBuilding(false);
+    setBuilt(site); saveShopToStorage(site); setChat(site.extra+" Your shop is saved. Share the link with customers. Only you with PIN can edit."); setBuilding(false);
+  };
+
+  // V19 OWNER ACTIONS - Only run if isOwner === true
+  const updateBuiltAndSave=(newSite)=>{
+    setBuilt(newSite); saveShopToStorage(newSite);
+  };
+  const toggleSoldOut=(id)=>{
+    if(!isOwner) return alert("Only owner can do this. Press Owner Login and enter your PIN.");
+    const newItems = built.items.map(it=> it.id===id ? {...it, soldOut: !it.soldOut} : it);
+    updateBuiltAndSave({...built, items: newItems});
+  };
+  const deleteProduct=(id)=>{
+    if(!isOwner) return;
+    if(!window.confirm("Delete this product?")) return;
+    const newItems = built.items.filter(it=>it.id!==id);
+    updateBuiltAndSave({...built, items: newItems});
+  };
+  const openEditProduct=(item)=>{
+    setEditingProduct(item); setEditProdName(item.name); setEditProdPrice(item.price); setEditProdDesc(item.desc);
+  };
+  const saveEditProduct=()=>{
+    if(!editProdName.trim()||!editProdPrice.trim()) return alert("Please fill Name and Price.");
+    const newItems = built.items.map(it=> it.id===editingProduct.id ? {...it, name: editProdName.trim(), price: editProdPrice.trim().startsWith("$")?editProdPrice.trim():`$${editProdPrice.trim()}`, desc: editProdDesc.trim()} : it);
+    updateBuiltAndSave({...built, items: newItems}); setEditingProduct(null);
+  };
+  const addProductFromOwnerGallery=async()=>{
+    // Owner uses same gallery flow inside shop: pendingImages already has details
+    if(pendingImages.length===0) return alert("Select images first, tap each to add details, then press Overall Done.");
+    await uploadAllImages();
+    // After uploadAllImages, uploadedImages has new items - convert to shop items
+    // We do it after a short delay because upload is async state
+    setTimeout(()=>{
+      // This will be handled by the button below - owner presses "Add These To Shop"
+    },500);
+  };
+  const addUploadedToShop=()=>{
+    if(uploadedImages.length===0) return alert("No uploaded images to add.");
+    // uploadedImages that are not already in shop (compare by url)
+    const existingUrls = new Set(built.items.map(it=>it.img));
+    const newOnes = uploadedImages.filter(u=>!existingUrls.has(u.url)).map((u,i)=>({ id: Date.now()+"-"+i+"-"+Math.random(), name: u.productName||"New Product", price: u.price||"$35", img: u.url, desc: u.desc||"New product. Fast delivery.", soldOut:false }));
+    if(newOnes.length===0) return alert("These images are already in your shop.");
+    updateBuiltAndSave({...built, items: [...built.items, ...newOnes]});
+    setUploadedImages([]); setShowAddProduct(false); setChat("New product(s) added to your shop.");
+  };
+  const openShopFromMyShops=(shop)=>{
+    setBuilt(shop); setIsOwner(false); setLiveMode(true); setCart([]); // customer view by default, owner must login with PIN
+    setChat("This is customer view. Press Owner Login to edit.");
+  };
+  const tryOwnerLogin=()=>{
+    if(!built) return;
+    if(loginPinInput.trim()===built.ownerPin){
+      setIsOwner(true); setShowOwnerLogin(false); setLoginPinInput(""); setChat("Owner login successful. You can now edit your shop. Customers do NOT see these buttons.");
+    } else {
+      alert("Wrong PIN. Only the owner with correct PIN can edit.");
+    }
   };
 
   if(liveMode&&built){
     return (
       <div style={{minHeight:"100dvh",background:"white",color:"black",fontFamily:"sans-serif"}}>
+        {/* TOP BAR - Customer sees only Shop + Cart. Owner sees extra after login. */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:"black",color:"white",position:"sticky",top:0,zIndex:10}}>
           <b style={{fontSize:20}}>{built.title}</b>
-          <div style={{display:"flex",gap:8}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button onClick={()=>setShowCart(true)} style={{background:"white",border:"none",color:"black",padding:"8px 14px",borderRadius:999,fontWeight:"bold"}}>Cart ({cart.length})</button>
-            <button onClick={()=>setLiveMode(false)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12}}>Owner: Back to Builder</button>
+            {/* OWNER ONLY - Customer will NEVER see this if not logged in */}
+            {isOwner ? (
+              <button onClick={()=>{setIsOwner(false); setChat("You logged out of Owner Mode. Now showing Customer View.");}} style={{background:"#22c55e",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12,fontWeight:"bold"}}>Owner: Logout</button>
+            ) : (
+              <button onClick={()=>setShowOwnerLogin(true)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12}}>Owner Login</button>
+            )}
+            <button onClick={()=>setLiveMode(false)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"8px 10px",borderRadius:999,fontSize:12}}>Back to Builder</button>
           </div>
         </div>
+        {/* OWNER BANNER - Only owner sees this */}
+        {isOwner&&<div style={{background:"#fef3c7",padding:"12px 16px",borderBottom:"1px solid #fde68a"}}><b>👑 Owner Mode ON</b> — Only you see Edit / Sold Out / Delete buttons. Customers do NOT see them. <button onClick={()=>{setEditStoreTitle(built.title); setEditStoreDesc(built.desc); setShowEditStore(true);}} style={{background:"black",color:"white",border:"none",padding:"6px 12px",borderRadius:999,fontSize:12,marginLeft:8}}>Edit Store Info</button> <button onClick={()=>setShowAddProduct(true)} style={{background:"#22c55e",color:"white",border:"none",padding:"6px 12px",borderRadius:999,fontSize:12}}>Add New Product +</button></div>}
         {built.video?<div><video src={built.video} controls style={{width:"100%",maxHeight:320,objectFit:"cover",display:"block",background:"black"}}/>{built.videoMeta&&<div style={{padding:"12px 16px",background:"#f8fafc"}}><b>{built.videoMeta.productName}</b> — <b>{built.videoMeta.price}</b><p style={{margin:"4px 0 0",fontSize:13}}>{built.videoMeta.desc}</p></div>}</div>:<img src={built.heroImage} alt="" style={{width:"100%",height:220,objectFit:"cover",display:"block"}} onError={(e)=>{e.target.style.display="none";}}/>}
         <div style={{background:built.color,color:"white",padding:20}}><b style={{fontSize:26}}>{built.title}</b><p style={{margin:"6px 0 0",lineHeight:1.5}}>{built.desc}</p><p style={{fontSize:13,marginTop:8}}>Free Delivery • Easy Returns • Quality You Can Trust</p>
         {built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:12}}>Chat on WhatsApp — Order Now</a>}
         </div>
         <div style={{padding:16}}><h3>Shop All Products</h3>{built.items?.map((it,i)=>(
-          <div key={i} onClick={()=>{setSelectedItem(it); setSelectedSize("M");}} style={{display:"flex",gap:12,padding:"12px 0",borderBottom:"1px solid #eee",alignItems:"center",cursor:"pointer"}}>
-            <ProductImg item={it} idx={i}/>
-            <div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13,opacity:0.6}}>Tap to view details</div><div style={{fontSize:12,color:"#22c55e",fontWeight:"bold"}}>In Stock</div></div><b style={{color:built.color}}>{it.price}</b>
+          <div key={it.id||i} style={{display:"flex",gap:12,padding:"12px 0",borderBottom:"1px solid #eee",alignItems:"center",opacity: it.soldOut?0.5:1}}>
+            <div onClick={()=>{if(!it.soldOut){setSelectedItem(it); setSelectedSize("M");}}} style={{display:"flex",gap:12,flex:1,alignItems:"center",cursor: it.soldOut?"not-allowed":"pointer"}}>
+              <ProductImg item={it} idx={i}/>
+              <div style={{flex:1}}><b>{it.name}</b> {it.soldOut&&<span style={{background:"#ef4444",color:"white",fontSize:10,padding:"2px 8px",borderRadius:999,marginLeft:6}}>SOLD OUT</span>}<div style={{fontSize:13,opacity:0.6}}>{it.soldOut?"Sold out - check back soon":"Tap to view details"}</div><div style={{fontSize:12,color: it.soldOut?"#ef4444":"#22c55e",fontWeight:"bold"}}>{it.soldOut?"Out of Stock":"In Stock"}</div></div><b style={{color:built.color}}>{it.price}</b>
+            </div>
+            {/* OWNER ONLY CONTROLS - Customer never sees these */}
+            {isOwner&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <button onClick={()=>toggleSoldOut(it.id)} style={{background: it.soldOut?"#22c55e":"#f59e0b",border:"none",color:"white",padding:"6px 10px",borderRadius:999,fontSize:11,fontWeight:"bold"}}>{it.soldOut?"Back In Stock":"Mark Sold Out"}</button>
+                <button onClick={()=>openEditProduct(it)} style={{background:"black",border:"none",color:"white",padding:"6px 10px",borderRadius:999,fontSize:11}}>Edit</button>
+                <button onClick={()=>deleteProduct(it.id)} style={{background:"#fee2e2",border:"none",color:"#ef4444",padding:"6px 10px",borderRadius:999,fontSize:11,fontWeight:"bold"}}>Delete</button>
+              </div>
+            )}
           </div>))}</div>
         {built.whatsapp&&<div style={{margin:"0 16px 16px",background:"#f0fdf4",border:"1px solid #bbf7d0",padding:14,borderRadius:12}}><b>Contact Seller</b><p style={{margin:"6px 0 0",fontSize:14}}>WhatsApp: {maskNumber(built.whatsapp.display)}<br/>Tap below to chat directly.</p><a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Open WhatsApp</a></div>}
-        {selectedItem&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><button onClick={()=>setSelectedItem(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Back to Shop</button><ProductImg item={selectedItem} idx={999} size="large"/><h2>{selectedItem.name}</h2><b style={{fontSize:24,color:built.color}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><div style={{display:"flex",gap:8}}>{["S","M","L","XL"].map(s=>(<button key={s} onClick={()=>setSelectedSize(s)} style={{padding:"10px 18px",borderRadius:999,border:selectedSize===s?`2px solid ${built.color}`:"1px solid #ccc",background:selectedSize===s?built.color:"white",color:selectedSize===s?"white":"black",fontWeight:"bold"}}>{s}</button>))}</div><button onClick={()=>{setCart([...cart,{...selectedItem,size:selectedSize}]); setSelectedItem(null); setShowCart(true);}} style={{width:"100%",background:built.color,border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold",marginTop:12}}>Add to Cart — {selectedItem.price}</button>{built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Ask on WhatsApp</a>}</div></div>)}
+        {selectedItem&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><button onClick={()=>setSelectedItem(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Back to Shop</button><ProductImg item={selectedItem} idx={999} size="large"/><h2>{selectedItem.name}</h2><b style={{fontSize:24,color:built.color}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><div style={{display:"flex",gap:8}}>{["S","M","L","XL"].map(s=>(<button key={s} onClick={()=>setSelectedSize(s)} style={{padding:"10px 18px",borderRadius:999,border:selectedSize===s?`2px solid ${built.color}`:"1px solid #ccc",background:selectedSize===s?built.color:"white",color:selectedSize===s?"white":"black",fontWeight:"bold"}}>{s}</button>))}</div><button onClick={()=>{if(selectedItem.soldOut) return alert("This product is sold out."); setCart([...cart,{...selectedItem,size:selectedSize}]); setSelectedItem(null); setShowCart(true);}} style={{width:"100%",background:built.color,border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold",marginTop:12}}>Add to Cart — {selectedItem.price}</button>{built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Ask on WhatsApp</a>}</div></div>)}
         {showCart&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:60,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><div style={{display:"flex",justifyContent:"space-between"}}><h2>Your Cart ({cart.length})</h2><button onClick={()=>setShowCart(false)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>{cart.length===0?<p>Your cart is empty.</p>:cart.map((c,i)=>(<div key={i} style={{display:"flex",gap:12,padding:"12px 0",borderBottom:"1px solid #eee",alignItems:"center"}}><ProductImg item={c} idx={i} size="small"/><div style={{flex:1}}><b>{c.name}</b><div style={{fontSize:13}}>Size {c.size}</div></div><b>{c.price}</b><button onClick={()=>setCart(cart.filter((_,idx)=>idx!==i))} style={{background:"#fee",border:"none",padding:"6px 10px",borderRadius:999}}>Remove</button></div>))}<h3 style={{textAlign:"right"}}>Total: ${cartTotal.toFixed(2)}</h3><button onClick={()=>{if(!cart.length) return alert("Your cart is empty."); alert("Thank you. Your order is confirmed."); setCart([]); setShowCart(false);}} style={{width:"100%",background:"black",border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold"}}>Checkout — ${cartTotal.toFixed(2)}</button>{built.whatsapp&&<a href={built.whatsapp.waLink} target="_blank" rel="noreferrer" style={{display:"block",background:"#25D366",color:"white",textAlign:"center",padding:"12px",borderRadius:999,fontWeight:"bold",textDecoration:"none",marginTop:10}}>Checkout on WhatsApp</a>}</div></div>)}
+
+        {/* OWNER LOGIN POPUP - Customer sees this only if they press Owner Login, but they don't know PIN */}
+        {showOwnerLogin&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"white",width:"100%",maxWidth:400,borderRadius:16,padding:20}}>
+              <h3 style={{margin:"0 0 6px"}}>Owner Login 🔒</h3><p style={{fontSize:13,opacity:0.7,margin:"0 0 12px"}}>Only the shop owner with PIN can edit. Customers cannot edit.</p>
+              <input value={loginPinInput} onChange={(e)=>setLoginPinInput(e.target.value)} placeholder="Enter your 4-digit Owner PIN" type="password" inputMode="numeric" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,fontSize:16}}/>
+              <button onClick={tryOwnerLogin} style={{width:"100%",background:"black",color:"white",border:"none",padding:13,borderRadius:999,fontWeight:"bold",marginTop:12}}>Login as Owner</button>
+              <button onClick={()=>setShowOwnerLogin(false)} style={{width:"100%",background:"#eee",border:"none",padding:12,borderRadius:999,marginTop:8}}>Cancel — I'm a Customer</button>
+            </div>
+          </div>
+        )}
+        {/* OWNER EDIT PRODUCT POPUP */}
+        {editingProduct&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"white",width:"100%",borderRadius:"20px 20px 0 0",padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}><h3>Edit Product — Owner Only</h3><button onClick={()=>setEditingProduct(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>
+              <label style={{fontWeight:"bold",fontSize:13}}>Product Name</label><input value={editProdName} onChange={(e)=>setEditProdName(e.target.value)} style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px"}}/>
+              <label style={{fontWeight:"bold",fontSize:13}}>Price</label><input value={editProdPrice} onChange={(e)=>setEditProdPrice(e.target.value)} style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px"}}/>
+              <label style={{fontWeight:"bold",fontSize:13}}>Description</label><textarea value={editProdDesc} onChange={(e)=>setEditProdDesc(e.target.value)} style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",minHeight:70}}/>
+              <button onClick={saveEditProduct} style={{width:"100%",background:"#22c55e",color:"white",border:"none",padding:14,borderRadius:999,fontWeight:"bold"}}>Save Changes ✅</button>
+            </div>
+          </div>
+        )}
+        {/* OWNER EDIT STORE INFO */}
+        {showEditStore&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"white",width:"100%",borderRadius:"20px 20px 0 0",padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}><h3>Edit Store Info</h3><button onClick={()=>setShowEditStore(false)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>
+              <label style={{fontWeight:"bold",fontSize:13}}>Store Name</label><input value={editStoreTitle} onChange={(e)=>setEditStoreTitle(e.target.value)} style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px"}}/>
+              <label style={{fontWeight:"bold",fontSize:13}}>Store Description</label><textarea value={editStoreDesc} onChange={(e)=>setEditStoreDesc(e.target.value)} style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",minHeight:70}}/>
+              <button onClick={()=>{updateBuiltAndSave({...built, title: editStoreTitle.trim()||built.title, desc: editStoreDesc.trim()||built.desc}); setShowEditStore(false);}} style={{width:"100%",background:"black",color:"white",border:"none",padding:14,borderRadius:999,fontWeight:"bold"}}>Save Store Info ✅</button>
+            </div>
+          </div>
+        )}
+        {/* OWNER ADD NEW PRODUCT - Same gallery flow, inside shop */}
+        {showAddProduct&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+            <div style={{background:"white",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}><h3>Add New Product — Owner Only</h3><button onClick={()=>setShowAddProduct(false)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>
+              <p style={{fontSize:12,opacity:0.7}}>Same as before: Select → Tap each → Write Name/Price/Desc → Done → Overall Done → Add To Shop. Max 20MB per file.</p>
+              <label style={{display:"block",background:"black",color:"white",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Select Images From Gallery<input type="file" accept="image/*" multiple onChange={handleSelectImages} style={{display:"none"}}/></label>
+              {pendingImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12}}>{pendingImages.filter(p=>p.done).length} of {pendingImages.length} detailed ✅</p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>{pendingImages.map((im)=>(<div key={im.id} onClick={()=>openImageEditor(im)} style={{position:"relative",cursor:"pointer",border: im.done ? "2px solid #22c55e" : "2px solid #facc15", borderRadius:12, overflow:"hidden"}}><img src={im.url} alt="" style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/><div style={{background: im.done ? "#22c55e" : "#facc15", color: im.done ? "white" : "black", fontSize:10, fontWeight:"bold", textAlign:"center", padding:"3px"}}>{im.done ? "Done ✅" : "Tap to add details"}</div><button onClick={(e)=>{e.stopPropagation(); setPendingImages(pendingImages.filter(x=>x.id!==im.id));}} style={{position:"absolute",top:4,right:4,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button></div>))}</div><button onClick={uploadAllImages} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:13,borderRadius:12,fontWeight:"bold",marginTop:10}}>Overall Done — Upload All</button></div>)}
+              {uploadedImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12}}>{uploadedImages.length} ready to add ✅</p>{uploadedImages.map((u,i)=>(<div key={i} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:"1px solid #eee"}}><img src={u.url} alt="" style={{width:50,height:50,borderRadius:8,objectFit:"cover"}}/><div style={{flex:1}}><b>{u.productName}</b> — {u.price}<div style={{fontSize:11,opacity:0.7}}>{u.desc?.slice(0,50)}</div></div></div>))}<button onClick={addUploadedToShop} style={{width:"100%",background:"black",color:"white",border:"none",padding:14,borderRadius:999,fontWeight:"bold",marginTop:10}}>Add These To My Shop ✅</button></div>)}
+              <label style={{display:"flex",gap:8,marginTop:12,fontSize:13,cursor:"pointer"}}><input type="checkbox" checked={confirmedSafe} onChange={(e)=>setConfirmedSafe(e.target.checked)}/> I confirm this is my own product and follows safety rules.</label>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -316,62 +461,47 @@ export default function Build(){
     <div style={{minHeight:"100dvh",background:"#030014",color:"white",padding:20,fontFamily:"sans-serif"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><b style={{fontSize:22}}>EVA</b><button onClick={()=>window.location.href='/'} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",padding:"8px 14px",borderRadius:999}}>Back</button></div>
       <h1 style={{color:"#c084fc",fontSize:28,lineHeight:1.2,marginTop:30}}>What should EVA create<br/>for you today?</h1>
+      {/* MY SHOPS - Saved shops */}
+      {myShops.length>0&&(
+        <div style={{marginTop:16,background:"rgba(255,255,255,0.08)",padding:14,borderRadius:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><b>My Saved Shops ({myShops.length})</b><button onClick={()=>setShowMyShops(!showMyShops)} style={{background:"white",color:"black",border:"none",padding:"6px 12px",borderRadius:999,fontSize:12,fontWeight:"bold"}}>{showMyShops?"Hide":"Show"}</button></div>
+          {showMyShops&&myShops.map((s)=>(
+            <div key={s.id} onClick={()=>openShopFromMyShops(s)} style={{display:"flex",gap:10,alignItems:"center",background:"white",color:"black",borderRadius:12,padding:10,marginTop:10,cursor:"pointer"}}>
+              <img src={s.heroImage} alt="" style={{width:50,height:50,borderRadius:8,objectFit:"cover"}}/>
+              <div style={{flex:1}}><b>{s.title}</b><div style={{fontSize:12,opacity:0.6}}>{s.items?.length} products • {s.createdAt} • Tap to open as Customer</div></div>
+              <span style={{fontSize:12,fontWeight:"bold"}}>Open →</span>
+            </div>
+          ))}
+          <p style={{fontSize:11,opacity:0.7,margin:"8px 0 0"}}>Customer view opens by default. Press Owner Login + your PIN to edit. Customers never see Edit buttons.</p>
+        </div>
+      )}
       <p style={{marginTop:20,fontWeight:"bold"}}>1. Describe what you want</p>
-      <textarea value={prompt} onChange={(e)=>setPrompt(e.target.value)} placeholder="Example: Create store called Lagos Phone Hub. WhatsApp 090... for contact. Or just upload your images with details below." style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:16,color:"white",padding:14,fontSize:15,minHeight:90}} />
-      <p style={{fontSize:12,opacity:0.7,marginTop:4}}>Tip: You can now skip long description. Just upload images, detail each one in gallery, EVA will use your details.</p>
+      <textarea value={prompt} onChange={(e)=>setPrompt(e.target.value)} placeholder="Example: Create store called Lagos Phone Hub. WhatsApp 090... for contact." style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:16,color:"white",padding:14,fontSize:15,minHeight:90}} />
+      <p style={{fontSize:12,opacity:0.7,marginTop:4}}>Tip: You can skip long description. Upload images, detail each one, EVA will use your details.</p>
+      <p style={{marginTop:14,fontWeight:"bold"}}>🔒 Owner PIN (for your shop)</p>
+      <input value={ownerPin} onChange={(e)=>setOwnerPin(e.target.value)} placeholder="Choose 4-digit PIN, e.g. 1234 — Only you can edit with this PIN" type="password" inputMode="numeric" style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:14,color:"white",padding:13}}/>
+      <p style={{fontSize:11,opacity:0.7,marginTop:4}}>Customers will NOT see this. If you leave blank, EVA will ask you when you press Create Website.</p>
       {mode==="Website"&&(
         <div style={{marginTop:16,background:"rgba(255,255,255,0.08)",padding:14,borderRadius:16}}>
-          {/* V18 IMAGE GALLERY */}
           <p style={{fontWeight:"bold",margin:"0 0 8px"}}>📸 Your Product Images — Tap each to add details</p>
           <label style={{display:"block",background:"white",color:"black",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Select Images From Gallery<input type="file" accept="image/*" multiple onChange={handleSelectImages} style={{display:"none"}}/></label>
           <p style={{fontSize:11,opacity:0.7,margin:"6px 0 0"}}>Max 20MB per image. Tap an image to write its Name, Price, Description.</p>
-          {pendingImages.length>0&&(<div style={{marginTop:12}}>
-            <p style={{fontSize:12,opacity:0.8}}>{pendingImages.filter(p=>p.done).length} of {pendingImages.length} detailed ✅</p>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              {pendingImages.map((im)=>(
-                <div key={im.id} onClick={()=>openImageEditor(im)} style={{position:"relative",cursor:"pointer",border: im.done ? "2px solid #22c55e" : "2px solid #facc15", borderRadius:12, overflow:"hidden"}}>
-                  <img src={im.url} alt="" style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/>
-                  <div style={{background: im.done ? "#22c55e" : "#facc15", color: im.done ? "white" : "black", fontSize:10, fontWeight:"bold", textAlign:"center", padding:"3px"}}>{im.done ? "Done ✅" : "Tap to add details"}</div>
-                  {im.done&&<div style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,0.6)",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999}}>{im.productName} — {im.price}</div>}
-                  <button onClick={(e)=>{e.stopPropagation(); setPendingImages(pendingImages.filter(x=>x.id!==im.id));}} style={{position:"absolute",top:4,right:4,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button>
-                </div>
-              ))}
-            </div>
-            <button onClick={uploadAllImages} disabled={uploadingAll} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:13,borderRadius:12,fontWeight:"bold",marginTop:10}}>{uploadingAll?"Uploading... Please wait.":"Overall Done — Upload All Images"}</button>
-            {uploadProgress&&<p style={{fontSize:12,color:"#facc15",fontWeight:"bold",marginTop:6}}>{uploadProgress}</p>}
-          </div>)}
+          {pendingImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12,opacity:0.8}}>{pendingImages.filter(p=>p.done).length} of {pendingImages.length} detailed ✅</p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>{pendingImages.map((im)=>(<div key={im.id} onClick={()=>openImageEditor(im)} style={{position:"relative",cursor:"pointer",border: im.done ? "2px solid #22c55e" : "2px solid #facc15", borderRadius:12, overflow:"hidden"}}><img src={im.url} alt="" style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/><div style={{background: im.done ? "#22c55e" : "#facc15", color: im.done ? "white" : "black", fontSize:10, fontWeight:"bold", textAlign:"center", padding:"3px"}}>{im.done ? "Done ✅" : "Tap to add details"}</div>{im.done&&<div style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,0.6)",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999}}>{im.productName} — {im.price}</div>}<button onClick={(e)=>{e.stopPropagation(); setPendingImages(pendingImages.filter(x=>x.id!==im.id));}} style={{position:"absolute",top:4,right:4,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button></div>))}</div><button onClick={uploadAllImages} disabled={uploadingAll} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:13,borderRadius:12,fontWeight:"bold",marginTop:10}}>{uploadingAll?"Uploading... Please wait.":"Overall Done — Upload All Images"}</button>{uploadProgress&&<p style={{fontSize:12,color:"#facc15",fontWeight:"bold",marginTop:6}}>{uploadProgress}</p>}</div>)}
           {uploadedImages.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12,margin:"0 0 6px",opacity:0.8}}>{uploadedImages.length} uploaded ✅</p><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{uploadedImages.map((im,i)=>(<div key={i} style={{position:"relative",background:"rgba(255,255,255,0.1)",padding:6,borderRadius:10,maxWidth:120}}><img src={im.url} alt="" style={{width:"100%",height:56,borderRadius:8,objectFit:"cover"}}/><div style={{fontSize:11,fontWeight:"bold",marginTop:4}}>{im.productName} — {im.price}</div><div style={{fontSize:10,opacity:0.8}}>{im.desc?.slice(0,40)}</div><button onClick={()=>setUploadedImages(uploadedImages.filter((_,idx)=>idx!==i))} style={{position:"absolute",top:-6,right:-6,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button></div>))}</div></div>)}
-
-          {/* V18 VIDEO GALLERY */}
           <p style={{fontWeight:"bold",margin:"18px 0 8px"}}>🎥 Your Product Videos — Same way, tap to add details</p>
           <label style={{display:"block",background:"#c084fc",color:"black",textAlign:"center",padding:12,borderRadius:12,fontWeight:"bold",cursor:"pointer"}}>Select Videos From Gallery<input type="file" accept="video/*" multiple onChange={handleSelectVideos} style={{display:"none"}}/></label>
           <p style={{fontSize:11,opacity:0.7,margin:"6px 0 0"}}>Max 20MB per video. Tap a video to write its Title, Price, Description.</p>
-          {pendingVideos.length>0&&(<div style={{marginTop:12}}>
-            <p style={{fontSize:12,opacity:0.8}}>{pendingVideos.filter(p=>p.done).length} of {pendingVideos.length} detailed ✅</p>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {pendingVideos.map((vd)=>(
-                <div key={vd.id} onClick={()=>openVideoEditor(vd)} style={{position:"relative",cursor:"pointer",border: vd.done ? "2px solid #22c55e" : "2px solid #facc15", borderRadius:12, overflow:"hidden"}}>
-                  <video src={vd.url} style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/>
-                  <div style={{background: vd.done ? "#22c55e" : "#facc15", color: vd.done ? "white" : "black", fontSize:10, fontWeight:"bold", textAlign:"center", padding:"3px"}}>{vd.done ? "Done ✅" : "Tap to add details"}</div>
-                  {vd.done&&<div style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,0.6)",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999}}>{vd.productName} — {vd.price}</div>}
-                  <button onClick={(e)=>{e.stopPropagation(); setPendingVideos(pendingVideos.filter(x=>x.id!==vd.id));}} style={{position:"absolute",top:4,right:4,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button>
-                </div>
-              ))}
-            </div>
-            <button onClick={uploadAllVideos} disabled={uploadingAll} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:13,borderRadius:12,fontWeight:"bold",marginTop:10}}>{uploadingAll?"Uploading... Please wait.":"Overall Done — Upload All Videos"}</button>
-          </div>)}
+          {pendingVideos.length>0&&(<div style={{marginTop:12}}><p style={{fontSize:12,opacity:0.8}}>{pendingVideos.filter(p=>p.done).length} of {pendingVideos.length} detailed ✅</p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{pendingVideos.map((vd)=>(<div key={vd.id} onClick={()=>openVideoEditor(vd)} style={{position:"relative",cursor:"pointer",border: vd.done ? "2px solid #22c55e" : "2px solid #facc15", borderRadius:12, overflow:"hidden"}}><video src={vd.url} style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/><div style={{background: vd.done ? "#22c55e" : "#facc15", color: vd.done ? "white" : "black", fontSize:10, fontWeight:"bold", textAlign:"center", padding:"3px"}}>{vd.done ? "Done ✅" : "Tap to add details"}</div>{vd.done&&<div style={{position:"absolute",top:4,left:4,background:"rgba(0,0,0,0.6)",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999}}>{vd.productName} — {vd.price}</div>}<button onClick={(e)=>{e.stopPropagation(); setPendingVideos(pendingVideos.filter(x=>x.id!==vd.id));}} style={{position:"absolute",top:4,right:4,background:"red",color:"white",border:"none",borderRadius:999,width:20,height:20,fontSize:11}}>X</button></div>))}</div><button onClick={uploadAllVideos} disabled={uploadingAll} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:13,borderRadius:12,fontWeight:"bold",marginTop:10}}>{uploadingAll?"Uploading... Please wait.":"Overall Done — Upload All Videos"}</button></div>)}
           {uploadedVideo&&<div style={{marginTop:12}}><video src={uploadedVideo} controls style={{width:"100%",height:140,objectFit:"cover",borderRadius:12}}/><p style={{fontSize:12,marginTop:4}}>{uploadedVideoMeta?.productName} — {uploadedVideoMeta?.price} ✅</p></div>}
-
           <div style={{marginTop:12}}>
             <button onClick={()=>setShowSafety(!showSafety)} style={{width:"100%",background:"transparent",border:"none",color:"white",textAlign:"left",padding:"6px 0",fontSize:13,display:"flex",justifyContent:"space-between",cursor:"pointer"}}><span>Safety Rules for Uploads</span><span>{showSafety?"▲":"▼"}</span></button>
-            {showSafety&&(<div style={{background:"rgba(255,255,255,0.08)",padding:10,borderRadius:10,fontSize:12,lineHeight:1.5}}>Do not upload nudity, sexual content, images of children, or bank documents, ID cards, passwords, or personal records. Only upload images and videos of your own products. Max 20MB per file. EVA will scan the content inside your image and video, not only the file name. For kids products, do not use children as models for underwear, swimwear, or bikini. Use flat lay photos or a mannequin instead.</div>)}
+            {showSafety&&(<div style={{background:"rgba(255,255,255,0.08)",padding:10,borderRadius:10,fontSize:12,lineHeight:1.5}}>Do not upload nudity, sexual content, images of children, or bank documents, ID cards, passwords, or personal records. Only upload images and videos of your own products. Max 20MB per file. EVA will scan the content inside your image and video, not only the file name.</div>)}
             <label style={{display:"flex",gap:8,marginTop:8,fontSize:13,lineHeight:1.4,cursor:"pointer"}}><input type="checkbox" checked={confirmedSafe} onChange={(e)=>setConfirmedSafe(e.target.checked)} style={{marginTop:2}}/> I confirm this is my own product image/video and it follows the safety rules.</label>
             {checking&&<p style={{color:"#facc15",fontSize:13,fontWeight:"bold"}}>{checkStatus}</p>}
             {!checking&&checkStatus&&<p style={{fontSize:12,color:"#22c55e"}}>{checkStatus}</p>}
           </div>
         </div>
       )}
-      {mode!=="Website"&&<p style={{fontSize:13,opacity:0.7,marginTop:12}}>{mode==="Image"?"Image mode: AI will generate a new image from your description.":"Video mode: AI will generate a new video from your description. This requires a paid video API."}</p>}
       <p style={{marginTop:18,fontWeight:"bold"}}>2. Inspired by? (Optional)</p>
       <input value={inspiredBy} onChange={(e)=>setInspiredBy(e.target.value)} placeholder="Enter a website name or link" style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:14,color:"white",padding:13}}/>
       <p style={{marginTop:18,fontWeight:"bold"}}>3. What would you like to change? (Optional)</p>
@@ -386,44 +516,33 @@ export default function Build(){
       {built&&mode==="Website"&&(
         <div style={{marginTop:16,background:"white",color:"black",borderRadius:16,overflow:"hidden"}}>
           {built.video?<video src={built.video} controls style={{width:"100%",height:180,objectFit:"cover",display:"block"}}/>:<img src={built.heroImage} alt="" onError={(e)=>{e.target.style.display="none";}} style={{width:"100%",height:180,objectFit:"cover",display:"block"}}/>}
-          <div style={{background:built.color,color:"white",padding:18}}><b style={{fontSize:22}}>{built.title}</b><p style={{margin:"6px 0 0"}}>{built.desc}</p>{built.whatsapp&&<p style={{margin:"8px 0 0",fontSize:13,background:"rgba(0,0,0,0.2)",padding:"8px",borderRadius:8}}>WhatsApp: {maskNumber(built.whatsapp.display)} — Added for contact ✅</p>}</div>
+          <div style={{background:built.color,color:"white",padding:18}}><b style={{fontSize:22}}>{built.title}</b><p style={{margin:"6px 0 0"}}>{built.desc}</p>{built.whatsapp&&<p style={{margin:"8px 0 0",fontSize:13,background:"rgba(0,0,0,0.2)",padding:"8px",borderRadius:8}}>WhatsApp: {maskNumber(built.whatsapp.display)} — Added for contact ✅</p>}<p style={{fontSize:12,marginTop:8}}>Owner PIN set ✅ — Only you can edit. Customers see only shop.</p></div>
           <div style={{padding:16}}>
-            {built.items?.map((it,i)=>(<div key={i} onClick={()=>{setSelectedItem(it); setSelectedSize("M");}} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #eee",alignItems:"center",cursor:"pointer"}}><ProductImg item={it} idx={i} size="small"/><div style={{flex:1}}><b>{it.name}</b><div style={{fontSize:13,opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
-            <button onClick={()=>setLiveMode(true)} style={{width:"100%",background:"black",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",marginTop:14}}>View Live Shop</button>
-            <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:10}}>V18.0 — Gallery Details: Tap each image/video, write details, Done, Upload All</p>
+            {built.items?.map((it,i)=>(<div key={it.id||i} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #eee",alignItems:"center"}}><ProductImg item={it} idx={i} size="small"/><div style={{flex:1}}><b>{it.name}</b> {it.soldOut&&<span style={{background:"#ef4444",color:"white",fontSize:10,padding:"2px 6px",borderRadius:999,marginLeft:4}}>SOLD OUT</span>}<div style={{fontSize:13,opacity:0.6}}>Tap to view details</div></div><b style={{color:built.color}}>{it.price}</b></div>))}
+            <button onClick={()=>setLiveMode(true)} style={{width:"100%",background:"black",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",marginTop:14}}>View Live Shop — Test Customer vs Owner</button>
+            <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:10}}>V19.0 — Owner Dashboard: PIN Login, Sold Out, Edit, Add Product, Save</p>
           </div>
         </div>
       )}
       {selectedItem&&!liveMode&&built&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div style={{background:"white",color:"black",width:"100%",maxHeight:"92vh",overflow:"auto",borderRadius:"20px 20px 0 0",padding:16}}><button onClick={()=>setSelectedItem(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Back to Shop</button><ProductImg item={selectedItem} idx={999} size="large"/><h2>{selectedItem.name}</h2><b style={{color:built.color,fontSize:22}}>{selectedItem.price}</b><p>{selectedItem.desc}</p><button onClick={()=>{setCart([...cart,{...selectedItem,size:selectedSize}]); setSelectedItem(null);}} style={{width:"100%",background:built.color,border:"none",color:"white",padding:15,borderRadius:999,fontWeight:"bold",marginTop:12}}>Add to Cart — {selectedItem.price}</button></div></div>)}
-
-      {/* V18 - Small box for Image details */}
       {editingImageId&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"white",color:"black",width:"100%",borderRadius:"20px 20px 0 0",padding:16,maxHeight:"92vh",overflow:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{margin:0}}>Add details for this image</h3><button onClick={()=>setEditingImageId(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>
-            <p style={{fontSize:12,opacity:0.6}}>Write what this product is. EVA will use this exact name, price, description.</p>
-            <label style={{fontWeight:"bold",fontSize:13}}>Product Name *</label>
-            <input value={editName} onChange={(e)=>setEditName(e.target.value)} placeholder="e.g. iPhone 13, Red Dress, White Sneakers" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
-            <label style={{fontWeight:"bold",fontSize:13}}>Price *</label>
-            <input value={editPrice} onChange={(e)=>setEditPrice(e.target.value)} placeholder="e.g. $400 or 400" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
-            <label style={{fontWeight:"bold",fontSize:13}}>Description / Anything you want</label>
-            <textarea value={editDesc} onChange={(e)=>setEditDesc(e.target.value)} placeholder="e.g. UK used, battery 92%, clean, no scratch. Size M, L, XL available." style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15,minHeight:80}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Product Name *</label><input value={editName} onChange={(e)=>setEditName(e.target.value)} placeholder="e.g. iPhone 13" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Price *</label><input value={editPrice} onChange={(e)=>setEditPrice(e.target.value)} placeholder="e.g. $400" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Description</label><textarea value={editDesc} onChange={(e)=>setEditDesc(e.target.value)} placeholder="e.g. UK used, battery 92%" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15,minHeight:80}}/>
             <button onClick={saveImageDetail} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",fontSize:16}}>Done ✅ — Mark this image</button>
           </div>
         </div>
       )}
-      {/* V18 - Small box for Video details */}
       {editingVideoId&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
           <div style={{background:"white",color:"black",width:"100%",borderRadius:"20px 20px 0 0",padding:16,maxHeight:"92vh",overflow:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{margin:0}}>Add details for this video</h3><button onClick={()=>setEditingVideoId(null)} style={{background:"#eee",border:"none",padding:"8px 14px",borderRadius:999}}>Close</button></div>
-            <p style={{fontSize:12,opacity:0.6}}>Write what this video is about. Same rules: max 20MB.</p>
-            <label style={{fontWeight:"bold",fontSize:13}}>Video Title *</label>
-            <input value={editName} onChange={(e)=>setEditName(e.target.value)} placeholder="e.g. iPhone 13 Promo Video" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
-            <label style={{fontWeight:"bold",fontSize:13}}>Price *</label>
-            <input value={editPrice} onChange={(e)=>setEditPrice(e.target.value)} placeholder="e.g. $400 or 400" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
-            <label style={{fontWeight:"bold",fontSize:13}}>Description</label>
-            <textarea value={editDesc} onChange={(e)=>setEditDesc(e.target.value)} placeholder="e.g. This video shows the phone working, camera test, etc." style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15,minHeight:80}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Video Title *</label><input value={editName} onChange={(e)=>setEditName(e.target.value)} placeholder="e.g. iPhone 13 Promo" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Price *</label><input value={editPrice} onChange={(e)=>setEditPrice(e.target.value)} placeholder="e.g. $400" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15}}/>
+            <label style={{fontWeight:"bold",fontSize:13}}>Description</label><textarea value={editDesc} onChange={(e)=>setEditDesc(e.target.value)} placeholder="e.g. Shows phone working" style={{width:"100%",padding:12,border:"1px solid #ddd",borderRadius:12,margin:"6px 0 12px",fontSize:15,minHeight:80}}/>
             <button onClick={saveVideoDetail} style={{width:"100%",background:"#22c55e",border:"none",color:"white",padding:14,borderRadius:999,fontWeight:"bold",fontSize:16}}>Done ✅ — Mark this video</button>
           </div>
         </div>
@@ -431,4 +550,4 @@ export default function Build(){
       <p style={{textAlign:"center",fontSize:12,opacity:0.6,marginTop:16}}>EVA creates original designs. Copying brands, logos, or illegal content is not allowed.</p>
     </div>
   );
-}
+                                                                                                                                                                }
