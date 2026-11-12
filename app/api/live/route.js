@@ -18,7 +18,6 @@ export async function GET() {
       const j = await res.json();
       (j.items||[]).forEach(it=>{
         if(!isToday(it.pubDate)) return;
-        // EDIT: use full content, not just 220 chars, so inside reader is detailed
         const raw = (it.content || it.description || "").replace(/<[^>]*>/g,"").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").trim();
         news.push({ source:r.src, title:it.title, link:it.link, time:it.pubDate, img:it.thumbnail||it.enclosure?.link||"", desc: raw.slice(0,1200), full: raw.slice(0,2500) });
       });
@@ -70,7 +69,34 @@ export async function GET() {
     const j = await res.json(); crypto = { price: j.bitcoin?.usd, change: j.bitcoin?.usd_24h_change };
   } catch(e){}
 
-  // VIRAL - EDITED: check 5 places for video, so video go play
+  // TRADING - Crypto + Forex + Gold - NEW
+  let trading = { cryptoList:[], forex:[], gold:0 };
+  try {
+    const r = await fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum,solana,dogecoin,tether,binancecoin&order=market_cap_desc&per_page=6&page=1&sparkline=false&price_change_percentage=24h", { next:{ revalidate: 20 } });
+    const j = await r.json();
+    trading.cryptoList = (Array.isArray(j) ? j : []).map(c=> ({ name:c.symbol.toUpperCase(), full:c.name, price:c.current_price, change:c.price_change_percentage_24h, signal: c.price_change_percentage_24h > 2 ? "🔥 STRONG BUY" : c.price_change_percentage_24h > 0 ? "▲ BUY" : c.price_change_percentage_24h < -2 ? "🔴 STRONG SELL" : "▼ SELL" }));
+    if(trading.cryptoList.length>0){
+      const btc = trading.cryptoList.find(c=> c.name==="BTC");
+      if(btc) crypto = { price: btc.price, change: btc.change };
+    }
+  } catch(e){}
+  try {
+    const r = await fetch("https://open.er-api.com/v6/latest/USD", { next:{ revalidate: 60 } });
+    const j = await r.json();
+    const rates = j.rates || {};
+    trading.forex = [
+      { pair:"USD / NGN", price: rates.NGN || 0, signal:"🇳🇬 Dollar to Naira" },
+      { pair:"EUR / USD", price: rates.EUR ? 1/rates.EUR : 0, signal:"Forex" },
+      { pair:"GBP / USD", price: rates.GBP ? 1/rates.GBP : 0, signal:"Forex" },
+      { pair:"USD / JPY", price: rates.JPY || 0, signal:"Forex" },
+    ];
+  } catch(e){}
+  try {
+    const r = await fetch("https://data-asg.goldprice.org/db/XAUUSD.json", { next:{ revalidate: 60 } });
+    const j = await r.json(); trading.gold = j.items?.[0]?.curr || 0;
+  } catch(e){}
+
+  // VIRAL - check 5 places for video
   let viral = [];
   try {
     const res = await fetch("https://www.reddit.com/r/funny+Unexpected+MadeMeSmile+NextFuckingLevel+PublicFreakout+videos+TikTokCringe+ContagiousLaughter/top.json?limit=30&t=day&raw_json=1", { headers:{ "User-Agent":"EVA/1.0" }, next:{ revalidate: 120 } });
@@ -78,28 +104,19 @@ export async function GET() {
     viral = (j.data?.children||[]).map(c=>{
       const d = c.data;
       let video = "";
-      // 1. secure_media
       if(d.secure_media?.reddit_video?.fallback_url) video = d.secure_media.reddit_video.fallback_url;
-      // 2. media
       else if(d.media?.reddit_video?.fallback_url) video = d.media.reddit_video.fallback_url;
-      // 3. preview video
       else if(d.preview?.reddit_video?.fallback_url) video = d.preview.reddit_video.fallback_url;
-      // 4. crosspost - video dey inside crosspost sometimes
       else if(d.crosspost_parent_list?.[0]?.secure_media?.reddit_video?.fallback_url) video = d.crosspost_parent_list[0].secure_media.reddit_video.fallback_url;
       else if(d.crosspost_parent_list?.[0]?.media?.reddit_video?.fallback_url) video = d.crosspost_parent_list[0].media.reddit_video.fallback_url;
-      // 5. direct v.redd.it link
       else if(d.url && d.url.includes("v.redd.it")) video = d.url + "/DASH_720.mp4";
-
       let thumb = d.thumbnail && d.thumbnail.startsWith("http") ? d.thumbnail : "";
       if(d.preview?.images?.[0]?.source?.url) thumb = d.preview.images[0].source.url.replace(/&amp;/g,"&");
-      // if crosspost thumb
       if(!thumb && d.crosspost_parent_list?.[0]?.preview?.images?.[0]?.source?.url) thumb = d.crosspost_parent_list[0].preview.images[0].source.url.replace(/&amp;/g,"&");
-
       return { title:d.title, link:"https://reddit.com"+d.permalink, score:d.score, video, thumb, isVideo: !!video };
     });
-    // EDIT: put videos first, so you see video straight, not only pictures
     viral = [...viral.filter(v=> v.isVideo), ...viral.filter(v=> !v.isVideo)].slice(0,18);
   } catch(e){}
 
-  return Response.json({ date: today, news, scores, crypto, viral });
-}
+  return Response.json({ date: today, news, scores, crypto, viral, trading });
+    }
