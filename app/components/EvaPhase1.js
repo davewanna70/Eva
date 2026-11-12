@@ -14,9 +14,8 @@ const POOL = [
   { kind:"naija", headline:"Naija Live Now" },
 ];
 
-// REAL CHART - draws only real points, no fake tick
 function RealChart({ points=[], up=true, h=70 }) {
-  if(!points.length) return <div style={{ height:h, background:"rgba(255,255,255,.04)", borderRadius:8 }} />;
+  if(!points.length) return <div style={{ height:h, background:"rgba(255,255,255,.04)", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:"#94a3b8" }}>Waiting for live trades...</div>;
   const min = Math.min(...points), max = Math.max(...points);
   const path = points.map((p,i)=> `${(i/(points.length-1))*100},${40 - ((p-min)/((max-min)||1))*40}`).join(" L ");
   const color = up ? "#22c55e" : "#ef4444";
@@ -30,152 +29,177 @@ function RealChart({ points=[], up=true, h=70 }) {
   );
 }
 
-// TRADING - 100% REAL BINANCE WEBSOCKET, NO Math.random, NO FAKE
 function CryptoChart({ big=false, realCrypto, trading }) {
   const list = trading?.cryptoList || [];
-  const [livePts, setLivePts] = useState({}); // { BTC: [...], ETH: [...] }
-  const [livePrice, setLivePrice] = useState({}); // { BTC: 71308, ... }
-  const [wsStatus, setWsStatus] = useState("connecting");
+  const [livePts, setLivePts] = useState({});
+  const [livePrice, setLivePrice] = useState({});
+  const [wsLive, setWsLive] = useState(false);
+  const [selected, setSelected] = useState("BTC");
+  const [showAllForex, setShowAllForex] = useState(false);
+  const [showGold, setShowGold] = useState(false);
   const [alertPrice, setAlertPrice] = useState("");
-  const [alertSet, setAlertSet] = useState(null);
+  const [alertCoin, setAlertCoin] = useState("BTC");
+  const [alertSet, setAlertSet] = useState(()=>{ try{ return JSON.parse(localStorage.getItem("eva_alert")||"null"); }catch(e){ return null; } });
   const [alertHit, setAlertHit] = useState(false);
-  const [calcUsd, setCalcUsd] = useState("100");
+  const [calcAmount, setCalcAmount] = useState("100");
+  const [calcFrom, setCalcFrom] = useState("USD");
+  const [calcTo, setCalcTo] = useState("BTC");
+  const [calcChange, setCalcChange] = useState(5);
 
-  // Seed with real CoinGecko sparkline (real 7-day history)
   useEffect(()=>{
-    if(!list.length) return;
-    const seed = {};
-    list.forEach(c=> { if(c.spark?.length) seed[c.name] = c.spark.slice(-40); });
-    setLivePts(prev=> ({ ...seed, ...prev }));
-  },[list.length]);
-
-  // REAL BINANCE WEBSOCKET - real trades only
-  useEffect(()=>{
-    let ws = null;
-    let retry = null;
-    const connect = () => {
+    let ws=null, retry=null;
+    const connect = ()=>{
       try{
         ws = new WebSocket("wss://stream.binance.com:9443/stream?streams=btcusdt@trade/ethusdt@trade/bnbusdt@trade/solusdt@trade/dogeusdt@trade");
-        ws.onopen = ()=> setWsStatus("live");
+        ws.onopen = ()=> setWsLive(true);
         ws.onmessage = (ev)=>{
           try{
-            const j = JSON.parse(ev.data);
-            const d = j.data || {};
-            const sym = (d.s || "").replace("USDT","");
-            const price = Number(d.p);
-            if(!sym || !price) return;
-            setLivePrice(prev=> ({ ...prev, [sym]: price }));
-            setLivePts(prev=> {
-              const old = prev[sym] || [];
-              return { ...prev, [sym]: [...old.slice(-59), price] };
-            });
+            const j = JSON.parse(ev.data); const d=j.data||{};
+            const sym=(d.s||"").replace("USDT",""); const price=Number(d.p);
+            if(!sym||!price) return;
+            setLivePrice(prev=> ({...prev,[sym]:price}));
+            setLivePts(prev=> ({...prev,[sym]:[...(prev[sym]||[]).slice(-59), price]}));
           }catch(e){}
         };
-        ws.onclose = ()=> { setWsStatus("reconnecting"); retry = setTimeout(connect, 3000); };
-        ws.onerror = ()=> { try{ ws.close(); }catch(e){} };
-      }catch(e){ retry = setTimeout(connect, 3000); }
+        ws.onclose = ()=>{ setWsLive(false); retry=setTimeout(connect,3000); };
+        ws.onerror = ()=>{ try{ws.close();}catch(e){} };
+      }catch(e){ retry=setTimeout(connect,3000); }
     };
     connect();
-    return ()=> { if(ws) try{ ws.close(); }catch(e){} if(retry) clearTimeout(retry); };
+    return ()=>{ if(ws) try{ws.close();}catch(e){} if(retry) clearTimeout(retry); };
   },[]);
 
-  const getCoin = (c) => {
-    const pts = livePts[c.name] || c.spark || [];
-    const price = livePrice[c.name] || c.price;
-    return { ...c, pts, price };
-  };
-
-  const btcRaw = list.find(c=> c.name==="BTC") || { price: realCrypto?.price || 71308, change: -3.59, spark: [] };
+  const getCoin = (c)=> ({...c, pts: livePts[c.name]||[], price: livePrice[c.name]||c.price});
+  const btcRaw = list.find(c=>c.name==="BTC") || {price:realCrypto?.price||0, change:0, spark:[]};
   const btc = getCoin(btcRaw);
-  const ngnRate = trading?.forex?.find(f=> f.pair==="USD / NGN")?.price || 1349;
+  const forex = trading?.forex||[];
+  const goldPrice = trading?.gold||0;
 
-  // ALERT - checks real Binance price
+  useEffect(()=>{ if(alertSet) try{ localStorage.setItem("eva_alert", JSON.stringify(alertSet)); }catch(e){} },[alertSet]);
   useEffect(()=>{
-    if(!alertSet || !btc.price) return;
-    if(Math.abs(btc.price - alertSet)/alertSet < 0.002){
+    if(!alertSet) return;
+    const cur = livePrice[alertSet.coin] || list.find(c=>c.name===alertSet.coin)?.price;
+    if(!cur) return;
+    if(Math.abs(cur - alertSet.price)/alertSet.price < 0.002){
       setAlertHit(true);
       try{ navigator.vibrate?.([200,100,200]); }catch(e){}
+      try{ if("Notification" in window && Notification.permission==="granted"){ new Notification(`${alertSet.coin} Price Alert`, { body: `${alertSet.coin} has reached $${Number(cur).toLocaleString()}` }); } }catch(e){}
+      try{ const ctx = new (window.AudioContext||window.webkitAudioContext)(); const o=ctx.createOscillator(); o.connect(ctx.destination); o.frequency.value=880; o.start(); o.stop(ctx.currentTime+0.3); }catch(e){}
     }
-  },[btc.price, alertSet]);
+  },[livePrice, alertSet, list]);
+
+  const requestNotif = async ()=>{ try{ if("Notification" in window && Notification.permission==="default") await Notification.requestPermission(); }catch(e){} };
+
+  const rates = {}; (trading?.forex||[]).forEach(f=>{ rates[f.pair]=f.price; });
+  const usdRates = { USD:1, NGN: rates["USD / NGN"]||1349, EUR: rates["EUR / USD"]?1/rates["EUR / USD"]:0.9, GBP: rates["GBP / USD"]?1/rates["GBP / USD"]:0.76, JPY: rates["USD / JPY"]||159, CAD:1.36, AUD:1.52, CHF:0.88, CNY:7.2, INR:83, AED:3.67, ZAR:18.5, KES:129, GHS:15.2 };
+  const assetPriceUSD = calcTo==="GOLD" ? goldPrice : (livePrice[calcTo] || list.find(c=>c.name===calcTo)?.price || 0);
+  const amount = Number(calcAmount)||0;
+  const amountUSD = calcFrom==="USD" ? amount : amount / (usdRates[calcFrom]||1);
+  const assetAmount = assetPriceUSD ? amountUSD / assetPriceUSD : 0;
+  const profitUSD = amountUSD * (calcChange/100);
+  const profitInFrom = calcFrom==="USD" ? profitUSD : profitUSD * (usdRates[calcFrom]||1);
+
+  const allForexList = [
+    { code:"USD", label:"US Dollar", rate:1 },
+    { code:"NGN", label:"Nigerian Naira", rate: usdRates.NGN },
+    { code:"EUR", label:"Euro", rate: usdRates.EUR },
+    { code:"GBP", label:"British Pound", rate: usdRates.GBP },
+    { code:"JPY", label:"Japanese Yen", rate: usdRates.JPY },
+    { code:"CAD", label:"Canadian Dollar", rate: usdRates.CAD },
+    { code:"AUD", label:"Australian Dollar", rate: usdRates.AUD },
+    { code:"CHF", label:"Swiss Franc", rate: usdRates.CHF },
+    { code:"CNY", label:"Chinese Yuan", rate: usdRates.CNY },
+    { code:"INR", label:"Indian Rupee", rate: usdRates.INR },
+    { code:"AED", label:"UAE Dirham", rate: usdRates.AED },
+    { code:"ZAR", label:"South African Rand", rate: usdRates.ZAR },
+    { code:"KES", label:"Kenyan Shilling", rate: usdRates.KES },
+    { code:"GHS", label:"Ghana Cedi", rate: usdRates.GHS },
+  ];
+  const visibleForex = showAllForex ? allForexList : allForexList.slice(0,4);
 
   if(!big){
-    const up = (btc.change||0) >= 0;
+    const up=(btc.change||0)>=0;
     return (
       <div style={{ width:"100%" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <span style={{ fontSize:17, fontWeight:900 }}>${Number(btc.price).toLocaleString(undefined,{maximumFractionDigits:2})}</span>
-          <span style={{ fontSize:11, fontWeight:800, color: up ? "#22c55e" : "#ef4444" }}>{up ? "▲" : "▼"} {Math.abs(Number(btc.change||0)).toFixed(2)}%</span>
+          <span style={{ fontSize:11, fontWeight:800, color: up?"#22c55e":"#ef4444" }}>{up?"▲":"▼"} {Math.abs(Number(btc.change||0)).toFixed(2)}%</span>
         </div>
         <div style={{ marginTop:6 }}><RealChart points={btc.pts} up={up} h={62} /></div>
-        <div style={{ fontSize:9, color: wsStatus==="live" ? "#22c55e" : "#facc15", marginTop:4 }}>● {wsStatus==="live" ? "BINANCE LIVE" : "CONNECTING TO BINANCE..."}</div>
-        {alertSet && <div style={{ fontSize:10, color:"#facc15", marginTop:2 }}>🔔 Alert: ${Number(alertSet).toLocaleString()}</div>}
-        {alertHit && <div style={{ fontSize:11, color:"#22c55e", fontWeight:800, marginTop:2 }}>🔔 BTC DON REACH YOUR PRICE!</div>}
+        <div style={{ fontSize:9, color: wsLive?"#22c55e":"#facc15", marginTop:4 }}>● {wsLive?"BINANCE LIVE":"CONNECTING TO BINANCE..."}</div>
+        {alertSet && <div style={{ fontSize:10, color:"#facc15", marginTop:2 }}>Alert: {alertSet.coin} at ${Number(alertSet.price).toLocaleString()}</div>}
       </div>
     );
   }
 
-  const usd = Number(calcUsd)||0;
-  const btcAmount = btc.price ? usd / btc.price : 0;
-  const ngnAmount = usd * ngnRate;
-
   return (
     <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
-      <div style={{ fontSize:10, color: wsStatus==="live" ? "#22c55e" : "#facc15", fontWeight:800 }}>● {wsStatus==="live" ? "BINANCE LIVE - REAL TRADES" : "CONNECTING TO BINANCE..."}</div>
-      {list.map((cRaw,i)=> {
-        const c = getCoin(cRaw);
-        const up = (c.change||0) >= 0;
-        const stable = c.name==="USDT";
+      <div style={{ fontSize:10, color: wsLive?"#22c55e":"#facc15", fontWeight:800 }}>● {wsLive?"BINANCE LIVE - REAL TRADES":"CONNECTING TO BINANCE..."}</div>
+      <div style={{ fontSize:11, color:"#94a3b8" }}>Tap any coin to select it. Calculator and Alert will follow that coin.</div>
+      {list.map((cRaw,i)=>{
+        const c=getCoin(cRaw); const up=(c.change||0)>=0; const stable=c.name==="USDT"; const isSel=selected===c.name;
         return (
-          <div key={i} style={{ background:"rgba(255,255,255,.04)", borderRadius:14, padding:"10px 12px", border:"1px solid rgba(255,255,255,.07)" }}>
+          <div key={i} onClick={()=>{ setSelected(c.name); setCalcTo(c.name); setAlertCoin(c.name); }} style={{ background: isSel?"rgba(34,211,238,.12)":"rgba(255,255,255,.04)", borderRadius:14, padding:"10px 12px", border: isSel?"1px solid rgba(34,211,238,.6)":"1px solid rgba(255,255,255,.07)", cursor:"pointer" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-              <span style={{ fontSize:13, fontWeight:800 }}>{c.name} <span style={{ fontSize:10, color:"#94a3b8", fontWeight:500 }}>{c.full}</span></span>
-              <span style={{ fontSize:13, fontWeight:800 }}>${Number(c.price).toLocaleString(undefined,{maximumFractionDigits: c.name==="DOGE" ? 4 : 2})}</span>
+              <span style={{ fontSize:13, fontWeight:800 }}>{c.name} <span style={{ fontSize:10, color:"#94a3b8", fontWeight:500 }}>{c.full}</span> {isSel && <span style={{ fontSize:10, color:"#22d3ee" }}>● SELECTED</span>}</span>
+              <span style={{ fontSize:13, fontWeight:800 }}>${Number(c.price).toLocaleString(undefined,{maximumFractionDigits:c.name==="DOGE"?4:2})}</span>
             </div>
             <div style={{ display:"flex", justifyContent:"space-between", marginTop:2 }}>
-              <span style={{ fontSize:11, color: up ? "#22c55e" : "#ef4444", fontWeight:800 }}>{up ? "▲" : "▼"} {Math.abs(Number(c.change||0)).toFixed(2)}%</span>
-              <span style={{ fontSize:10, color:"#22c55e" }}>● LIVE</span>
+              <span style={{ fontSize:11, color: up?"#22c55e":"#ef4444", fontWeight:800 }}>{up?"▲":"▼"} {Math.abs(Number(c.change||0)).toFixed(2)}%</span>
+              <span style={{ fontSize:10, color:"#22c55e" }}>● LIVE • TAP TO SELECT</span>
             </div>
             <div style={{ marginTop:6 }}>
-              {stable ? <div style={{ height:58, display:"flex", alignItems:"center", justifyContent:"center", borderBottom:"2px solid #22c55e", background:"rgba(34,197,94,.06)", borderRadius:8, fontSize:11, color:"#94a3b8" }}>— $1.00 STABLE —</div>
-              : <RealChart points={c.pts} up={up} h={58} />}
+              {stable ? <div style={{ height:58, display:"flex", alignItems:"center", justifyContent:"center", borderBottom:"2px solid #22c55e", background:"rgba(34,197,94,.06)", borderRadius:8, fontSize:11, color:"#94a3b8" }}>$1.00 Stable</div> : <RealChart points={c.pts} up={up} h={58} />}
             </div>
           </div>
         );
       })}
+      <div onClick={()=>{ setShowGold(!showGold); if(!showGold){ setCalcTo("GOLD"); } }} style={{ background: showGold?"rgba(250,204,21,.12)":"rgba(255,255,255,.04)", borderRadius:12, padding:"10px 12px", border:"1px solid rgba(250,204,21,.3)", cursor:"pointer" }}>
+        <div style={{ display:"flex", justifyContent:"space-between" }}>
+          <span style={{ fontSize:12, fontWeight:800 }}>GOLD {showGold?"▼":"▶"} Tap to expand</span>
+          <span style={{ fontSize:13, fontWeight:800 }}>${goldPrice ? Number(goldPrice).toLocaleString() : "Loading..."}</span>
+        </div>
+        {showGold && <div style={{ fontSize:11, color:"#94a3b8", marginTop:6, lineHeight:1.6 }}>Per ounce: ${goldPrice ? Number(goldPrice).toLocaleString() : "..."}<br/>Per gram: ${goldPrice ? (goldPrice/31.1).toFixed(2) : "..."}<br/>Gold is a metal, not a coin. People buy it to preserve value. Calculator above is now set to GOLD.</div>}
+      </div>
       <div style={{ background:"rgba(250,204,21,.08)", border:"1px solid rgba(250,204,21,.3)", borderRadius:14, padding:12 }}>
-        <div style={{ fontSize:12, fontWeight:800 }}>🔔 PRICE ALERT</div>
-        {alertHit ? <div style={{ fontSize:12, color:"#22c55e", fontWeight:800, marginTop:6 }}>🔔 BTC DON REACH ${Number(alertSet).toLocaleString()}!</div>
-        : alertSet ? <div style={{ fontSize:11, marginTop:6 }}>Waiting for BTC to reach <b>${Number(alertSet).toLocaleString()}</b> • Now ${Number(btc.price).toLocaleString()}</div>
-        : <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Set price, EVA go shout when real Binance price reach am</div>}
+        <div style={{ fontSize:12, fontWeight:800 }}>Price Alert</div>
+        <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Set a price. EVA will notify you when the live price reaches it. Works while EVA is open. For alerts when the app is fully closed, a server push is required later.</div>
+        {alertHit ? <div style={{ fontSize:12, color:"#22c55e", fontWeight:800, marginTop:6 }}>{alertSet?.coin} has reached ${Number(alertSet?.price||0).toLocaleString()}!</div> : alertSet ? <div style={{ fontSize:11, marginTop:6 }}>Waiting for {alertSet.coin} to reach <b>${Number(alertSet.price).toLocaleString()}</b></div> : null}
         <div style={{ display:"flex", gap:6, marginTop:8 }}>
-          <input value={alertPrice} onChange={e=> setAlertPrice(e.target.value.replace(/[^0-9]/g,""))} placeholder="e.g. 70000" inputMode="numeric" style={{ flex:1, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
-          <button onClick={()=>{ if(alertPrice){ setAlertSet(Number(alertPrice)); setAlertHit(false); setAlertPrice(""); } }} style={{ background:"#facc15", color:"#000", border:"none", borderRadius:999, padding:"8px 14px", fontWeight:800, fontSize:12, cursor:"pointer" }}>SET</button>
-          {alertSet && <button onClick={()=>{ setAlertSet(null); setAlertHit(false); }} style={{ background:"rgba(255,255,255,.1)", color:"#fff", border:"none", borderRadius:999, padding:"8px 10px", fontSize:12, cursor:"pointer" }}>✕</button>}
+          <select value={alertCoin} onChange={e=> setAlertCoin(e.target.value)} style={{ background:"rgba(0,0,0,.4)", color:"#fff", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px", fontSize:12 }}>{list.map(c=> <option key={c.name} value={c.name}>{c.name}</option>)}<option value="GOLD">GOLD</option></select>
+          <input value={alertPrice} onChange={e=> setAlertPrice(e.target.value.replace(/[^0-9.]/g,""))} placeholder="e.g. 70000" inputMode="decimal" style={{ flex:1, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
+          <button onClick={async ()=>{ await requestNotif(); if(alertPrice){ setAlertSet({ coin: alertCoin, price: Number(alertPrice) }); setAlertHit(false); setAlertPrice(""); } }} style={{ background:"#facc15", color:"#000", border:"none", borderRadius:999, padding:"8px 14px", fontWeight:800, fontSize:12, cursor:"pointer" }}>SET</button>
+          {alertSet && <button onClick={()=>{ setAlertSet(null); setAlertHit(false); try{ localStorage.removeItem("eva_alert"); }catch(e){} }} style={{ background:"rgba(255,255,255,.1)", color:"#fff", border:"none", borderRadius:999, padding:"8px 10px", fontSize:12, cursor:"pointer" }}>Clear</button>}
         </div>
       </div>
       <div style={{ background:"rgba(34,211,238,.08)", border:"1px solid rgba(34,211,238,.3)", borderRadius:14, padding:12 }}>
-        <div style={{ fontSize:12, fontWeight:800 }}>🧮 CALCULATOR</div>
-        <div style={{ display:"flex", gap:6, marginTop:8, alignItems:"center" }}>
-          <span style={{ fontSize:13 }}>$</span>
-          <input value={calcUsd} onChange={e=> setCalcUsd(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" style={{ flex:1, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
+        <div style={{ fontSize:12, fontWeight:800 }}>Calculator</div>
+        <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Convert any currency to any asset. Uses live price and live exchange rate.</div>
+        <div style={{ display:"flex", gap:6, marginTop:8 }}>
+          <select value={calcFrom} onChange={e=> setCalcFrom(e.target.value)} style={{ background:"rgba(0,0,0,.4)", color:"#fff", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px", fontSize:12 }}>{allForexList.map(f=> <option key={f.code} value={f.code}>{f.code} - {f.label}</option>)}</select>
+          <input value={calcAmount} onChange={e=> setCalcAmount(e.target.value.replace(/[^0-9.]/g,""))} inputMode="decimal" style={{ flex:1, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
+          <select value={calcTo} onChange={e=> setCalcTo(e.target.value)} style={{ background:"rgba(0,0,0,.4)", color:"#fff", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px", fontSize:12 }}>{list.map(c=> <option key={c.name} value={c.name}>{c.name}</option>)}<option value="GOLD">GOLD</option></select>
         </div>
+        <div style={{ display:"flex", gap:6, marginTop:8, alignItems:"center", fontSize:11 }}>Price change: {[-10,-5,5,10,20].map(v=> <button key={v} onClick={()=> setCalcChange(v)} style={{ background: calcChange===v?"#22d3ee":"rgba(255,255,255,.1)", color: calcChange===v?"#000":"#fff", border:"none", borderRadius:999, padding:"5px 10px", cursor:"pointer", fontWeight:800 }}>{v>0?`+${v}%`:`${v}%`}</button>)}</div>
         <div style={{ fontSize:12, marginTop:8, lineHeight:1.6 }}>
-          = <b>{btcAmount.toFixed(6)} BTC</b><br/>
-          = <b>₦{Math.round(ngnAmount).toLocaleString()}</b><br/>
-          <span style={{ color:"#94a3b8", fontSize:11 }}>If BTC +5% → Profit = ₦{Math.round(ngnAmount*0.05).toLocaleString()}</span>
+          = <b>{assetAmount.toFixed(6)} {calcTo}</b><br/>
+          = <b>${amountUSD.toLocaleString(undefined,{maximumFractionDigits:2})} USD</b><br/>
+          <span style={{ color:"#94a3b8", fontSize:11 }}>If {calcTo} moves {calcChange}% → Profit / Loss = {calcChange>=0?"+":""}{profitInFrom.toLocaleString(undefined,{maximumFractionDigits:2})} {calcFrom}</span>
         </div>
       </div>
-      <div style={{ display:"flex", gap:6 }}>
-        {(trading?.forex||[]).map((f,i)=> (
-          <div key={i} style={{ flex:1, background:"rgba(255,255,255,.04)", borderRadius:12, padding:"10px 8px", textAlign:"center" }}>
-            <div style={{ fontSize:9, color:"#94a3b8" }}>{f.pair}</div>
-            <div style={{ fontSize:12, fontWeight:800, marginTop:3 }}>{f.pair==="USD / NGN" ? "₦" : f.pair==="USD / JPY" ? "¥" : "$"}{Number(f.price).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ background:"rgba(255,255,255,.04)", borderRadius:12, padding:"10px 12px", display:"flex", justifyContent:"space-between" }}>
-        <span style={{ fontSize:11, color:"#94a3b8" }}>GOLD</span>
-        <span style={{ fontSize:13, fontWeight:800 }}>${trading?.gold ? Number(trading.gold).toLocaleString() : "..."}</span>
+      <div style={{ background:"rgba(255,255,255,.04)", borderRadius:14, padding:12 }}>
+        <div style={{ fontSize:12, fontWeight:800 }}>Currencies</div>
+        <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>Tap a currency to use it in the calculator.</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:8 }}>
+          {visibleForex.map((f,i)=> (
+            <button key={i} onClick={()=> setCalcFrom(f.code)} style={{ background: calcFrom===f.code?"rgba(34,211,238,.2)":"rgba(255,255,255,.06)", border: calcFrom===f.code?"1px solid #22d3ee":"1px solid rgba(255,255,255,.1)", borderRadius:12, padding:"8px 10px", color:"#fff", cursor:"pointer", textAlign:"left" }}>
+              <div style={{ fontSize:10, color:"#94a3b8" }}>{f.code} • {f.label}</div>
+              <div style={{ fontSize:12, fontWeight:800, marginTop:2 }}>1 USD = {f.code==="USD"?"1.00":Number(f.rate).toLocaleString(undefined,{maximumFractionDigits:2})} {f.code}</div>
+            </button>
+          ))}
+        </div>
+        <button onClick={()=> setShowAllForex(!showAllForex)} style={{ width:"100%", background:"rgba(255,255,255,.08)", border:"none", color:"#fff", padding:"8px", borderRadius:999, marginTop:8, cursor:"pointer", fontSize:11, fontWeight:800 }}>{showAllForex?"Show Less ▲":"Show All Currencies ▼"}</button>
+        <div style={{ display:"flex", gap:6, marginTop:8 }}>{(forex||[]).slice(0,4).map((f,i)=> (<div key={i} style={{ flex:1, background:"rgba(255,255,255,.04)", borderRadius:10, padding:"8px", textAlign:"center" }}><div style={{ fontSize:9, color:"#94a3b8" }}>{f.pair}</div><div style={{ fontSize:11, fontWeight:800, marginTop:2 }}>{Number(f.price).toLocaleString(undefined,{maximumFractionDigits:2})}</div></div>))}</div>
       </div>
     </div>
   );
@@ -220,17 +244,17 @@ function NewsView({ news, big=false, fullscreen=false, selected, setSelected, op
     return (
       <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"rgba(34,211,238,.12)", borderRadius:10, padding:"8px 10px" }}>
-          <span style={{ fontSize:11, fontWeight:800 }}>📰 Reading inside EVA • {openInside.source}</span>
-          <button onClick={(e)=>{ e.stopPropagation(); setOpenInside(null); }} style={{ background:"rgba(255,255,255,.15)", border:"none", color:"#fff", fontSize:11, padding:"4px 10px", borderRadius:999, cursor:"pointer" }}>✕ Close</button>
+          <span style={{ fontSize:11, fontWeight:800 }}>Reading inside EVA • {openInside.source}</span>
+          <button onClick={(e)=>{ e.stopPropagation(); setOpenInside(null); }} style={{ background:"rgba(255,255,255,.15)", border:"none", color:"#fff", fontSize:11, padding:"4px 10px", borderRadius:999, cursor:"pointer" }}>Close</button>
         </div>
         <div style={{ background:"rgba(255,255,255,.06)", borderRadius:12, padding:12 }}>
           {cur?.img && <img src={cur.img} alt="" style={{ width:"100%", borderRadius:10, maxHeight: fullscreen?260:180, objectFit:"cover" }} />}
           <div style={{ fontSize: fullscreen?17:15, fontWeight:800, lineHeight:1.4, marginTop:10 }}>{cur?.title}</div>
           <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800, marginTop:6 }}>{cur?.source} • {cur?.time ? new Date(cur.time).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "TODAY"}</div>
           <div style={{ fontSize: fullscreen?13:12, color:"#e2e8f0", lineHeight:1.65, marginTop:8 }}>{cur?.full || cur?.desc || "Full story from " + openInside.source + "."}</div>
-          <a href={openInside.link} target="_blank" rel="noreferrer" onClick={(e)=> e.stopPropagation()} style={{ display:"block", textAlign:"center", background:"rgba(255,255,255,.1)", border:"1px solid rgba(255,255,255,.2)", color:"#fff", padding:"9px", borderRadius:999, fontSize:11, marginTop:12, textDecoration:"none" }}>↗ Open full on {openInside.source} site</a>
+          <a href={openInside.link} target="_blank" rel="noreferrer" onClick={(e)=> e.stopPropagation()} style={{ display:"block", textAlign:"center", background:"rgba(255,255,255,.1)", border:"1px solid rgba(255,255,255,.2)", color:"#fff", padding:"9px", borderRadius:999, fontSize:11, marginTop:12, textDecoration:"none" }}>Open full on {openInside.source} site</a>
         </div>
-        <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>● LIVE FEED — STILL COMING ↓ TAP TO READ ANOTHER</div>
+        <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>LIVE FEED — TAP TO READ ANOTHER</div>
         <div style={{ maxHeight: fullscreen? 220 : 140, overflowY:"auto", display:"flex", flexDirection:"column", gap:6 }}>
           {news.map((n,i)=> (
             <div key={i} onClick={(e)=>{ e.stopPropagation(); setSelected(i); setOpenInside({ source:n.source, link:n.link }); }} style={{ padding:"8px 10px", borderRadius:10, background: i===selected ? "rgba(34,211,238,.18)" : "rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.07)", cursor:"pointer" }}>
@@ -250,7 +274,7 @@ function NewsView({ news, big=false, fullscreen=false, selected, setSelected, op
         {item.desc && <div style={{fontSize: fullscreen?13:11, color:"#cbd5e1", lineHeight:1.5, marginTop:6}}>{item.desc}</div>}
         {item.img && <img src={item.img} alt="" style={{ width:"100%", borderRadius:10, marginTop:8, maxHeight: fullscreen?260:120, objectFit:"cover" }} />}
       </div>
-      <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>● LIVE FEED — NEW HEADLINES KEEP COMING ↓ TAP TO READ</div>
+      <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>LIVE FEED — NEW HEADLINES</div>
       <div style={{ maxHeight: fullscreen? 320 : 180, overflowY:"auto", display:"flex", flexDirection:"column", gap:6 }}>
         {news.map((n,i)=> (
           <div key={i} onClick={(e)=>{ e.stopPropagation(); setSelected(i); }} style={{ padding:"8px 10px", borderRadius:10, background: i===selected ? "rgba(34,211,238,.18)" : "rgba(255,255,255,.04)", border: i===selected ? "1px solid rgba(34,211,238,.5)" : "1px solid rgba(255,255,255,.07)", cursor:"pointer" }}>
@@ -273,8 +297,8 @@ function ScoresView({ scores, fullscreen=false, big=false }) {
   const rest = scores.filter(s=> !s.live);
   return (
     <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
-      {liveGames.length>0 && <div><div style={{ fontSize:9, color:"#ef4444", fontWeight:800 }}>🔴 LIVE NOW</div>{liveGames.map((s,i)=> (<div key={i} style={{ background:"rgba(239,68,68,.12)", border:"1px solid rgba(239,68,68,.4)", borderRadius:12, padding:10, marginTop:6 }}><div style={{ fontSize:9, color:"#facc15", fontWeight:800 }}>{s.league} • {s.status}</div><div style={{ fontSize: fullscreen?17:13, fontWeight:800, marginTop:4 }}>{s.home} <span style={{ color:"#22d3ee" }}>{s.homeScore} - {s.awayScore}</span> {s.away}</div></div>))}</div>}
-      <div style={{ fontSize:9, color:"#facc15", fontWeight:800 }}>⚽ ALL MATCHES TODAY — {scores.length} GAMES</div>
+      {liveGames.length>0 && <div><div style={{ fontSize:9, color:"#ef4444", fontWeight:800 }}>LIVE NOW</div>{liveGames.map((s,i)=> (<div key={i} style={{ background:"rgba(239,68,68,.12)", border:"1px solid rgba(239,68,68,.4)", borderRadius:12, padding:10, marginTop:6 }}><div style={{ fontSize:9, color:"#facc15", fontWeight:800 }}>{s.league} • {s.status}</div><div style={{ fontSize: fullscreen?17:13, fontWeight:800, marginTop:4 }}>{s.home} <span style={{ color:"#22d3ee" }}>{s.homeScore} - {s.awayScore}</span> {s.away}</div></div>))}</div>}
+      <div style={{ fontSize:9, color:"#facc15", fontWeight:800 }}>ALL MATCHES TODAY — {scores.length} GAMES</div>
       <div style={{ maxHeight: fullscreen? 420 : 200, overflowY:"auto", display:"flex", flexDirection:"column", gap:6 }}>
         {(liveGames.length>0 ? rest : scores).map((s,i)=> (<div key={i} style={{ padding:"9px 10px", borderRadius:10, background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.08)" }}><div style={{ fontSize:9, color:"#facc15", fontWeight:800 }}>{s.league} • {s.status}</div><div style={{ fontSize: fullscreen?15:12, fontWeight:700, marginTop:3 }}>{s.home} <span style={{ color:"#22d3ee" }}>{s.homeScore} - {s.awayScore}</span> {s.away}</div></div>))}
       </div>
@@ -287,7 +311,7 @@ function ViralView({ viral, fullscreen=false, selected, setSelected, big=false }
   if(!viral || viral.length===0) return <div style={{fontSize:11,color:"#94a3b8"}}>Syncing viral...</div>;
   const v = viral[selected % viral.length];
   if(!big && !fullscreen){
-    return <div><div style={{fontSize:9,color:"#f472b6",fontWeight:800}}>🔥 VIRAL • {v.score} upvotes</div><div style={{fontSize:11, lineHeight:1.35, marginTop:4, display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{v.title}</div>{v.thumb && <img src={v.thumb} alt="" style={{ width:"100%", height:54, objectFit:"cover", borderRadius:8, marginTop:6 }} />}</div>;
+    return <div><div style={{fontSize:9,color:"#f472b6",fontWeight:800}}>VIRAL • {v.score} upvotes</div><div style={{fontSize:11, lineHeight:1.35, marginTop:4, display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{v.title}</div>{v.thumb && <img src={v.thumb} alt="" style={{ width:"100%", height:54, objectFit:"cover", borderRadius:8, marginTop:6 }} />}</div>;
   }
   return (
     <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
@@ -302,14 +326,14 @@ function ViralView({ viral, fullscreen=false, selected, setSelected, big=false }
         {videoFailed && <div style={{ padding:8, fontSize:11, color:"#fda4af", textAlign:"center" }}>Video blocked by source — tap below to watch on Reddit</div>}
       </div>
       <div style={{ fontSize: fullscreen?14:11, fontWeight:700, lineHeight:1.4 }}>{v.title}</div>
-      <div style={{ fontSize:10, color:"#f472b6", fontWeight:800 }}>🔥 {v.score} upvotes • {v.isVideo ? "TAP ▶ ON VIDEO TO PLAY WITH SOUND" : "TAP BELOW TO WATCH"}</div>
-      {v.link && <a href={v.link} target="_blank" rel="noreferrer" onClick={(e)=> e.stopPropagation()} style={{ textAlign:"center", background:"rgba(244,114,182,.15)", border:"1px solid rgba(244,114,182,.4)", color:"#fff", padding:"7px", borderRadius:999, fontSize:11, textDecoration:"none" }}>↗ Watch on source</a>}
-      <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>● MORE VIRAL ↓</div>
+      <div style={{ fontSize:10, color:"#f472b6", fontWeight:800 }}>{v.score} upvotes • {v.isVideo ? "TAP PLAY FOR SOUND" : "TAP BELOW TO WATCH"}</div>
+      {v.link && <a href={v.link} target="_blank" rel="noreferrer" onClick={(e)=> e.stopPropagation()} style={{ textAlign:"center", background:"rgba(244,114,182,.15)", border:"1px solid rgba(244,114,182,.4)", color:"#fff", padding:"7px", borderRadius:999, fontSize:11, textDecoration:"none" }}>Watch on source</a>}
+      <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>MORE VIRAL</div>
       <div style={{ maxHeight: fullscreen? 220 : 110, overflowY:"auto", display:"flex", flexDirection:"column", gap:6 }}>
         {viral.map((it,i)=> (
           <div key={i} onClick={(e)=>{ e.stopPropagation(); setSelected(i); setVideoFailed(false); }} style={{ display:"flex", gap:8, padding:"8px", borderRadius:10, background: i===selected ? "rgba(244,114,182,.18)" : "rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.08)", cursor:"pointer", alignItems:"center" }}>
             {it.thumb && <img src={it.thumb} alt="" style={{ width:56, height:40, objectFit:"cover", borderRadius:6, flexShrink:0 }} />}
-            <div style={{ fontSize:11, lineHeight:1.3 }}>{it.isVideo ? "🎬 " : "🖼️ "}{it.title.slice(0,70)}</div>
+            <div style={{ fontSize:11, lineHeight:1.3 }}>{it.isVideo ? "Video " : "Image "}{it.title.slice(0,70)}</div>
           </div>
         ))}
       </div>
@@ -352,7 +376,7 @@ export default function EvaPhase1() {
     const candidates = POOL.filter(p=> !usedKinds.includes(p.kind));
     const pick = candidates[Math.floor(Math.random()*candidates.length)] || POOL[0];
     setBoxes(prev=> [...prev.filter(b=> b.uid!==removeUid), { ...pick, uid: Date.now()+Math.random() }]);
-    showToast(`🗑️ Trashed • New: ${pick.headline}`);
+    showToast(`Trashed • New: ${pick.headline}`);
   };
   const handleTrash = (uid) => { spawnNew(uid); if(pinned?.uid===uid){ setPinned(null); setFullscreen(false); setOpenInside(null); } };
   const closeAll = ()=> { setPinned(null); setFullscreen(false); setOpenInside(null); };
@@ -368,7 +392,7 @@ export default function EvaPhase1() {
   const onTouchEnd = (e, box, isPinned) => {
     if(longPressRef.current) clearTimeout(longPressRef.current);
     if(!dragging) { if(!isPinned) openPinned(box); return; }
-    if(isPinned) { if(dragY < -100) { closeAll(); showToast("↩️ Back to syncing"); } }
+    if(isPinned) { if(dragY < -100) { closeAll(); showToast("Back to syncing"); } }
     else { if(dragY > 100) { handleTrash(box.uid); } }
     setDragging(false); setDragY(0); setShowTrash(false);
   };
@@ -379,7 +403,7 @@ export default function EvaPhase1() {
     if(box.kind==="news" || box.kind==="naija") return <NewsView news={live.news} big={big} fullscreen={fs} selected={selNews} setSelected={setSelNews} openInside={openInside} setOpenInside={setOpenInside} />;
     if(box.kind==="sport") return <ScoresView scores={live.scores} fullscreen={fs} big={big} />;
     if(box.kind==="tiktok" || box.kind==="music" || box.kind==="gaming") return <ViralView viral={live.viral} fullscreen={fs} selected={selViral} setSelected={setSelViral} big={big} />;
-    if(box.kind==="space") return <div style={{fontSize:11,color:"#cbd5e1",lineHeight:1.4}}>🌍 Earth Orbit • {live.date || "Today"}<br/>Sync {syncTime || "…"}</div>;
+    if(box.kind==="space") return <div style={{fontSize:11,color:"#cbd5e1",lineHeight:1.4}}>Earth Orbit • {live.date || "Today"}<br/>Sync {syncTime || "…"}</div>;
     return <NewsView news={live.news} big={big} fullscreen={fs} selected={selNews} setSelected={setSelNews} openInside={openInside} setOpenInside={setOpenInside} />;
   };
   const handleOpenInside = () => {
@@ -398,7 +422,7 @@ export default function EvaPhase1() {
     <div style={{ position:"fixed", inset:0, background:"radial-gradient(circle at 50% 50%, #04121f, #000 78%)", overflow:"hidden", fontFamily:"sans-serif", color:"#fff", touchAction:"pan-y" }}>
       <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}} @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
       <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", zIndex:40, display:"flex", gap:6, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(34,211,238,.3)", borderRadius:999, padding:"6px 6px 6px 14px", backdropFilter:"blur(6px)", width:"min(420px, 92%)" }}>
-        <input value={search} onChange={e=> setSearch(e.target.value)} placeholder="🔍 Search orbit..." style={{ flex:1, background:"transparent", border:"none", outline:"none", color:"#fff", fontSize:13, minWidth:0 }} />
+        <input value={search} onChange={e=> setSearch(e.target.value)} placeholder="Search orbit..." style={{ flex:1, background:"transparent", border:"none", outline:"none", color:"#fff", fontSize:13, minWidth:0 }} />
         <button onClick={()=> setSearch("")} style={{ background:"rgba(34,211,238,.15)", border:"none", borderRadius:999, padding:"8px 14px", fontWeight:800, cursor:"pointer", color:"#fff", flexShrink:0 }}>CLEAR</button>
       </div>
       <div style={{ position:"absolute", left:"50%", top:"54%", transform:"translate(-50%,-50%)", width:230, height:230, borderRadius:"50%", background:"radial-gradient(circle at 40% 35%, #1e3a8a, #020617 65%)", border:"1px solid rgba(34,211,238,.5)", boxShadow:"0 0 60px rgba(34,211,238,.4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:120, zIndex:5 }}>
@@ -406,7 +430,7 @@ export default function EvaPhase1() {
         <div style={{ position:"absolute", inset:10, borderRadius:"50%", border:"1px dashed rgba(34,211,238,.4)", animation:"spin 10s linear infinite" }} />
       </div>
       <div style={{ position:"absolute", top:58, left:"50%", transform:"translateX(-50%)", zIndex:30, fontSize:10, color:"rgba(255,255,255,.45)", letterSpacing:1, whiteSpace:"nowrap", background:"rgba(0,0,0,.25)", padding:"4px 10px", borderRadius:999 }}>
-        {live.date ? `📅 TODAY ${live.date} • REAL DATA • SYNC ${syncTime || "…"}` : "TAP BOX TO OPEN • DOUBLE-TAP FOR FULL SCREEN • TAP OUTSIDE TO CLOSE"}
+        {live.date ? `TODAY ${live.date} • REAL DATA • SYNC ${syncTime || "…"}` : "TAP BOX TO OPEN • DOUBLE-TAP FOR FULL SCREEN • TAP OUTSIDE TO CLOSE"}
       </div>
       {filtered.map((box,i)=>{
         if(pinned?.uid===box.uid) return null;
@@ -442,8 +466,8 @@ export default function EvaPhase1() {
             <div style={{ marginTop:12 }}>{renderContent(pinned,true,false)}</div>
             <div style={{ marginTop:10, fontSize:10, color:"rgba(255,255,255,.5)", textAlign:"center" }}>Double-tap for full screen • Tap outside to close</div>
             <div style={{ display:"flex", gap:6, marginTop:10 }}>
-              <button onClick={handleOpenInside} style={{ flex:1, background:"#22d3ee", color:"#000", textAlign:"center", padding:"6px 8px", borderRadius:999, fontWeight:800, fontSize:11, border:"none", cursor:"pointer" }}>↗ OPEN INSIDE</button>
-              <button onClick={()=> handleTrash(pinned.uid)} style={{ flex:1, background:"rgba(239,68,68,.15)", border:"1px solid #ef4444", color:"#fff", padding:"6px 8px", borderRadius:999, cursor:"pointer", fontSize:11 }}>🗑️ TRASH + NEW</button>
+              <button onClick={handleOpenInside} style={{ flex:1, background:"#22d3ee", color:"#000", textAlign:"center", padding:"6px 8px", borderRadius:999, fontWeight:800, fontSize:11, border:"none", cursor:"pointer" }}>OPEN INSIDE</button>
+              <button onClick={()=> handleTrash(pinned.uid)} style={{ flex:1, background:"rgba(239,68,68,.15)", border:"1px solid #ef4444", color:"#fff", padding:"6px 8px", borderRadius:999, cursor:"pointer", fontSize:11 }}>TRASH + NEW</button>
             </div>
           </div>
         </div>
@@ -458,8 +482,8 @@ export default function EvaPhase1() {
             </div>
             <div style={{ flex:1, overflowY:"auto", padding:14, paddingBottom:90 }}>{renderContent(pinned,true,true)}</div>
             <div style={{ position:"absolute", bottom:0, left:0, right:0, display:"flex", gap:6, padding:12, background:"rgba(2,6,23,.95)", borderTop:"1px solid rgba(255,255,255,.1)" }}>
-              <button onClick={handleOpenInside} style={{ flex:1, background:"#22d3ee", color:"#000", textAlign:"center", padding:"8px", borderRadius:999, fontWeight:800, fontSize:12, border:"none", cursor:"pointer" }}>↗ OPEN INSIDE</button>
-              <button onClick={()=> handleTrash(pinned.uid)} style={{ flex:1, background:"rgba(239,68,68,.15)", border:"1px solid #ef4444", color:"#fff", padding:"8px", borderRadius:999, cursor:"pointer", fontSize:12 }}>🗑️ TRASH + NEW</button>
+              <button onClick={handleOpenInside} style={{ flex:1, background:"#22d3ee", color:"#000", textAlign:"center", padding:"8px", borderRadius:999, fontWeight:800, fontSize:12, border:"none", cursor:"pointer" }}>OPEN INSIDE</button>
+              <button onClick={()=> handleTrash(pinned.uid)} style={{ flex:1, background:"rgba(239,68,68,.15)", border:"1px solid #ef4444", color:"#fff", padding:"8px", borderRadius:999, cursor:"pointer", fontSize:12 }}>TRASH + NEW</button>
             </div>
           </div>
         </div>
