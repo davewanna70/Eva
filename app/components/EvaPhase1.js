@@ -45,18 +45,20 @@ function CryptoChart({ big=false, realCrypto, trading }) {
   const [calcFrom, setCalcFrom] = useState("USD");
   const [calcTo, setCalcTo] = useState("BTC");
   const [calcChange, setCalcChange] = useState(5);
+  const [goldLive, setGoldLive] = useState(0);
 
   useEffect(()=>{
     let ws=null, retry=null;
     const connect = ()=>{
       try{
-        ws = new WebSocket("wss://stream.binance.com:9443/stream?streams=btcusdt@trade/ethusdt@trade/bnbusdt@trade/solusdt@trade/dogeusdt@trade");
+        ws = new WebSocket("wss://stream.binance.com:9443/stream?streams=btcusdt@trade/ethusdt@trade/bnbusdt@trade/solusdt@trade/dogeusdt@trade/paxgusdt@trade");
         ws.onopen = ()=> setWsLive(true);
         ws.onmessage = (ev)=>{
           try{
             const j = JSON.parse(ev.data); const d=j.data||{};
             const sym=(d.s||"").replace("USDT",""); const price=Number(d.p);
             if(!sym||!price) return;
+            if(sym==="PAXG"){ setGoldLive(price); return; }
             setLivePrice(prev=> ({...prev,[sym]:price}));
             setLivePts(prev=> ({...prev,[sym]:[...(prev[sym]||[]).slice(-59), price]}));
           }catch(e){}
@@ -73,12 +75,12 @@ function CryptoChart({ big=false, realCrypto, trading }) {
   const btcRaw = list.find(c=>c.name==="BTC") || {price:realCrypto?.price||0, change:0, spark:[]};
   const btc = getCoin(btcRaw);
   const forex = trading?.forex||[];
-  const goldPrice = trading?.gold||0;
+  const goldPrice = goldLive || trading?.gold || 0;
 
   useEffect(()=>{ if(alertSet) try{ localStorage.setItem("eva_alert", JSON.stringify(alertSet)); }catch(e){} },[alertSet]);
   useEffect(()=>{
     if(!alertSet) return;
-    const cur = livePrice[alertSet.coin] || list.find(c=>c.name===alertSet.coin)?.price;
+    const cur = alertSet.coin==="GOLD" ? goldPrice : (livePrice[alertSet.coin] || list.find(c=>c.name===alertSet.coin)?.price);
     if(!cur) return;
     if(Math.abs(cur - alertSet.price)/alertSet.price < 0.002){
       setAlertHit(true);
@@ -86,7 +88,7 @@ function CryptoChart({ big=false, realCrypto, trading }) {
       try{ if("Notification" in window && Notification.permission==="granted"){ new Notification(`${alertSet.coin} Price Alert`, { body: `${alertSet.coin} has reached $${Number(cur).toLocaleString()}` }); } }catch(e){}
       try{ const ctx = new (window.AudioContext||window.webkitAudioContext)(); const o=ctx.createOscillator(); o.connect(ctx.destination); o.frequency.value=880; o.start(); o.stop(ctx.currentTime+0.3); }catch(e){}
     }
-  },[livePrice, alertSet, list]);
+  },[livePrice, goldLive, goldPrice, alertSet, list]);
 
   const requestNotif = async ()=>{ try{ if("Notification" in window && Notification.permission==="default") await Notification.requestPermission(); }catch(e){} };
 
@@ -133,7 +135,7 @@ function CryptoChart({ big=false, realCrypto, trading }) {
   }
 
   return (
-    <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
+    <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8, overflow:"hidden" }}>
       <div style={{ fontSize:10, color: wsLive?"#22c55e":"#facc15", fontWeight:800 }}>● {wsLive?"BINANCE LIVE - REAL TRADES":"CONNECTING TO BINANCE..."}</div>
       <div style={{ fontSize:11, color:"#94a3b8" }}>Tap any coin to select it. Calculator and Alert will follow that coin.</div>
       {list.map((cRaw,i)=>{
@@ -155,36 +157,34 @@ function CryptoChart({ big=false, realCrypto, trading }) {
         );
       })}
       <div onClick={()=>{ setShowGold(!showGold); if(!showGold){ setCalcTo("GOLD"); } }} style={{ background: showGold?"rgba(250,204,21,.12)":"rgba(255,255,255,.04)", borderRadius:12, padding:"10px 12px", border:"1px solid rgba(250,204,21,.3)", cursor:"pointer" }}>
-        <div style={{ display:"flex", justifyContent:"space-between" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <span style={{ fontSize:12, fontWeight:800 }}>GOLD {showGold?"▼":"▶"} Tap to expand</span>
-          <span style={{ fontSize:13, fontWeight:800 }}>${goldPrice ? Number(goldPrice).toLocaleString() : "Loading..."}</span>
+          <span style={{ fontSize:13, fontWeight:800 }}>{goldPrice ? `$${Number(goldPrice).toLocaleString()}` : "Loading..."}</span>
         </div>
-        {showGold && <div style={{ fontSize:11, color:"#94a3b8", marginTop:6, lineHeight:1.6 }}>Per ounce: ${goldPrice ? Number(goldPrice).toLocaleString() : "..."}<br/>Per gram: ${goldPrice ? (goldPrice/31.1).toFixed(2) : "..."}<br/>Gold is a metal, not a coin. People buy it to preserve value. Calculator above is now set to GOLD.</div>}
+        {showGold && <div style={{ fontSize:11, color:"#94a3b8", marginTop:6, lineHeight:1.6 }}>Per ounce: {goldPrice ? `$${Number(goldPrice).toLocaleString()}` : "Loading..."}<br/>Per gram: {goldPrice ? `$${(goldPrice/31.1).toFixed(2)}` : "Loading..."}<br/>Gold is a metal, not a coin. People buy it to preserve value. Calculator is now set to GOLD.</div>}
       </div>
       <div style={{ background:"rgba(250,204,21,.08)", border:"1px solid rgba(250,204,21,.3)", borderRadius:14, padding:12 }}>
         <div style={{ fontSize:12, fontWeight:800 }}>Price Alert</div>
         <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Set a price. EVA will notify you when the live price reaches it. Works while EVA is open. For alerts when the app is fully closed, a server push is required later.</div>
         {alertHit ? <div style={{ fontSize:12, color:"#22c55e", fontWeight:800, marginTop:6 }}>{alertSet?.coin} has reached ${Number(alertSet?.price||0).toLocaleString()}!</div> : alertSet ? <div style={{ fontSize:11, marginTop:6 }}>Waiting for {alertSet.coin} to reach <b>${Number(alertSet.price).toLocaleString()}</b></div> : null}
         <div style={{ display:"flex", gap:6, marginTop:8 }}>
-          <select value={alertCoin} onChange={e=> setAlertCoin(e.target.value)} style={{ background:"rgba(0,0,0,.4)", color:"#fff", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px", fontSize:12 }}>{list.map(c=> <option key={c.name} value={c.name}>{c.name}</option>)}<option value="GOLD">GOLD</option></select>
-          <input value={alertPrice} onChange={e=> setAlertPrice(e.target.value.replace(/[^0-9.]/g,""))} placeholder="e.g. 70000" inputMode="decimal" style={{ flex:1, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
-          <button onClick={async ()=>{ await requestNotif(); if(alertPrice){ setAlertSet({ coin: alertCoin, price: Number(alertPrice) }); setAlertHit(false); setAlertPrice(""); } }} style={{ background:"#facc15", color:"#000", border:"none", borderRadius:999, padding:"8px 14px", fontWeight:800, fontSize:12, cursor:"pointer" }}>SET</button>
+          <select value={alertCoin} onChange={e=> setAlertCoin(e.target.value)} style={{ background:"rgba(0,0,0,.4)", color:"#fff", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px", fontSize:12, maxWidth:90 }}>{list.map(c=> <option key={c.name} value={c.name}>{c.name}</option>)}<option value="GOLD">GOLD</option></select>
+          <input value={alertPrice} onChange={e=> setAlertPrice(e.target.value.replace(/[^0-9.]/g,""))} placeholder="e.g. 70000" inputMode="decimal" style={{ flex:1, minWidth:0, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
+          <button onClick={async ()=>{ await requestNotif(); if(alertPrice){ setAlertSet({ coin: alertCoin, price: Number(alertPrice) }); setAlertHit(false); setAlertPrice(""); } }} style={{ background:"#facc15", color:"#000", border:"none", borderRadius:999, padding:"8px 14px", fontWeight:800, fontSize:12, cursor:"pointer", flexShrink:0 }}>SET</button>
           {alertSet && <button onClick={()=>{ setAlertSet(null); setAlertHit(false); try{ localStorage.removeItem("eva_alert"); }catch(e){} }} style={{ background:"rgba(255,255,255,.1)", color:"#fff", border:"none", borderRadius:999, padding:"8px 10px", fontSize:12, cursor:"pointer" }}>Clear</button>}
         </div>
       </div>
       <div style={{ background:"rgba(34,211,238,.08)", border:"1px solid rgba(34,211,238,.3)", borderRadius:14, padding:12 }}>
         <div style={{ fontSize:12, fontWeight:800 }}>Calculator</div>
         <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Convert any currency to any asset. Uses live price and live exchange rate.</div>
-        <div style={{ display:"flex", gap:6, marginTop:8 }}>
-          <select value={calcFrom} onChange={e=> setCalcFrom(e.target.value)} style={{ background:"rgba(0,0,0,.4)", color:"#fff", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px", fontSize:12 }}>{allForexList.map(f=> <option key={f.code} value={f.code}>{f.code} - {f.label}</option>)}</select>
-          <input value={calcAmount} onChange={e=> setCalcAmount(e.target.value.replace(/[^0-9.]/g,""))} inputMode="decimal" style={{ flex:1, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
-          <select value={calcTo} onChange={e=> setCalcTo(e.target.value)} style={{ background:"rgba(0,0,0,.4)", color:"#fff", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px", fontSize:12 }}>{list.map(c=> <option key={c.name} value={c.name}>{c.name}</option>)}<option value="GOLD">GOLD</option></select>
+        <div style={{ display:"flex", gap:6, marginTop:8, flexWrap:"wrap" }}>
+          <select value={calcFrom} onChange={e=> setCalcFrom(e.target.value)} style={{ background:"rgba(0,0,0,.4)", color:"#fff", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px", fontSize:12, flex:"1 1 110px", minWidth:0 }}>{allForexList.map(f=> <option key={f.code} value={f.code}>{f.code} - {f.label}</option>)}</select>
+          <input value={calcAmount} onChange={e=> setCalcAmount(e.target.value.replace(/[^0-9.]/g,""))} inputMode="decimal" style={{ flex:"1 1 70px", minWidth:0, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
+          <select value={calcTo} onChange={e=> setCalcTo(e.target.value)} style={{ background:"rgba(0,0,0,.4)", color:"#fff", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px", fontSize:12, flex:"1 1 80px", minWidth:0 }}>{list.map(c=> <option key={c.name} value={c.name}>{c.name}</option>)}<option value="GOLD">GOLD</option></select>
         </div>
-        <div style={{ display:"flex", gap:6, marginTop:8, alignItems:"center", fontSize:11 }}>Price change: {[-10,-5,5,10,20].map(v=> <button key={v} onClick={()=> setCalcChange(v)} style={{ background: calcChange===v?"#22d3ee":"rgba(255,255,255,.1)", color: calcChange===v?"#000":"#fff", border:"none", borderRadius:999, padding:"5px 10px", cursor:"pointer", fontWeight:800 }}>{v>0?`+${v}%`:`${v}%`}</button>)}</div>
+        <div style={{ display:"flex", gap:6, marginTop:8, alignItems:"center", fontSize:11, flexWrap:"wrap" }}>Price change: {[-10,-5,5,10,20].map(v=> <button key={v} onClick={()=> setCalcChange(v)} style={{ background: calcChange===v?"#22d3ee":"rgba(255,255,255,.1)", color: calcChange===v?"#000":"#fff", border:"none", borderRadius:999, padding:"5px 10px", cursor:"pointer", fontWeight:800 }}>{v>0?`+${v}%`:`${v}%`}</button>)}</div>
         <div style={{ fontSize:12, marginTop:8, lineHeight:1.6 }}>
-          = <b>{assetAmount.toFixed(6)} {calcTo}</b><br/>
-          = <b>${amountUSD.toLocaleString(undefined,{maximumFractionDigits:2})} USD</b><br/>
-          <span style={{ color:"#94a3b8", fontSize:11 }}>If {calcTo} moves {calcChange}% → Profit / Loss = {calcChange>=0?"+":""}{profitInFrom.toLocaleString(undefined,{maximumFractionDigits:2})} {calcFrom}</span>
+          {assetPriceUSD ? <><span>= <b>{assetAmount.toFixed(6)} {calcTo}</b></span><br/><span>= <b>${amountUSD.toLocaleString(undefined,{maximumFractionDigits:2})} USD</b></span><br/><span style={{ color:"#94a3b8", fontSize:11 }}>If {calcTo} moves {calcChange}% → Profit / Loss = {calcChange>=0?"+":""}{profitInFrom.toLocaleString(undefined,{maximumFractionDigits:2})} {calcFrom}</span></> : <span style={{ color:"#facc15" }}>Loading {calcTo} price... Please wait a few seconds.</span>}
         </div>
       </div>
       <div style={{ background:"rgba(255,255,255,.04)", borderRadius:14, padding:12 }}>
@@ -192,7 +192,7 @@ function CryptoChart({ big=false, realCrypto, trading }) {
         <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>Tap a currency to use it in the calculator.</div>
         <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:8 }}>
           {visibleForex.map((f,i)=> (
-            <button key={i} onClick={()=> setCalcFrom(f.code)} style={{ background: calcFrom===f.code?"rgba(34,211,238,.2)":"rgba(255,255,255,.06)", border: calcFrom===f.code?"1px solid #22d3ee":"1px solid rgba(255,255,255,.1)", borderRadius:12, padding:"8px 10px", color:"#fff", cursor:"pointer", textAlign:"left" }}>
+            <button key={i} onClick={()=> setCalcFrom(f.code)} style={{ background: calcFrom===f.code?"rgba(34,211,238,.2)":"rgba(255,255,255,.06)", border: calcFrom===f.code?"1px solid #22d3ee":"1px solid rgba(255,255,255,.1)", borderRadius:12, padding:"8px 10px", color:"#fff", cursor:"pointer", textAlign:"left", flex:"1 1 45%" }}>
               <div style={{ fontSize:10, color:"#94a3b8" }}>{f.code} • {f.label}</div>
               <div style={{ fontSize:12, fontWeight:800, marginTop:2 }}>1 USD = {f.code==="USD"?"1.00":Number(f.rate).toLocaleString(undefined,{maximumFractionDigits:2})} {f.code}</div>
             </button>
@@ -492,4 +492,4 @@ export default function EvaPhase1() {
       <div style={{ position:"absolute", bottom:8, width:"100%", textAlign:"center", color:"rgba(103,232,249,.6)", fontSize:9, letterSpacing:3 }}>EVA • PHASE 2 • TAP OUTSIDE TO CLOSE • DOUBLE-TAP FULL</div>
     </div>
   );
-    }
+                                                                                            }
