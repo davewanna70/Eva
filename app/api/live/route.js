@@ -16,12 +16,17 @@ export async function GET() {
     try {
       const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(r.url)}`, { next:{ revalidate: 60 } });
       const j = await res.json();
-      (j.items||[]).forEach(it=>{ if(isToday(it.pubDate)) news.push({ source:r.src, title:it.title, link:it.link, time:it.pubDate, img:it.thumbnail||"", desc:(it.description||"").replace(/<[^>]*>/g,"").slice(0,220) }); });
+      (j.items||[]).forEach(it=>{
+        if(!isToday(it.pubDate)) return;
+        // EDIT: use full content, not just 220 chars, so inside reader is detailed
+        const raw = (it.content || it.description || "").replace(/<[^>]*>/g,"").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").trim();
+        news.push({ source:r.src, title:it.title, link:it.link, time:it.pubDate, img:it.thumbnail||it.enclosure?.link||"", desc: raw.slice(0,1200), full: raw.slice(0,2500) });
+      });
     } catch(e){}
   }
   news = news.sort((a,b)=> new Date(b.time)-new Date(a.time)).slice(0,30);
 
-  // FOOTBALL - ALL LEAGUES TODAY, not just EPL
+  // FOOTBALL - ALL LEAGUES TODAY
   const leagues = [
     { id:"eng.1", name:"EPL" },
     { id:"esp.1", name:"La Liga" },
@@ -45,7 +50,6 @@ export async function GET() {
       });
     } catch(e){}
   }
-  // If no matches today, show yesterday + tomorrow so box never empty
   if(scores.length===0){
     try{
       const d = new Date(); d.setDate(d.getDate()-1); const y = d.toISOString().slice(0,10).replaceAll("-","");
@@ -66,21 +70,36 @@ export async function GET() {
     const j = await res.json(); crypto = { price: j.bitcoin?.usd, change: j.bitcoin?.usd_24h_change };
   } catch(e){}
 
-  // VIRAL - real videos from Reddit
+  // VIRAL - EDITED: check 5 places for video, so video go play
   let viral = [];
   try {
-    const res = await fetch("https://www.reddit.com/r/funny+Unexpected+MadeMeSmile+NextFuckingLevel+PublicFreakout/top.json?limit=20&t=day&raw_json=1", { headers:{ "User-Agent":"EVA/1.0" }, next:{ revalidate: 120 } });
+    const res = await fetch("https://www.reddit.com/r/funny+Unexpected+MadeMeSmile+NextFuckingLevel+PublicFreakout+videos+TikTokCringe+ContagiousLaughter/top.json?limit=30&t=day&raw_json=1", { headers:{ "User-Agent":"EVA/1.0" }, next:{ revalidate: 120 } });
     const j = await res.json();
     viral = (j.data?.children||[]).map(c=>{
       const d = c.data;
       let video = "";
+      // 1. secure_media
       if(d.secure_media?.reddit_video?.fallback_url) video = d.secure_media.reddit_video.fallback_url;
+      // 2. media
       else if(d.media?.reddit_video?.fallback_url) video = d.media.reddit_video.fallback_url;
+      // 3. preview video
+      else if(d.preview?.reddit_video?.fallback_url) video = d.preview.reddit_video.fallback_url;
+      // 4. crosspost - video dey inside crosspost sometimes
+      else if(d.crosspost_parent_list?.[0]?.secure_media?.reddit_video?.fallback_url) video = d.crosspost_parent_list[0].secure_media.reddit_video.fallback_url;
+      else if(d.crosspost_parent_list?.[0]?.media?.reddit_video?.fallback_url) video = d.crosspost_parent_list[0].media.reddit_video.fallback_url;
+      // 5. direct v.redd.it link
+      else if(d.url && d.url.includes("v.redd.it")) video = d.url + "/DASH_720.mp4";
+
       let thumb = d.thumbnail && d.thumbnail.startsWith("http") ? d.thumbnail : "";
       if(d.preview?.images?.[0]?.source?.url) thumb = d.preview.images[0].source.url.replace(/&amp;/g,"&");
+      // if crosspost thumb
+      if(!thumb && d.crosspost_parent_list?.[0]?.preview?.images?.[0]?.source?.url) thumb = d.crosspost_parent_list[0].preview.images[0].source.url.replace(/&amp;/g,"&");
+
       return { title:d.title, link:"https://reddit.com"+d.permalink, score:d.score, video, thumb, isVideo: !!video };
-    }).slice(0,15);
+    });
+    // EDIT: put videos first, so you see video straight, not only pictures
+    viral = [...viral.filter(v=> v.isVideo), ...viral.filter(v=> !v.isVideo)].slice(0,18);
   } catch(e){}
 
   return Response.json({ date: today, news, scores, crypto, viral });
-    }
+}
