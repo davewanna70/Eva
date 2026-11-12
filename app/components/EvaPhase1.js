@@ -14,60 +14,80 @@ const POOL = [
   { kind:"naija", headline:"Naija Live Now" },
 ];
 
-// TRADING - SMALL = BTC + USD/NGN ONLY, EXPANDED = FULL MARKET
+// LIVE CHART - moves every 800ms like real trading app, no account needed
+function LiveChart({ points=[], up=true, h=70 }) {
+  const [livePts, setLivePts] = useState(points);
+  const lastRef = useRef(points[points.length-1] || 100);
+  useEffect(()=>{ if(points.length){ setLivePts(points); lastRef.current = points[points.length-1]; } },[points.length]);
+  useEffect(()=>{
+    const t = setInterval(()=>{
+      const last = lastRef.current;
+      const next = last + (Math.random()-0.5) * (last*0.0015);
+      lastRef.current = next;
+      setLivePts(prev=> [...prev.slice(-39), next]);
+    }, 800);
+    return ()=> clearInterval(t);
+  },[]);
+  if(!livePts.length) return <div style={{ height:h, background:"rgba(255,255,255,.04)", borderRadius:8 }} />;
+  const min = Math.min(...livePts), max = Math.max(...livePts);
+  const path = livePts.map((p,i)=> `${(i/(livePts.length-1))*100},${40 - ((p-min)/((max-min)||1))*40}`).join(" L ");
+  const color = up ? "#22c55e" : "#ef4444";
+  return (
+    <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width:"100%", height:h, display:"block" }}>
+      <defs><linearGradient id={`g${h}${up?"u":"d"}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.35"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+      <path d={`M ${path} L 100,40 L 0,40 Z`} fill={`url(#g${h}${up?"u":"d"})`} />
+      <path d={`M ${path}`} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+      <circle cx="100" cy={40 - ((livePts[livePts.length-1]-min)/((max-min)||1))*40} r="2.5" fill={color}><animate attributeName="r" values="2;3.5;2" dur="1s" repeatCount="indefinite" /></circle>
+    </svg>
+  );
+}
+
+// TRADING - CLEAN, NO WORDS, ONLY PRICE + LIVE CHART
 function CryptoChart({ big=false, realCrypto, trading }) {
   const list = trading?.cryptoList || [];
   if(!big){
-    const btc = list.find(c=> c.name==="BTC") || { price: realCrypto?.price || 79194, change: realCrypto?.change || -0.4 };
-    const down = btc.change < 0;
-    const ngn = trading?.forex?.[0]?.price;
+    const btc = list.find(c=> c.name==="BTC") || { price: realCrypto?.price || 71394, change: -2.76, spark: [] };
+    const up = (btc.change||0) >= 0;
     return (
       <div style={{ width:"100%" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <span style={{ fontSize:16, fontWeight:900, color: down ? "#ef4444" : "#22c55e" }}>${Number(btc.price).toLocaleString(undefined,{maximumFractionDigits:2})}</span>
-          <span style={{ fontSize:10, fontWeight:900, background: down ? "#ef4444" : "#22c55e", color:"#fff", padding:"3px 7px", borderRadius:6 }}>{down ? "▼" : "▲"} {Number(btc.change||0).toFixed(2)}%</span>
+          <span style={{ fontSize:17, fontWeight:900 }}>${Number(btc.price).toLocaleString()}</span>
+          <span style={{ fontSize:11, fontWeight:800, color: up ? "#22c55e" : "#ef4444" }}>{up ? "▲" : "▼"} {Math.abs(Number(btc.change||0)).toFixed(2)}%</span>
         </div>
-        <div style={{ fontSize:10, color:"#94a3b8", marginTop:3 }}>BTC / USDT • {ngn ? `USD/NGN ₦${Math.round(ngn).toLocaleString()}` : "Syncing..."}</div>
-        <div style={{ fontSize:10, color:"#facc15", fontWeight:800, marginTop:4 }}>⭐ Tap to see Forex • Gold • Stocks</div>
+        <div style={{ marginTop:6 }}><LiveChart points={btc.spark} up={up} h={62} /></div>
       </div>
     );
   }
   return (
-    <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:10 }}>
-      <div>
-        <div style={{ fontSize:9, color:"#facc15", fontWeight:800 }}>💰 CRYPTO — TOP MOVERS • LIVE</div>
-        {list.length===0 && <div style={{ fontSize:11, color:"#94a3b8", marginTop:6 }}>Syncing crypto...</div>}
-        {list.map((c,i)=> (
-          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 10px", marginTop:6, background:"rgba(255,255,255,.05)", borderRadius:10, border:"1px solid rgba(255,255,255,.08)" }}>
-            <div><div style={{ fontSize:12, fontWeight:800 }}>{c.name} <span style={{ fontSize:10, color:"#94a3b8" }}>{c.full}</span></div><div style={{ fontSize:10, color:"#facc15" }}>{c.signal}</div></div>
-            <div style={{ textAlign:"right" }}><div style={{ fontSize:12, fontWeight:800 }}>${Number(c.price).toLocaleString(undefined,{maximumFractionDigits:2})}</div><div style={{ fontSize:11, fontWeight:800, color: c.change>=0 ? "#22c55e" : "#ef4444" }}>{c.change>=0 ? "▲" : "▼"} {Number(c.change||0).toFixed(2)}%</div></div>
+    <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
+      {list.length===0 && <div style={{ fontSize:11, color:"#94a3b8" }}>Syncing...</div>}
+      {list.map((c,i)=> {
+        const up = (c.change||0) >= 0;
+        return (
+          <div key={i} style={{ background:"rgba(255,255,255,.04)", borderRadius:14, padding:"10px 12px", border:"1px solid rgba(255,255,255,.07)" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span style={{ fontSize:13, fontWeight:800 }}>{c.name} <span style={{ fontSize:10, color:"#94a3b8", fontWeight:500 }}>{c.full}</span></span>
+              <span style={{ fontSize:13, fontWeight:800 }}>${Number(c.price).toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:2 }}>
+              <span style={{ fontSize:11, color: up ? "#22c55e" : "#ef4444", fontWeight:800 }}>{up ? "▲" : "▼"} {Math.abs(Number(c.change||0)).toFixed(2)}%</span>
+              <span style={{ fontSize:10, color:"#22c55e" }}>● LIVE</span>
+            </div>
+            <div style={{ marginTop:6 }}><LiveChart points={c.spark} up={up} h={58} /></div>
           </div>
-        ))}
-      </div>
-      <div>
-        <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>💱 FOREX — DOLLAR / NAIRA + WORLD</div>
-        {(trading?.forex||[]).map((f,i)=> (
-          <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"8px 10px", marginTop:6, background: f.pair==="USD / NGN" ? "rgba(250,204,21,.12)" : "rgba(34,211,238,.08)", borderRadius:10, border: f.pair==="USD / NGN" ? "1px solid rgba(250,204,21,.4)" : "1px solid rgba(255,255,255,.06)" }}>
-            <span style={{ fontSize:12, fontWeight:700 }}>{f.pair} <span style={{ fontSize:10, color:"#94a3b8" }}>{f.signal}</span></span>
-            <span style={{ fontSize:12, fontWeight:800 }}>{f.pair==="USD / NGN" ? "₦" : f.pair==="USD / JPY" ? "¥" : "$"}{Number(f.price).toLocaleString(undefined,{maximumFractionDigits:4})}</span>
-          </div>
-        ))}
-        <div style={{ fontSize:10, color:"#94a3b8", marginTop:4 }}>Naija traders: if USD/NGN go up, your dollar don gain value.</div>
-      </div>
+        );
+      })}
       <div style={{ display:"flex", gap:6 }}>
-        <div style={{ flex:1, background:"rgba(250,204,21,.1)", border:"1px solid rgba(250,204,21,.3)", borderRadius:12, padding:10, textAlign:"center" }}>
-          <div style={{ fontSize:9, color:"#facc15", fontWeight:800 }}>🥇 GOLD</div>
-          <div style={{ fontSize:15, fontWeight:900, marginTop:4 }}>${trading?.gold ? Number(trading.gold).toLocaleString() : "..."}</div>
-          <div style={{ fontSize:10, color:"#94a3b8" }}>per ounce</div>
-        </div>
-        <div style={{ flex:1, background:"rgba(34,211,238,.1)", border:"1px solid rgba(34,211,238,.3)", borderRadius:12, padding:10, textAlign:"center" }}>
-          <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>📈 MARKET MOOD</div>
-          <div style={{ fontSize:13, fontWeight:900, marginTop:4 }}>{(list[0]?.change||0) >=0 ? "🟢 BULLISH" : "🔴 BEARISH"}</div>
-          <div style={{ fontSize:10, color:"#94a3b8" }}>Buyers vs Sellers</div>
-        </div>
+        {(trading?.forex||[]).map((f,i)=> (
+          <div key={i} style={{ flex:1, background:"rgba(255,255,255,.04)", borderRadius:12, padding:"10px 8px", textAlign:"center" }}>
+            <div style={{ fontSize:9, color:"#94a3b8" }}>{f.pair}</div>
+            <div style={{ fontSize:12, fontWeight:800, marginTop:3 }}>{f.pair==="USD / NGN" ? "₦" : f.pair==="USD / JPY" ? "¥" : "$"}{Number(f.price).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+          </div>
+        ))}
       </div>
-      <div style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, background:"rgba(255,255,255,.04)", padding:10, borderRadius:10 }}>
-        💡 <b style={{ color:"#fff" }}>For beginners:</b> Green = price dey go up, people dey buy. Red = price dey fall, people dey sell. No rush enter trade when e red pass -2%.
+      <div style={{ background:"rgba(255,255,255,.04)", borderRadius:12, padding:"10px 12px", display:"flex", justifyContent:"space-between" }}>
+        <span style={{ fontSize:11, color:"#94a3b8" }}>GOLD</span>
+        <span style={{ fontSize:13, fontWeight:800 }}>${trading?.gold ? Number(trading.gold).toLocaleString() : "..."}</span>
       </div>
     </div>
   );
@@ -360,4 +380,4 @@ export default function EvaPhase1() {
       <div style={{ position:"absolute", bottom:8, width:"100%", textAlign:"center", color:"rgba(103,232,249,.6)", fontSize:9, letterSpacing:3 }}>EVA • PHASE 2 • TAP OUTSIDE TO CLOSE • DOUBLE-TAP FULL</div>
     </div>
   );
-  }
+    }
