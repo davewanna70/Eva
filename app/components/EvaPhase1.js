@@ -55,7 +55,6 @@ function HackerBox({ big=false }) {
     };
     load(); const t=setInterval(load, 1000); return ()=>clearInterval(t);
   },[big]);
-  // SMALL = same height as Crypto, only 2 lines
   if(!big) return <div style={{ fontFamily:"monospace", fontSize:10, lineHeight:1.5, color:"#4ade80" }}><div style={{ fontWeight:800 }}>{health?.ok ? "● ALL OK" : "● CHECKING..."}</div><div style={{ whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{lines[lines.length-1] || "> checking..."}</div></div>;
   return (
     <div style={{ fontFamily:"monospace", fontSize:12, lineHeight:1.5, color:"#4ade80", width:"100%" }}>
@@ -66,11 +65,9 @@ function HackerBox({ big=false }) {
   );
 }
 
-// WORLD NEWS - SMALL = EXACTLY LIKE CRYPTO, ONE HEADLINE ONLY
 function NewsView({ news, big=false, fullscreen=false, selected, setSelected, openInside, setOpenInside }) {
   if(!news || news.length===0) return <div style={{fontSize:11,color:"#94a3b8"}}>Syncing news...</div>;
   const item = news[selected % news.length];
-  // SMALL ORBIT MODE - SAME SIZE AS CRYPTO
   if(!big && !fullscreen){
     return (
       <div style={{ width:"100%" }}>
@@ -79,17 +76,23 @@ function NewsView({ news, big=false, fullscreen=false, selected, setSelected, op
       </div>
     );
   }
+  // EDITED: NO MORE IFRAME - BBC blocks iframe = white box. Use in-box reader.
   if(openInside){
+    const cur = news[selected % news.length];
     return (
       <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"rgba(34,211,238,.12)", borderRadius:10, padding:"8px 10px" }}>
           <span style={{ fontSize:11, fontWeight:800 }}>📰 Reading inside EVA • {openInside.source}</span>
           <button onClick={(e)=>{ e.stopPropagation(); setOpenInside(null); }} style={{ background:"rgba(255,255,255,.15)", border:"none", color:"#fff", fontSize:11, padding:"4px 10px", borderRadius:999, cursor:"pointer" }}>✕ Close</button>
         </div>
-        <div style={{ background:"#fff", borderRadius:12, overflow:"hidden" }}>
-          <iframe src={openInside.link} title="article" style={{ width:"100%", height: fullscreen? 420 : 300, border:"none", background:"#fff" }} sandbox="allow-scripts allow-same-origin allow-popups" />
+        <div style={{ background:"rgba(255,255,255,.06)", borderRadius:12, padding:12 }}>
+          {cur?.img && <img src={cur.img} alt="" style={{ width:"100%", borderRadius:10, maxHeight: fullscreen?260:180, objectFit:"cover" }} />}
+          <div style={{ fontSize: fullscreen?17:15, fontWeight:800, lineHeight:1.4, marginTop:10 }}>{cur?.title}</div>
+          <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800, marginTop:6 }}>{cur?.source} • {cur?.time ? new Date(cur.time).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "TODAY"}</div>
+          <div style={{ fontSize: fullscreen?13:12, color:"#e2e8f0", lineHeight:1.65, marginTop:8 }}>{cur?.full || cur?.desc || "Full story from " + openInside.source + "."}</div>
+          <a href={openInside.link} target="_blank" rel="noreferrer" onClick={(e)=> e.stopPropagation()} style={{ display:"block", textAlign:"center", background:"rgba(255,255,255,.1)", border:"1px solid rgba(255,255,255,.2)", color:"#fff", padding:"9px", borderRadius:999, fontSize:11, marginTop:12, textDecoration:"none" }}>↗ Open full on {openInside.source} site</a>
         </div>
-        <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>● LIVE FEED — STILL COMING ↓</div>
+        <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>● LIVE FEED — STILL COMING ↓ TAP TO READ ANOTHER</div>
         <div style={{ maxHeight: fullscreen? 220 : 140, overflowY:"auto", display:"flex", flexDirection:"column", gap:6 }}>
           {news.map((n,i)=> (
             <div key={i} onClick={(e)=>{ e.stopPropagation(); setSelected(i); setOpenInside({ source:n.source, link:n.link }); }} style={{ padding:"8px 10px", borderRadius:10, background: i===selected ? "rgba(34,211,238,.18)" : "rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.07)", cursor:"pointer" }}>
@@ -101,7 +104,6 @@ function NewsView({ news, big=false, fullscreen=false, selected, setSelected, op
       </div>
     );
   }
-  // EXPANDED MODE - YOUR LOVED BIGGER LONGER SIZE, NO CHANGE
   return (
     <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
       <div style={{ background:"rgba(255,255,255,.05)", borderRadius:12, padding: fullscreen?14:10 }}>
@@ -143,6 +145,7 @@ function ScoresView({ scores, fullscreen=false, big=false }) {
 }
 
 function ViralView({ viral, fullscreen=false, selected, setSelected, big=false }) {
+  const [videoFailed, setVideoFailed] = useState(false);
   if(!viral || viral.length===0) return <div style={{fontSize:11,color:"#94a3b8"}}>Syncing viral...</div>;
   const v = viral[selected % viral.length];
   if(!big && !fullscreen){
@@ -150,17 +153,24 @@ function ViralView({ viral, fullscreen=false, selected, setSelected, big=false }
   }
   return (
     <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
-      <div style={{ background:"#000", borderRadius:12, overflow:"hidden" }}>
-        {v.video ? <video key={v.video} src={v.video} controls playsInline muted loop autoPlay style={{ width:"100%", maxHeight: fullscreen? 380 : 220, display:"block" }} />
-        : v.thumb ? <img src={v.thumb} alt="" style={{ width:"100%", maxHeight: fullscreen? 380 : 180, objectFit:"cover", display:"block" }} />
-        : <div style={{ padding:14, fontSize:12, color:"#94a3b8" }}>Video loading...</div>}
+      <div style={{ background:"#000", borderRadius:12, overflow:"hidden", position:"relative" }}>
+        {/* EDITED: no muted autoplay wey dey block phone. Tap play = play with sound */}
+        {v.video && !videoFailed ? (
+          <video key={v.video} src={v.video} controls playsInline preload="metadata" poster={v.thumb || undefined} onError={()=> setVideoFailed(true)} style={{ width:"100%", maxHeight: fullscreen? 380 : 220, display:"block", background:"#000" }} />
+        ) : v.thumb ? (
+          <a href={v.link} target="_blank" rel="noreferrer"><img src={v.thumb} alt="" style={{ width:"100%", maxHeight: fullscreen? 380 : 180, objectFit:"cover", display:"block" }} /></a>
+        ) : (
+          <div style={{ padding:14, fontSize:12, color:"#94a3b8" }}>Video loading... Tap below to open</div>
+        )}
+        {videoFailed && <div style={{ padding:8, fontSize:11, color:"#fda4af", textAlign:"center" }}>Video blocked by source — tap below to watch on Reddit</div>}
       </div>
       <div style={{ fontSize: fullscreen?14:11, fontWeight:700, lineHeight:1.4 }}>{v.title}</div>
-      <div style={{ fontSize:10, color:"#f472b6", fontWeight:800 }}>🔥 {v.score} upvotes • TAP VIDEO TO PLAY / PAUSE</div>
+      <div style={{ fontSize:10, color:"#f472b6", fontWeight:800 }}>🔥 {v.score} upvotes • {v.isVideo ? "TAP ▶ ON VIDEO TO PLAY WITH SOUND" : "TAP BELOW TO WATCH"}</div>
+      {v.link && <a href={v.link} target="_blank" rel="noreferrer" onClick={(e)=> e.stopPropagation()} style={{ textAlign:"center", background:"rgba(244,114,182,.15)", border:"1px solid rgba(244,114,182,.4)", color:"#fff", padding:"7px", borderRadius:999, fontSize:11, textDecoration:"none" }}>↗ Watch on source</a>}
       <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>● MORE VIRAL ↓</div>
       <div style={{ maxHeight: fullscreen? 220 : 110, overflowY:"auto", display:"flex", flexDirection:"column", gap:6 }}>
         {viral.map((it,i)=> (
-          <div key={i} onClick={(e)=>{ e.stopPropagation(); setSelected(i); }} style={{ display:"flex", gap:8, padding:"8px", borderRadius:10, background: i===selected ? "rgba(244,114,182,.18)" : "rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.08)", cursor:"pointer", alignItems:"center" }}>
+          <div key={i} onClick={(e)=>{ e.stopPropagation(); setSelected(i); setVideoFailed(false); }} style={{ display:"flex", gap:8, padding:"8px", borderRadius:10, background: i===selected ? "rgba(244,114,182,.18)" : "rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.08)", cursor:"pointer", alignItems:"center" }}>
             {it.thumb && <img src={it.thumb} alt="" style={{ width:56, height:40, objectFit:"cover", borderRadius:6, flexShrink:0 }} />}
             <div style={{ fontSize:11, lineHeight:1.3 }}>{it.isVideo ? "🎬 " : "🖼️ "}{it.title.slice(0,70)}</div>
           </div>
@@ -261,8 +271,6 @@ export default function EvaPhase1() {
       <div style={{ position:"absolute", top:58, left:"50%", transform:"translateX(-50%)", zIndex:30, fontSize:10, color:"rgba(255,255,255,.45)", letterSpacing:1, whiteSpace:"nowrap", background:"rgba(0,0,0,.25)", padding:"4px 10px", borderRadius:999 }}>
         {live.date ? `📅 TODAY ${live.date} • REAL DATA • SYNC ${syncTime || "…"}` : "TAP BOX TO OPEN • DOUBLE-TAP FOR FULL SCREEN • TAP OUTSIDE TO CLOSE"}
       </div>
-
-      {/* ORBIT - ALL SMALL, SAME SIZE AS CRYPTO */}
       {filtered.map((box,i)=>{
         if(pinned?.uid===box.uid) return null;
         const pos = [{l:"3%",t:"16%"},{l:"62%",t:"15%"},{l:"3%",t:"68%"},{l:"62%",t:"68%"},{l:"32%",t:"84%"}][i%5];
@@ -278,15 +286,12 @@ export default function EvaPhase1() {
           </div>
         );
       })}
-
       {showTrash && (
         <div style={{ position:"absolute", bottom:0, left:0, right:0, height:110, zIndex:60, background: dragY>80 ? "rgba(239,68,68,.35)" : "rgba(239,68,68,.15)", borderTop:"2px dashed #ef4444", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:4 }}>
           <div style={{ fontSize:32 }}>🗑️</div>
           <div style={{ fontSize:12, fontWeight:800 }}>DRAG HERE TO TRASH • NEW BOX WILL COME</div>
         </div>
       )}
-
-      {/* PINNED - EXPAND A LITTLE, YOUR LOVED SIZE, SAME FOR ALL */}
       {pinned && !fullscreen && (
         <div onClick={closeAll} style={{ position:"absolute", inset:0, zIndex:40, background:"rgba(0,0,0,.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:12 }}>
           <div onClick={e=> e.stopPropagation()}
@@ -306,7 +311,6 @@ export default function EvaPhase1() {
           </div>
         </div>
       )}
-
       {pinned && fullscreen && (
         <div onClick={closeAll} style={{ position:"absolute", inset:0, zIndex:90, background:"rgba(0,0,0,.6)" }}>
           <div onClick={e=> e.stopPropagation()} style={{ position:"absolute", inset:0, background:"#020617", display:"flex", flexDirection:"column" }}>
@@ -323,9 +327,8 @@ export default function EvaPhase1() {
           </div>
         </div>
       )}
-
       {toast && <div style={{ position:"absolute", bottom:28, left:"50%", transform:"translateX(-50%)", zIndex:100, background:"rgba(0,0,0,.85)", border:"1px solid rgba(34,211,238,.4)", padding:"9px 16px", borderRadius:999, fontSize:12, whiteSpace:"nowrap" }}>{toast}</div>}
       <div style={{ position:"absolute", bottom:8, width:"100%", textAlign:"center", color:"rgba(103,232,249,.6)", fontSize:9, letterSpacing:3 }}>EVA • PHASE 2 • TAP OUTSIDE TO CLOSE • DOUBLE-TAP FULL</div>
     </div>
   );
-  }
+                            }
