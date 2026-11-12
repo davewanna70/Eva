@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 
 const POOL = [
-  { kind:"crypto", headline:"Crypto Live Market" },
+  { kind:"crypto", headline:"Trading Live Market" },
   { kind:"news", headline:"World Live News" },
   { kind:"tiktok", headline:"Viral Live Now" },
   { kind:"sport", headline:"Football Live Score" },
@@ -14,30 +14,61 @@ const POOL = [
   { kind:"naija", headline:"Naija Live Now" },
 ];
 
-function CryptoChart({ big=false, realCrypto }) {
-  const isReal = realCrypto && realCrypto.price;
-  const [simPrice, setSimPrice] = useState(79194.06);
-  const [pts, setPts] = useState([40,38,44,36,42,48,35,46,38,52,44,50,42,56,48]);
-  useEffect(()=>{
-    if(isReal) return;
-    const t=setInterval(()=>{ setSimPrice(p=> Math.max(78500, Math.min(79800, p + (Math.random()-0.52)*28))); setPts(prev=> [...prev.slice(-14), 30 + Math.random()*35]); }, 800);
-    return ()=>clearInterval(t);
-  },[isReal]);
-  const price = isReal ? realCrypto.price : simPrice;
-  const change = isReal ? realCrypto.change : -0.4;
-  const down = change < 0;
-  const displayPts = isReal ? [40,42,38,44,39,45,41,47,43,49,44,50,46,52,48] : pts;
-  return (
-    <div style={{ width:"100%" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <span style={{ fontSize: big?26:16, fontWeight:900, color: down ? "#ef4444" : "#22c55e" }}>${price.toLocaleString(undefined,{minimumFractionDigits:2})}</span>
-        <span style={{ fontSize:10, fontWeight:900, background: down ? "#ef4444" : "#22c55e", color:"#fff", padding:"3px 7px", borderRadius:6 }}>{down ? "▼ DOWN" : "▲ UP"}</span>
+// TRADING - SMALL = BTC + USD/NGN ONLY, EXPANDED = FULL MARKET
+function CryptoChart({ big=false, realCrypto, trading }) {
+  const list = trading?.cryptoList || [];
+  if(!big){
+    const btc = list.find(c=> c.name==="BTC") || { price: realCrypto?.price || 79194, change: realCrypto?.change || -0.4 };
+    const down = btc.change < 0;
+    const ngn = trading?.forex?.[0]?.price;
+    return (
+      <div style={{ width:"100%" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <span style={{ fontSize:16, fontWeight:900, color: down ? "#ef4444" : "#22c55e" }}>${Number(btc.price).toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+          <span style={{ fontSize:10, fontWeight:900, background: down ? "#ef4444" : "#22c55e", color:"#fff", padding:"3px 7px", borderRadius:6 }}>{down ? "▼" : "▲"} {Number(btc.change||0).toFixed(2)}%</span>
+        </div>
+        <div style={{ fontSize:10, color:"#94a3b8", marginTop:3 }}>BTC / USDT • {ngn ? `USD/NGN ₦${Math.round(ngn).toLocaleString()}` : "Syncing..."}</div>
+        <div style={{ fontSize:10, color:"#facc15", fontWeight:800, marginTop:4 }}>⭐ Tap to see Forex • Gold • Stocks</div>
       </div>
-      <div style={{ fontSize:10, color:"#94a3b8", marginTop:2 }}>BTC / USDT • {isReal ? "REAL • "+change?.toFixed(2)+"%" : "⚠️ SIMULATED"}</div>
-      <svg viewBox="0 0 100 60" style={{ width:"100%", height: big?160:70, marginTop:6 }}>
-        <polyline points={displayPts.map((y,i)=> `${i*7},${60-y}`).join(" ")} fill="none" stroke={down ? "#ef4444" : "#22c55e"} strokeWidth="2" />
-        {displayPts.map((y,i)=> <circle key={i} cx={i*7} cy={60-y} r="1.8" fill={down ? "#ef4444" : "#22c55e"} />)}
-      </svg>
+    );
+  }
+  return (
+    <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:10 }}>
+      <div>
+        <div style={{ fontSize:9, color:"#facc15", fontWeight:800 }}>💰 CRYPTO — TOP MOVERS • LIVE</div>
+        {list.length===0 && <div style={{ fontSize:11, color:"#94a3b8", marginTop:6 }}>Syncing crypto...</div>}
+        {list.map((c,i)=> (
+          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 10px", marginTop:6, background:"rgba(255,255,255,.05)", borderRadius:10, border:"1px solid rgba(255,255,255,.08)" }}>
+            <div><div style={{ fontSize:12, fontWeight:800 }}>{c.name} <span style={{ fontSize:10, color:"#94a3b8" }}>{c.full}</span></div><div style={{ fontSize:10, color:"#facc15" }}>{c.signal}</div></div>
+            <div style={{ textAlign:"right" }}><div style={{ fontSize:12, fontWeight:800 }}>${Number(c.price).toLocaleString(undefined,{maximumFractionDigits:2})}</div><div style={{ fontSize:11, fontWeight:800, color: c.change>=0 ? "#22c55e" : "#ef4444" }}>{c.change>=0 ? "▲" : "▼"} {Number(c.change||0).toFixed(2)}%</div></div>
+          </div>
+        ))}
+      </div>
+      <div>
+        <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>💱 FOREX — DOLLAR / NAIRA + WORLD</div>
+        {(trading?.forex||[]).map((f,i)=> (
+          <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"8px 10px", marginTop:6, background: f.pair==="USD / NGN" ? "rgba(250,204,21,.12)" : "rgba(34,211,238,.08)", borderRadius:10, border: f.pair==="USD / NGN" ? "1px solid rgba(250,204,21,.4)" : "1px solid rgba(255,255,255,.06)" }}>
+            <span style={{ fontSize:12, fontWeight:700 }}>{f.pair} <span style={{ fontSize:10, color:"#94a3b8" }}>{f.signal}</span></span>
+            <span style={{ fontSize:12, fontWeight:800 }}>{f.pair==="USD / NGN" ? "₦" : f.pair==="USD / JPY" ? "¥" : "$"}{Number(f.price).toLocaleString(undefined,{maximumFractionDigits:4})}</span>
+          </div>
+        ))}
+        <div style={{ fontSize:10, color:"#94a3b8", marginTop:4 }}>Naija traders: if USD/NGN go up, your dollar don gain value.</div>
+      </div>
+      <div style={{ display:"flex", gap:6 }}>
+        <div style={{ flex:1, background:"rgba(250,204,21,.1)", border:"1px solid rgba(250,204,21,.3)", borderRadius:12, padding:10, textAlign:"center" }}>
+          <div style={{ fontSize:9, color:"#facc15", fontWeight:800 }}>🥇 GOLD</div>
+          <div style={{ fontSize:15, fontWeight:900, marginTop:4 }}>${trading?.gold ? Number(trading.gold).toLocaleString() : "..."}</div>
+          <div style={{ fontSize:10, color:"#94a3b8" }}>per ounce</div>
+        </div>
+        <div style={{ flex:1, background:"rgba(34,211,238,.1)", border:"1px solid rgba(34,211,238,.3)", borderRadius:12, padding:10, textAlign:"center" }}>
+          <div style={{ fontSize:9, color:"#67e8f9", fontWeight:800 }}>📈 MARKET MOOD</div>
+          <div style={{ fontSize:13, fontWeight:900, marginTop:4 }}>{(list[0]?.change||0) >=0 ? "🟢 BULLISH" : "🔴 BEARISH"}</div>
+          <div style={{ fontSize:10, color:"#94a3b8" }}>Buyers vs Sellers</div>
+        </div>
+      </div>
+      <div style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, background:"rgba(255,255,255,.04)", padding:10, borderRadius:10 }}>
+        💡 <b style={{ color:"#fff" }}>For beginners:</b> Green = price dey go up, people dey buy. Red = price dey fall, people dey sell. No rush enter trade when e red pass -2%.
+      </div>
     </div>
   );
 }
@@ -76,7 +107,6 @@ function NewsView({ news, big=false, fullscreen=false, selected, setSelected, op
       </div>
     );
   }
-  // EDITED: NO MORE IFRAME - BBC blocks iframe = white box. Use in-box reader.
   if(openInside){
     const cur = news[selected % news.length];
     return (
@@ -154,7 +184,6 @@ function ViralView({ viral, fullscreen=false, selected, setSelected, big=false }
   return (
     <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
       <div style={{ background:"#000", borderRadius:12, overflow:"hidden", position:"relative" }}>
-        {/* EDITED: no muted autoplay wey dey block phone. Tap play = play with sound */}
         {v.video && !videoFailed ? (
           <video key={v.video} src={v.video} controls playsInline preload="metadata" poster={v.thumb || undefined} onError={()=> setVideoFailed(true)} style={{ width:"100%", maxHeight: fullscreen? 380 : 220, display:"block", background:"#000" }} />
         ) : v.thumb ? (
@@ -189,7 +218,7 @@ export default function EvaPhase1() {
   const [dragging, setDragging] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [toast, setToast] = useState("");
-  const [live, setLive] = useState({ news:[], scores:[], viral:[], crypto:null, date:"" });
+  const [live, setLive] = useState({ news:[], scores:[], viral:[], crypto:null, trading:null, date:"" });
   const [syncTime, setSyncTime] = useState("");
   const [selNews, setSelNews] = useState(0);
   const [selViral, setSelViral] = useState(0);
@@ -202,7 +231,7 @@ export default function EvaPhase1() {
     const load = async ()=>{
       try{
         const r = await fetch("/api/live"); const j = await r.json();
-        setLive({ news:j.news||[], scores:j.scores||[], viral:j.viral||[], crypto:j.crypto||null, date:j.date||"" });
+        setLive({ news:j.news||[], scores:j.scores||[], viral:j.viral||[], crypto:j.crypto||null, trading:j.trading||null, date:j.date||"" });
         setSyncTime(new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
       }catch(e){}
     };
@@ -237,7 +266,7 @@ export default function EvaPhase1() {
   };
 
   const renderContent = (box, big=false, fs=false) => {
-    if(box.kind==="crypto" || box.kind==="market") return <CryptoChart big={big||fs} realCrypto={live.crypto} />;
+    if(box.kind==="crypto" || box.kind==="market") return <CryptoChart big={big||fs} realCrypto={live.crypto} trading={live.trading} />;
     if(box.kind==="hacker") return <HackerBox big={big||fs} />;
     if(box.kind==="news" || box.kind==="naija") return <NewsView news={live.news} big={big} fullscreen={fs} selected={selNews} setSelected={setSelNews} openInside={openInside} setOpenInside={setOpenInside} />;
     if(box.kind==="sport") return <ScoresView scores={live.scores} fullscreen={fs} big={big} />;
@@ -331,4 +360,4 @@ export default function EvaPhase1() {
       <div style={{ position:"absolute", bottom:8, width:"100%", textAlign:"center", color:"rgba(103,232,249,.6)", fontSize:9, letterSpacing:3 }}>EVA • PHASE 2 • TAP OUTSIDE TO CLOSE • DOUBLE-TAP FULL</div>
     </div>
   );
-                            }
+  }
