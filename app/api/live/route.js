@@ -25,7 +25,6 @@ export async function GET() {
   }
   news = news.sort((a,b)=> new Date(b.time)-new Date(a.time)).slice(0,30);
 
-  // FOOTBALL - ALL LEAGUES TODAY
   const leagues = [
     { id:"eng.1", name:"EPL" },
     { id:"esp.1", name:"La Liga" },
@@ -69,12 +68,18 @@ export async function GET() {
     const j = await res.json(); crypto = { price: j.bitcoin?.usd, change: j.bitcoin?.usd_24h_change };
   } catch(e){}
 
-  // TRADING - Crypto + Forex + Gold - NEW
+  // TRADING - EDITED: real sparkline for live chart, no SIGNAL text, Gold via Binance
   let trading = { cryptoList:[], forex:[], gold:0 };
   try {
-    const r = await fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum,solana,dogecoin,tether,binancecoin&order=market_cap_desc&per_page=6&page=1&sparkline=false&price_change_percentage=24h", { next:{ revalidate: 20 } });
+    const r = await fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum,solana,dogecoin,tether,binancecoin&order=market_cap_desc&per_page=6&page=1&sparkline=true&price_change_percentage=24h", { next:{ revalidate: 20 } });
     const j = await r.json();
-    trading.cryptoList = (Array.isArray(j) ? j : []).map(c=> ({ name:c.symbol.toUpperCase(), full:c.name, price:c.current_price, change:c.price_change_percentage_24h, signal: c.price_change_percentage_24h > 2 ? "🔥 STRONG BUY" : c.price_change_percentage_24h > 0 ? "▲ BUY" : c.price_change_percentage_24h < -2 ? "🔴 STRONG SELL" : "▼ SELL" }));
+    trading.cryptoList = (Array.isArray(j) ? j : []).map(c=> ({
+      name:c.symbol.toUpperCase(),
+      full:c.name,
+      price:c.current_price,
+      change:c.price_change_percentage_24h,
+      spark: c.sparkline_in_7d?.price?.slice(-40) || []
+    }));
     if(trading.cryptoList.length>0){
       const btc = trading.cryptoList.find(c=> c.name==="BTC");
       if(btc) crypto = { price: btc.price, change: btc.change };
@@ -85,18 +90,25 @@ export async function GET() {
     const j = await r.json();
     const rates = j.rates || {};
     trading.forex = [
-      { pair:"USD / NGN", price: rates.NGN || 0, signal:"🇳🇬 Dollar to Naira" },
-      { pair:"EUR / USD", price: rates.EUR ? 1/rates.EUR : 0, signal:"Forex" },
-      { pair:"GBP / USD", price: rates.GBP ? 1/rates.GBP : 0, signal:"Forex" },
-      { pair:"USD / JPY", price: rates.JPY || 0, signal:"Forex" },
+      { pair:"USD / NGN", price: rates.NGN || 0 },
+      { pair:"EUR / USD", price: rates.EUR ? 1/rates.EUR : 0 },
+      { pair:"GBP / USD", price: rates.GBP ? 1/rates.GBP : 0 },
+      { pair:"USD / JPY", price: rates.JPY || 0 },
     ];
   } catch(e){}
+  // Gold via Binance PAXG - real live, no fail
   try {
-    const r = await fetch("https://data-asg.goldprice.org/db/XAUUSD.json", { next:{ revalidate: 60 } });
-    const j = await r.json(); trading.gold = j.items?.[0]?.curr || 0;
+    const r = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", { next:{ revalidate: 20 } });
+    const j = await r.json(); trading.gold = Number(j.price) || 0;
   } catch(e){}
+  // Fallback for Gold if Binance fails
+  if(!trading.gold){
+    try {
+      const r = await fetch("https://data-asg.goldprice.org/db/XAUUSD.json", { next:{ revalidate: 60 } });
+      const j = await r.json(); trading.gold = j.items?.[0]?.curr || 0;
+    } catch(e){}
+  }
 
-  // VIRAL - check 5 places for video
   let viral = [];
   try {
     const res = await fetch("https://www.reddit.com/r/funny+Unexpected+MadeMeSmile+NextFuckingLevel+PublicFreakout+videos+TikTokCringe+ContagiousLaughter/top.json?limit=30&t=day&raw_json=1", { headers:{ "User-Agent":"EVA/1.0" }, next:{ revalidate: 120 } });
@@ -119,4 +131,4 @@ export async function GET() {
   } catch(e){}
 
   return Response.json({ date: today, news, scores, crypto, viral, trading });
-    }
+       }
