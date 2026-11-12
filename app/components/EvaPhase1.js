@@ -14,69 +14,157 @@ const POOL = [
   { kind:"naija", headline:"Naija Live Now" },
 ];
 
-// LIVE CHART - moves every 800ms like real trading app, no account needed
-function LiveChart({ points=[], up=true, h=70 }) {
-  const [livePts, setLivePts] = useState(points);
-  const lastRef = useRef(points[points.length-1] || 100);
-  useEffect(()=>{ if(points.length){ setLivePts(points); lastRef.current = points[points.length-1]; } },[points.length]);
-  useEffect(()=>{
-    const t = setInterval(()=>{
-      const last = lastRef.current;
-      const next = last + (Math.random()-0.5) * (last*0.0015);
-      lastRef.current = next;
-      setLivePts(prev=> [...prev.slice(-39), next]);
-    }, 800);
-    return ()=> clearInterval(t);
-  },[]);
-  if(!livePts.length) return <div style={{ height:h, background:"rgba(255,255,255,.04)", borderRadius:8 }} />;
-  const min = Math.min(...livePts), max = Math.max(...livePts);
-  const path = livePts.map((p,i)=> `${(i/(livePts.length-1))*100},${40 - ((p-min)/((max-min)||1))*40}`).join(" L ");
+// REAL CHART - draws only real points, no fake tick
+function RealChart({ points=[], up=true, h=70 }) {
+  if(!points.length) return <div style={{ height:h, background:"rgba(255,255,255,.04)", borderRadius:8 }} />;
+  const min = Math.min(...points), max = Math.max(...points);
+  const path = points.map((p,i)=> `${(i/(points.length-1))*100},${40 - ((p-min)/((max-min)||1))*40}`).join(" L ");
   const color = up ? "#22c55e" : "#ef4444";
   return (
     <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width:"100%", height:h, display:"block" }}>
-      <defs><linearGradient id={`g${h}${up?"u":"d"}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.35"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
-      <path d={`M ${path} L 100,40 L 0,40 Z`} fill={`url(#g${h}${up?"u":"d"})`} />
+      <defs><linearGradient id={`rg${h}${up?"u":"d"}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.35"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+      <path d={`M ${path} L 100,40 L 0,40 Z`} fill={`url(#rg${h}${up?"u":"d"})`} />
       <path d={`M ${path}`} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
-      <circle cx="100" cy={40 - ((livePts[livePts.length-1]-min)/((max-min)||1))*40} r="2.5" fill={color}><animate attributeName="r" values="2;3.5;2" dur="1s" repeatCount="indefinite" /></circle>
+      <circle cx="100" cy={40 - ((points[points.length-1]-min)/((max-min)||1))*40} r="2.5" fill={color} />
     </svg>
   );
 }
 
-// TRADING - CLEAN, NO WORDS, ONLY PRICE + LIVE CHART
+// TRADING - 100% REAL BINANCE WEBSOCKET, NO Math.random, NO FAKE
 function CryptoChart({ big=false, realCrypto, trading }) {
   const list = trading?.cryptoList || [];
+  const [livePts, setLivePts] = useState({}); // { BTC: [...], ETH: [...] }
+  const [livePrice, setLivePrice] = useState({}); // { BTC: 71308, ... }
+  const [wsStatus, setWsStatus] = useState("connecting");
+  const [alertPrice, setAlertPrice] = useState("");
+  const [alertSet, setAlertSet] = useState(null);
+  const [alertHit, setAlertHit] = useState(false);
+  const [calcUsd, setCalcUsd] = useState("100");
+
+  // Seed with real CoinGecko sparkline (real 7-day history)
+  useEffect(()=>{
+    if(!list.length) return;
+    const seed = {};
+    list.forEach(c=> { if(c.spark?.length) seed[c.name] = c.spark.slice(-40); });
+    setLivePts(prev=> ({ ...seed, ...prev }));
+  },[list.length]);
+
+  // REAL BINANCE WEBSOCKET - real trades only
+  useEffect(()=>{
+    let ws = null;
+    let retry = null;
+    const connect = () => {
+      try{
+        ws = new WebSocket("wss://stream.binance.com:9443/stream?streams=btcusdt@trade/ethusdt@trade/bnbusdt@trade/solusdt@trade/dogeusdt@trade");
+        ws.onopen = ()=> setWsStatus("live");
+        ws.onmessage = (ev)=>{
+          try{
+            const j = JSON.parse(ev.data);
+            const d = j.data || {};
+            const sym = (d.s || "").replace("USDT","");
+            const price = Number(d.p);
+            if(!sym || !price) return;
+            setLivePrice(prev=> ({ ...prev, [sym]: price }));
+            setLivePts(prev=> {
+              const old = prev[sym] || [];
+              return { ...prev, [sym]: [...old.slice(-59), price] };
+            });
+          }catch(e){}
+        };
+        ws.onclose = ()=> { setWsStatus("reconnecting"); retry = setTimeout(connect, 3000); };
+        ws.onerror = ()=> { try{ ws.close(); }catch(e){} };
+      }catch(e){ retry = setTimeout(connect, 3000); }
+    };
+    connect();
+    return ()=> { if(ws) try{ ws.close(); }catch(e){} if(retry) clearTimeout(retry); };
+  },[]);
+
+  const getCoin = (c) => {
+    const pts = livePts[c.name] || c.spark || [];
+    const price = livePrice[c.name] || c.price;
+    return { ...c, pts, price };
+  };
+
+  const btcRaw = list.find(c=> c.name==="BTC") || { price: realCrypto?.price || 71308, change: -3.59, spark: [] };
+  const btc = getCoin(btcRaw);
+  const ngnRate = trading?.forex?.find(f=> f.pair==="USD / NGN")?.price || 1349;
+
+  // ALERT - checks real Binance price
+  useEffect(()=>{
+    if(!alertSet || !btc.price) return;
+    if(Math.abs(btc.price - alertSet)/alertSet < 0.002){
+      setAlertHit(true);
+      try{ navigator.vibrate?.([200,100,200]); }catch(e){}
+    }
+  },[btc.price, alertSet]);
+
   if(!big){
-    const btc = list.find(c=> c.name==="BTC") || { price: realCrypto?.price || 71394, change: -2.76, spark: [] };
     const up = (btc.change||0) >= 0;
     return (
       <div style={{ width:"100%" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <span style={{ fontSize:17, fontWeight:900 }}>${Number(btc.price).toLocaleString()}</span>
+          <span style={{ fontSize:17, fontWeight:900 }}>${Number(btc.price).toLocaleString(undefined,{maximumFractionDigits:2})}</span>
           <span style={{ fontSize:11, fontWeight:800, color: up ? "#22c55e" : "#ef4444" }}>{up ? "▲" : "▼"} {Math.abs(Number(btc.change||0)).toFixed(2)}%</span>
         </div>
-        <div style={{ marginTop:6 }}><LiveChart points={btc.spark} up={up} h={62} /></div>
+        <div style={{ marginTop:6 }}><RealChart points={btc.pts} up={up} h={62} /></div>
+        <div style={{ fontSize:9, color: wsStatus==="live" ? "#22c55e" : "#facc15", marginTop:4 }}>● {wsStatus==="live" ? "BINANCE LIVE" : "CONNECTING TO BINANCE..."}</div>
+        {alertSet && <div style={{ fontSize:10, color:"#facc15", marginTop:2 }}>🔔 Alert: ${Number(alertSet).toLocaleString()}</div>}
+        {alertHit && <div style={{ fontSize:11, color:"#22c55e", fontWeight:800, marginTop:2 }}>🔔 BTC DON REACH YOUR PRICE!</div>}
       </div>
     );
   }
+
+  const usd = Number(calcUsd)||0;
+  const btcAmount = btc.price ? usd / btc.price : 0;
+  const ngnAmount = usd * ngnRate;
+
   return (
     <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
-      {list.length===0 && <div style={{ fontSize:11, color:"#94a3b8" }}>Syncing...</div>}
-      {list.map((c,i)=> {
+      <div style={{ fontSize:10, color: wsStatus==="live" ? "#22c55e" : "#facc15", fontWeight:800 }}>● {wsStatus==="live" ? "BINANCE LIVE - REAL TRADES" : "CONNECTING TO BINANCE..."}</div>
+      {list.map((cRaw,i)=> {
+        const c = getCoin(cRaw);
         const up = (c.change||0) >= 0;
+        const stable = c.name==="USDT";
         return (
           <div key={i} style={{ background:"rgba(255,255,255,.04)", borderRadius:14, padding:"10px 12px", border:"1px solid rgba(255,255,255,.07)" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <span style={{ fontSize:13, fontWeight:800 }}>{c.name} <span style={{ fontSize:10, color:"#94a3b8", fontWeight:500 }}>{c.full}</span></span>
-              <span style={{ fontSize:13, fontWeight:800 }}>${Number(c.price).toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+              <span style={{ fontSize:13, fontWeight:800 }}>${Number(c.price).toLocaleString(undefined,{maximumFractionDigits: c.name==="DOGE" ? 4 : 2})}</span>
             </div>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:2 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:2 }}>
               <span style={{ fontSize:11, color: up ? "#22c55e" : "#ef4444", fontWeight:800 }}>{up ? "▲" : "▼"} {Math.abs(Number(c.change||0)).toFixed(2)}%</span>
               <span style={{ fontSize:10, color:"#22c55e" }}>● LIVE</span>
             </div>
-            <div style={{ marginTop:6 }}><LiveChart points={c.spark} up={up} h={58} /></div>
+            <div style={{ marginTop:6 }}>
+              {stable ? <div style={{ height:58, display:"flex", alignItems:"center", justifyContent:"center", borderBottom:"2px solid #22c55e", background:"rgba(34,197,94,.06)", borderRadius:8, fontSize:11, color:"#94a3b8" }}>— $1.00 STABLE —</div>
+              : <RealChart points={c.pts} up={up} h={58} />}
+            </div>
           </div>
         );
       })}
+      <div style={{ background:"rgba(250,204,21,.08)", border:"1px solid rgba(250,204,21,.3)", borderRadius:14, padding:12 }}>
+        <div style={{ fontSize:12, fontWeight:800 }}>🔔 PRICE ALERT</div>
+        {alertHit ? <div style={{ fontSize:12, color:"#22c55e", fontWeight:800, marginTop:6 }}>🔔 BTC DON REACH ${Number(alertSet).toLocaleString()}!</div>
+        : alertSet ? <div style={{ fontSize:11, marginTop:6 }}>Waiting for BTC to reach <b>${Number(alertSet).toLocaleString()}</b> • Now ${Number(btc.price).toLocaleString()}</div>
+        : <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Set price, EVA go shout when real Binance price reach am</div>}
+        <div style={{ display:"flex", gap:6, marginTop:8 }}>
+          <input value={alertPrice} onChange={e=> setAlertPrice(e.target.value.replace(/[^0-9]/g,""))} placeholder="e.g. 70000" inputMode="numeric" style={{ flex:1, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
+          <button onClick={()=>{ if(alertPrice){ setAlertSet(Number(alertPrice)); setAlertHit(false); setAlertPrice(""); } }} style={{ background:"#facc15", color:"#000", border:"none", borderRadius:999, padding:"8px 14px", fontWeight:800, fontSize:12, cursor:"pointer" }}>SET</button>
+          {alertSet && <button onClick={()=>{ setAlertSet(null); setAlertHit(false); }} style={{ background:"rgba(255,255,255,.1)", color:"#fff", border:"none", borderRadius:999, padding:"8px 10px", fontSize:12, cursor:"pointer" }}>✕</button>}
+        </div>
+      </div>
+      <div style={{ background:"rgba(34,211,238,.08)", border:"1px solid rgba(34,211,238,.3)", borderRadius:14, padding:12 }}>
+        <div style={{ fontSize:12, fontWeight:800 }}>🧮 CALCULATOR</div>
+        <div style={{ display:"flex", gap:6, marginTop:8, alignItems:"center" }}>
+          <span style={{ fontSize:13 }}>$</span>
+          <input value={calcUsd} onChange={e=> setCalcUsd(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" style={{ flex:1, background:"rgba(0,0,0,.4)", border:"1px solid rgba(255,255,255,.2)", borderRadius:999, padding:"8px 12px", color:"#fff", fontSize:13, outline:"none" }} />
+        </div>
+        <div style={{ fontSize:12, marginTop:8, lineHeight:1.6 }}>
+          = <b>{btcAmount.toFixed(6)} BTC</b><br/>
+          = <b>₦{Math.round(ngnAmount).toLocaleString()}</b><br/>
+          <span style={{ color:"#94a3b8", fontSize:11 }}>If BTC +5% → Profit = ₦{Math.round(ngnAmount*0.05).toLocaleString()}</span>
+        </div>
+      </div>
       <div style={{ display:"flex", gap:6 }}>
         {(trading?.forex||[]).map((f,i)=> (
           <div key={i} style={{ flex:1, background:"rgba(255,255,255,.04)", borderRadius:12, padding:"10px 8px", textAlign:"center" }}>
