@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
+import EvaPhase1 from "./components/EvaPhase1";
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const CHAT_ID = 1;
@@ -131,6 +132,7 @@ const getSizeFor = (msgs, kind) => {
 };
 
 export default function EVA() {
+  const [showHud, setShowHud] = useState(false);
   const [text, setText] = useState("");
   const [messages, setMessages] = useState([]);
   const [isReady, setIsReady] = useState(false);
@@ -416,6 +418,17 @@ export default function EVA() {
   const selectedOnlyEva = selectedIdxs.length > 0 && !selectedHasYou;
   const deleteTitle = selectedIdxs.length === 1 ? (selectedOnlyEva ? "Delete message from EVA?" : "Delete message?") : `Delete ${selectedIdxs.length} messages?`;
 
+  if (showHud) {
+    return (
+      <div>
+        <EvaPhase1 />
+        <button onClick={() => setShowHud(false)} style={{ position:"fixed", top:70, left:12, zIndex:100, background:"#ef4444", color:"#fff", border:"none", padding:"10px 14px", borderRadius:999, fontWeight:800, cursor:"pointer" }}>
+          ✕ EXIT HUD • BACK TO CHAT
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div ref={outerRef} style={{ height: "100dvh", minHeight: "100dvh", maxHeight: "100dvh", background: "#030014", color: "white", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "sans-serif", position: "fixed", inset: 0, top: 0, left: 0, right: 0, bottom: 0, overscrollBehavior: "none" }}>
       <style>{`
@@ -457,6 +470,7 @@ export default function EVA() {
             <b style={{ fontSize: 20, letterSpacing: 2, lineHeight: 1 }}>EVA</b>
           </div>
           <div style={{ position: "relative", flexShrink: 0, zIndex: 70, display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={()=> setShowHud(true)} style={{background:"#22d3ee", border:"none", color:"black", padding:"6px 12px", borderRadius:999, fontWeight:"bold", fontSize:13}}>🌍 HUD</button>
             <button onClick={()=> window.location.href='/build'} style={{background:"#c084fc", border:"none", color:"black", padding:"6px 12px", borderRadius:999, fontWeight:"bold", fontSize:13}}>🔨 BUILD</button>
             <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} style={{ width: 42, height: 42, borderRadius: 999, background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", color: "white", fontSize: 22, lineHeight: 1 }}>⋮</button>
             {showMenu && (
@@ -602,4 +616,4 @@ export default function EVA() {
       )}
     </div>
   );
-}
+  }
