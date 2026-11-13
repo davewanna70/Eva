@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import EarthGlobe from "./EarthGlobe";
+import EarthGlobe from "../../components/EarthGlobe";
 
 const POOL = [
   { kind:"crypto", headline:"Trading Live Market" },
@@ -419,7 +419,6 @@ export default function EvaPhase1() {
   };
   const filtered = boxes.filter(b=> b.headline.toLowerCase().includes(search.toLowerCase()));
 
-  // Map live data to EarthGlobe standing boxes format
   const earthCrypto = live.crypto ? { price: live.crypto.price, change: live.crypto.change || 0 } : live.trading?.cryptoList?.find(c=>c.name==="BTC") ? { price: live.trading.cryptoList.find(c=>c.name==="BTC").price, change: live.trading.cryptoList.find(c=>c.name==="BTC").change || 0 } : null;
 
   return (
@@ -507,4 +506,4 @@ export default function EvaPhase1() {
       <div style={{ position:"absolute", bottom:8, width:"100%", textAlign:"center", color:"rgba(103,232,249,.6)", fontSize:9, letterSpacing:3 }}>EVA • PHASE 2 • TAP OUTSIDE TO CLOSE • DOUBLE-TAP FULL</div>
     </div>
   );
-    }
+}
