@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
+import EarthGlobe from "./EarthGlobe";
 
 const POOL = [
   { kind:"crypto", headline:"Trading Live Market" },
@@ -418,20 +419,34 @@ export default function EvaPhase1() {
   };
   const filtered = boxes.filter(b=> b.headline.toLowerCase().includes(search.toLowerCase()));
 
+  // Map live data to EarthGlobe standing boxes format
+  const earthCrypto = live.crypto ? { price: live.crypto.price, change: live.crypto.change || 0 } : live.trading?.cryptoList?.find(c=>c.name==="BTC") ? { price: live.trading.cryptoList.find(c=>c.name==="BTC").price, change: live.trading.cryptoList.find(c=>c.name==="BTC").change || 0 } : null;
+
   return (
     <div style={{ position:"fixed", inset:0, background:"radial-gradient(circle at 50% 50%, #04121f, #000 78%)", overflow:"hidden", fontFamily:"sans-serif", color:"#fff", touchAction:"pan-y" }}>
-      <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}} @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
+      <style>{`@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
+
+      {/* NEW 3D EARTH - FULL SCREEN BEHIND EVERYTHING - Rotating, Standing Boxes, Asteroids, Stars, Cosmic Light */}
+      <div style={{ position:"absolute", inset:0, zIndex:1 }}>
+        <EarthGlobe
+          news={live.news}
+          scores={live.scores}
+          crypto={earthCrypto}
+          trading={live.trading}
+          onSelectCity={(city)=>{ showToast(`${city.name}, ${city.country} • Inside Earth`); }}
+          onSelectNews={(idx)=>{ setSelNews(idx); const n = live.news[idx]; if(n){ setPinned({ kind:"news", headline:"World Live News", uid: 9999 }); setOpenInside({ source:n.source, link:n.link }); } }}
+        />
+      </div>
+
       <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", zIndex:40, display:"flex", gap:6, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(34,211,238,.3)", borderRadius:999, padding:"6px 6px 6px 14px", backdropFilter:"blur(6px)", width:"min(420px, 92%)" }}>
         <input value={search} onChange={e=> setSearch(e.target.value)} placeholder="Search orbit..." style={{ flex:1, background:"transparent", border:"none", outline:"none", color:"#fff", fontSize:13, minWidth:0 }} />
         <button onClick={()=> setSearch("")} style={{ background:"rgba(34,211,238,.15)", border:"none", borderRadius:999, padding:"8px 14px", fontWeight:800, cursor:"pointer", color:"#fff", flexShrink:0 }}>CLEAR</button>
       </div>
-      <div style={{ position:"absolute", left:"50%", top:"54%", transform:"translate(-50%,-50%)", width:230, height:230, borderRadius:"50%", background:"radial-gradient(circle at 40% 35%, #1e3a8a, #020617 65%)", border:"1px solid rgba(34,211,238,.5)", boxShadow:"0 0 60px rgba(34,211,238,.4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:120, zIndex:5 }}>
-        🌍
-        <div style={{ position:"absolute", inset:10, borderRadius:"50%", border:"1px dashed rgba(34,211,238,.4)", animation:"spin 10s linear infinite" }} />
-      </div>
-      <div style={{ position:"absolute", top:58, left:"50%", transform:"translateX(-50%)", zIndex:30, fontSize:10, color:"rgba(255,255,255,.45)", letterSpacing:1, whiteSpace:"nowrap", background:"rgba(0,0,0,.25)", padding:"4px 10px", borderRadius:999 }}>
+
+      <div style={{ position:"absolute", top:58, left:"50%", transform:"translateX(-50%)", zIndex:30, fontSize:10, color:"rgba(255,255,255,.6)", letterSpacing:1, whiteSpace:"nowrap", background:"rgba(0,0,0,.35)", padding:"4px 10px", borderRadius:999 }}>
         {live.date ? `TODAY ${live.date} • REAL DATA • SYNC ${syncTime || "…"}` : "TAP BOX TO OPEN • DOUBLE-TAP FOR FULL SCREEN • TAP OUTSIDE TO CLOSE"}
       </div>
+
       {filtered.map((box,i)=>{
         if(pinned?.uid===box.uid) return null;
         const pos = [{l:"3%",t:"16%"},{l:"62%",t:"15%"},{l:"3%",t:"68%"},{l:"62%",t:"68%"},{l:"32%",t:"84%"}][i%5];
@@ -440,7 +455,7 @@ export default function EvaPhase1() {
           <div key={box.uid}
             onTouchStart={e=> onTouchStart(e,box,false)} onTouchMove={e=> onTouchMove(e,box,false)} onTouchEnd={e=> onTouchEnd(e,box,false)}
             onClick={()=> { if(!dragging) openPinned(box); }}
-            style={{ position:"absolute", left:pos.l, top:pos.t, width:162, padding:10, borderRadius:16, background: isActiveDrag ? "rgba(34,211,238,.15)" : "rgba(255,255,255,0.04)", backdropFilter:"blur(2px)", border:"1px solid rgba(255,255,255,0.12)", cursor:"grab", animation: isActiveDrag ? "none" : "floaty 4s infinite", animationDelay:`${i*.5}s`, zIndex: isActiveDrag?50:10, transform: isActiveDrag ? `translateY(${dragY}px) scale(1.05)` : "none", transition: isActiveDrag ? "none" : "transform .2s", opacity: isActiveDrag && dragY>80 ? 0.5 : 1 }}>
+            style={{ position:"absolute", left:pos.l, top:pos.t, width:162, padding:10, borderRadius:16, background: isActiveDrag ? "rgba(34,211,238,.15)" : "rgba(2,12,24,.72)", backdropFilter:"blur(4px)", border:"1px solid rgba(255,255,255,0.12)", cursor:"grab", animation: isActiveDrag ? "none" : "floaty 4s infinite", animationDelay:`${i*.5}s`, zIndex: isActiveDrag?50:10, transform: isActiveDrag ? `translateY(${dragY}px) scale(1.05)` : "none", transition: isActiveDrag ? "none" : "transform .2s", opacity: isActiveDrag && dragY>80 ? 0.5 : 1 }}>
             <div style={{ fontSize:11, fontWeight:800, letterSpacing:.3, lineHeight:1.2 }}>{box.headline}</div>
             <div style={{ marginTop:7 }}>{renderContent(box,false,false)}</div>
             <div style={{ fontSize:9, color:"rgba(255,255,255,.4)", marginTop:6 }}>TAP TO OPEN • DOUBLE-TAP FULL</div>
@@ -492,4 +507,4 @@ export default function EvaPhase1() {
       <div style={{ position:"absolute", bottom:8, width:"100%", textAlign:"center", color:"rgba(103,232,249,.6)", fontSize:9, letterSpacing:3 }}>EVA • PHASE 2 • TAP OUTSIDE TO CLOSE • DOUBLE-TAP FULL</div>
     </div>
   );
-                                                                                            }
+    }
