@@ -37,10 +37,9 @@ const ARCS = [
   { from: [35.6762, 139.6503], to: [34.0522, -118.2437], color: "#f472b6" },
 ];
 
-// FLOATING LIGHT PARTICLES - Like in your fan video
 function Particles() {
   const ref = useRef();
-  const { positions, count } = useMemo(() => {
+  const { positions } = useMemo(() => {
     const count = 350;
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
@@ -51,7 +50,7 @@ function Particles() {
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
     }
-    return { positions, count };
+    return { positions };
   }, []);
   useFrame((state, delta) => {
     if (ref.current) {
@@ -69,7 +68,6 @@ function Particles() {
   );
 }
 
-// ORBIT RING - Thin neon blue, like in your video
 function OrbitRing({ onSelectCity }) {
   const ringRef = useRef();
   useFrame((_, delta) => { if (ringRef.current) ringRef.current.rotation.z += delta * 0.02; });
@@ -142,20 +140,6 @@ function CityDot({ city, onSelect }) {
   );
 }
 
-function StandingBox({ position, title, subtitle, color = "#22d3ee", onClick }) {
-  return (
-    <Billboard position={position}>
-      <Html center distanceFactor={10} style={{ pointerEvents: "auto" }} zIndexRange={[30, 0]}>
-        <div onClick={(e) => { e.stopPropagation(); onClick && onClick(); }} style={{ width: 108, background: "rgba(2,12,24,0.72)", border: `1px solid ${color}`, borderRadius: 10, padding: "6px 7px", color: "#fff", fontFamily: "sans-serif", boxShadow: `0 0 14px ${color}66`, cursor: "pointer", backdropFilter: "blur(3px)" }}>
-          <div style={{ fontSize: 7, color, fontWeight: 800 }}>{subtitle}</div>
-          <div style={{ fontSize: 9, fontWeight: 800, lineHeight: 1.25, marginTop: 3, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{title}</div>
-          <div style={{ fontSize: 7, color: "rgba(255,255,255,0.7)", marginTop: 4 }}>● LIVE • TAP TO OPEN</div>
-        </div>
-      </Html>
-    </Billboard>
-  );
-}
-
 function RealAsteroid({ pos, size, color }) {
   const ref = useRef();
   const geo = useMemo(() => {
@@ -200,13 +184,11 @@ function AsteroidBelt() {
   );
 }
 
-function EarthGroup({ news, scores, crypto, trading, onSelectCity, onSelectEarthBox }) {
+function EarthGroup({ onSelectCity }) {
   const earthRef = useRef();
   const shellRef = useRef();
   const floatRef = useRef();
-  // --- NEW: Load your real picture from public/earth.jpg ---
   const earthTexture = useTexture("/earth.jpg");
-  // Make the picture look bright / holographic, not dark
   earthTexture.colorSpace = THREE.SRGBColorSpace;
 
   useFrame((state, delta) => {
@@ -215,21 +197,14 @@ function EarthGroup({ news, scores, crypto, trading, onSelectCity, onSelectEarth
     if (floatRef.current) floatRef.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.12;
   });
 
-  const topNews = (news || []).slice(0, 3);
-  const liveScore = (scores || []).find((s) => s.live) || (scores || [])[0];
-  const btcPrice = crypto?.price || trading?.cryptoList?.find(c => c.name === "BTC")?.price || 69304;
-  const btcChange = crypto?.change ?? trading?.cryptoList?.find(c => c.name === "BTC")?.change ?? -4.88;
-
   return (
     <group ref={floatRef}>
       {/* SPINNING GROUP - Real Earth + Cities + Arcs spin together */}
       <group ref={earthRef}>
-        {/* --- NEW: REAL EARTH FROM YOUR PICTURE --- */}
         <mesh>
           <sphereGeometry args={[1.95, 64, 64]} />
           <meshBasicMaterial map={earthTexture} transparent={false} toneMapped={false} />
         </mesh>
-        {/* Faint blue inner glow under the picture, so it still glows like hologram */}
         <mesh>
           <sphereGeometry args={[1.9, 32, 32]} />
           <meshBasicMaterial color="#0a2a6b" transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} />
@@ -239,7 +214,7 @@ function EarthGroup({ news, scores, crypto, trading, onSelectCity, onSelectEarth
         {ARCS.map((a, i) => <FlyingDot key={`f${i}`} from={a.from} to={a.to} color={a.color} speed={0.18 + i * 0.04} />)}
       </group>
 
-      {/* HEXAGON HOLOGRAM SHELL - Does NOT spin fast, just shimmer */}
+      {/* HEXAGON HOLOGRAM SHELL */}
       <group ref={shellRef}>
         <mesh>
           <icosahedronGeometry args={[2.12, 3]} />
@@ -255,31 +230,23 @@ function EarthGroup({ news, scores, crypto, trading, onSelectCity, onSelectEarth
         </mesh>
       </group>
 
-      {/* ATMOSPHERE HALO - Blue glow around Earth */}
+      {/* ATMOSPHERE HALO */}
       <mesh><sphereGeometry args={[2.32, 32, 32]} /><meshBasicMaterial color="#3b82f6" transparent opacity={0.12} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
       <mesh><sphereGeometry args={[2.55, 32, 32]} /><meshBasicMaterial color="#22d3ee" transparent opacity={0.05} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
 
-      {/* BOXES - FIXED, DO NOT SPIN */}
-      <group>
-        <StandingBox position={[-2.85, 1.35, 0.6]} title={`Trading Live Market - BTC $${Number(btcPrice).toLocaleString()} ${Number(btcChange).toFixed(2)}%`} subtitle="TRADING LIVE MARKET" color="#22c55e" onClick={() => onSelectEarthBox && onSelectEarthBox("crypto")} />
-        <StandingBox position={[2.85, 1.35, 0.6]} title={topNews[1]?.title || topNews[0]?.title || "World Live News"} subtitle={`${topNews[1]?.source || "BBC"} • NAIJA / WORLD`} color="#facc15" onClick={() => onSelectEarthBox && onSelectEarthBox("news", 1)} />
-        <StandingBox position={[2.85, -1.35, 0.6]} title={topNews[2]?.title || "China / World News"} subtitle={`${topNews[2]?.source || "BBC"} • CHINA / WORLD`} color="#ef4444" onClick={() => onSelectEarthBox && onSelectEarthBox("news", 2)} />
-        <StandingBox position={[-2.85, -1.35, 0.6]} title="Viral Live Now - Tap to watch viral videos" subtitle="VIRAL • LIVE NOW" color="#f472b6" onClick={() => onSelectEarthBox && onSelectEarthBox("tiktok")} />
-        <StandingBox position={[0, 2.95, 0.4]} title={liveScore ? `${liveScore.home} ${liveScore.homeScore} - ${liveScore.awayScore} ${liveScore.away}` : "Football Live Score - Checking leagues..."} subtitle={`${liveScore?.league || "FOOTBALL"} • ${liveScore?.status || "LIVE"}`} color="#facc15" onClick={() => onSelectEarthBox && onSelectEarthBox("sport")} />
-        <StandingBox position={[0, -2.95, 0.4]} title="EVA System Check - All OK" subtitle="EVA SYSTEM • CHECK" color="#4ade80" onClick={() => onSelectEarthBox && onSelectEarthBox("hacker")} />
-      </group>
+      {/* NO BOXES HERE - CLEAN EARTH ONLY */}
     </group>
   );
 }
 
-export default function EarthGlobe({ news, scores, crypto, trading, onSelectCity, onSelectEarthBox }) {
+export default function EarthGlobe({ onSelectCity }) {
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 1 }}>
       <Canvas camera={{ position: [0, 0.4, 5.6], fov: 42 }} gl={{ antialias: false, alpha: true, powerPreference: "low-power" }} dpr={[1, 1.5]} style={{ background: "transparent" }}>
         <Suspense fallback={null}>
           <ambientLight intensity={0.6} />
           <Stars radius={100} depth={50} count={800} factor={4} saturation={0} fade speed={0.5} />
-          <EarthGroup news={news} scores={scores} crypto={crypto} trading={trading} onSelectCity={onSelectCity} onSelectEarthBox={onSelectEarthBox} />
+          <EarthGroup onSelectCity={onSelectCity} />
           <Particles />
           <OrbitRing onSelectCity={onSelectCity} />
           <AsteroidBelt />
@@ -288,4 +255,4 @@ export default function EarthGlobe({ news, scores, crypto, trading, onSelectCity
       </Canvas>
     </div>
   );
-    }
+        }
