@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import EarthGlobe from "../../components/EarthGlobe";
+import EarthGlobe from "../../Components/EarthGlobe";
 
 const POOL = [
   { kind:"crypto", headline:"Trading Live Market" },
@@ -506,4 +506,4 @@ export default function EvaPhase1() {
       <div style={{ position:"absolute", bottom:8, width:"100%", textAlign:"center", color:"rgba(103,232,249,.6)", fontSize:9, letterSpacing:3 }}>EVA • PHASE 2 • TAP OUTSIDE TO CLOSE • DOUBLE-TAP FULL</div>
     </div>
   );
-}
+    }
