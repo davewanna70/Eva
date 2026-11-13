@@ -421,11 +421,19 @@ export default function EvaPhase1() {
 
   const earthCrypto = live.crypto ? { price: live.crypto.price, change: live.crypto.change || 0 } : live.trading?.cryptoList?.find(c=>c.name==="BTC") ? { price: live.trading.cryptoList.find(c=>c.name==="BTC").price, change: live.trading.cryptoList.find(c=>c.name==="BTC").change || 0 } : null;
 
+  const handleEarthBox = (kind, idx) => {
+    if(kind==="news" && typeof idx==="number"){ setSelNews(idx); }
+    const map = { crypto:"Trading Live Market", news:"World Live News", tiktok:"Viral Live Now", sport:"Football Live Score", hacker:"EVA System Check", market:"Dollar / Naira Live" };
+    setPinned({ kind: kind, headline: map[kind] || "World Live News", uid: 9999 });
+    setOpenInside(null); setFullscreen(false);
+    showToast(`Opened from Earth: ${map[kind] || kind}`);
+  };
+
   return (
     <div style={{ position:"fixed", inset:0, background:"radial-gradient(circle at 50% 50%, #04121f, #000 78%)", overflow:"hidden", fontFamily:"sans-serif", color:"#fff", touchAction:"pan-y" }}>
       <style>{`@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
 
-      {/* NEW 3D EARTH - FULL SCREEN BEHIND EVERYTHING - Rotating, Standing Boxes, Asteroids, Stars, Cosmic Light */}
+      {/* 3D EARTH - BEHIND EVERYTHING */}
       <div style={{ position:"absolute", inset:0, zIndex:1 }}>
         <EarthGlobe
           news={live.news}
@@ -434,6 +442,7 @@ export default function EvaPhase1() {
           trading={live.trading}
           onSelectCity={(city)=>{ showToast(`${city.name}, ${city.country} • Inside Earth`); }}
           onSelectNews={(idx)=>{ setSelNews(idx); const n = live.news[idx]; if(n){ setPinned({ kind:"news", headline:"World Live News", uid: 9999 }); setOpenInside({ source:n.source, link:n.link }); } }}
+          onSelectEarthBox={handleEarthBox}
         />
       </div>
 
@@ -448,16 +457,16 @@ export default function EvaPhase1() {
 
       {filtered.map((box,i)=>{
         if(pinned?.uid===box.uid) return null;
-        const pos = [{l:"3%",t:"16%"},{l:"62%",t:"15%"},{l:"3%",t:"68%"},{l:"62%",t:"68%"},{l:"32%",t:"84%"}][i%5];
+        const pos = [{l:"2%",t:"15%"},{l:"68%",t:"14%"},{l:"2%",t:"68%"},{l:"68%",t:"68%"},{l:"35%",t:"86%"}][i%5];
         const isActiveDrag = dragging && activeUidRef.current===box.uid;
         return (
           <div key={box.uid}
             onTouchStart={e=> onTouchStart(e,box,false)} onTouchMove={e=> onTouchMove(e,box,false)} onTouchEnd={e=> onTouchEnd(e,box,false)}
             onClick={()=> { if(!dragging) openPinned(box); }}
-            style={{ position:"absolute", left:pos.l, top:pos.t, width:162, padding:10, borderRadius:16, background: isActiveDrag ? "rgba(34,211,238,.15)" : "rgba(2,12,24,.72)", backdropFilter:"blur(4px)", border:"1px solid rgba(255,255,255,0.12)", cursor:"grab", animation: isActiveDrag ? "none" : "floaty 4s infinite", animationDelay:`${i*.5}s`, zIndex: isActiveDrag?50:10, transform: isActiveDrag ? `translateY(${dragY}px) scale(1.05)` : "none", transition: isActiveDrag ? "none" : "transform .2s", opacity: isActiveDrag && dragY>80 ? 0.5 : 1 }}>
-            <div style={{ fontSize:11, fontWeight:800, letterSpacing:.3, lineHeight:1.2 }}>{box.headline}</div>
-            <div style={{ marginTop:7 }}>{renderContent(box,false,false)}</div>
-            <div style={{ fontSize:9, color:"rgba(255,255,255,.4)", marginTop:6 }}>TAP TO OPEN • DOUBLE-TAP FULL</div>
+            style={{ position:"absolute", left:pos.l, top:pos.t, width:132, padding:8, borderRadius:14, background: isActiveDrag ? "rgba(34,211,238,.18)" : "rgba(2,12,24,0.45)", backdropFilter:"blur(4px)", border:"1px solid rgba(255,255,255,0.12)", cursor:"grab", animation: isActiveDrag ? "none" : "floaty 4s infinite", animationDelay:`${i*.5}s`, zIndex: isActiveDrag?50:10, transform: isActiveDrag ? `translateY(${dragY}px) scale(1.05)` : "none", transition: isActiveDrag ? "none" : "transform .2s", opacity: isActiveDrag && dragY>80 ? 0.5 : 1 }}>
+            <div style={{ fontSize:10, fontWeight:800, letterSpacing:.3, lineHeight:1.2 }}>{box.headline}</div>
+            <div style={{ marginTop:6 }}>{renderContent(box,false,false)}</div>
+            <div style={{ fontSize:8, color:"rgba(255,255,255,.4)", marginTop:5 }}>TAP TO OPEN • DOUBLE-TAP FULL</div>
           </div>
         );
       })}
@@ -506,4 +515,4 @@ export default function EvaPhase1() {
       <div style={{ position:"absolute", bottom:8, width:"100%", textAlign:"center", color:"rgba(103,232,249,.6)", fontSize:9, letterSpacing:3 }}>EVA • PHASE 2 • TAP OUTSIDE TO CLOSE • DOUBLE-TAP FULL</div>
     </div>
   );
-    }
+}
