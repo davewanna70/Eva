@@ -372,6 +372,8 @@ export default function EvaPhase1() {
   },[]);
 
   const showToast = (t)=> { setToast(t); setTimeout(()=> setToast(""), 1800); };
+
+  // FIXED: Trash for Earth boxes (uid 9999) now just closes, it doesn't try to trash invisible box
   const spawnNew = (removeUid) => {
     const usedKinds = boxes.filter(b=> b.uid!==removeUid).map(b=> b.kind);
     const candidates = POOL.filter(p=> !usedKinds.includes(p.kind));
@@ -379,7 +381,16 @@ export default function EvaPhase1() {
     setBoxes(prev=> [...prev.filter(b=> b.uid!==removeUid), { ...pick, uid: Date.now()+Math.random() }]);
     showToast(`Trashed • New: ${pick.headline}`);
   };
-  const handleTrash = (uid) => { spawnNew(uid); if(pinned?.uid===uid){ setPinned(null); setFullscreen(false); setOpenInside(null); } };
+  const handleTrash = (uid) => {
+    // Earth boxes have uid 9999 - they are not in boxes list, just close them
+    if(uid === 9999){
+      setPinned(null); setFullscreen(false); setOpenInside(null);
+      showToast("Closed • Tap Earth box to open again");
+      return;
+    }
+    spawnNew(uid);
+    if(pinned?.uid===uid){ setPinned(null); setFullscreen(false); setOpenInside(null); }
+  };
   const closeAll = ()=> { setPinned(null); setFullscreen(false); setOpenInside(null); };
   const openPinned = (box)=> { setPinned(box); setOpenInside(null); setFullscreen(false); };
   const onTouchStart = (e, box, isPinned) => {
@@ -417,9 +428,14 @@ export default function EvaPhase1() {
       if(v) setOpenInside({ source:"Viral", link:v.link });
     }
   };
-  // FIXED: filtered is kept for search, but we NO LONGER render floating boxes from it.
-  // That was the double-box bug in your video. Only Earth boxes render now.
-  const filtered = boxes.filter(b=> b.headline.toLowerCase().includes(search.toLowerCase()));
+
+  // FIXED: Search now searches POOL and opens pinned on tap, not invisible boxes
+  const searchResults = search.trim() ? POOL.filter(p=> p.headline.toLowerCase().includes(search.toLowerCase()) || p.kind.toLowerCase().includes(search.toLowerCase())).slice(0,5) : [];
+  const openSearchResult = (p) => {
+    setPinned({ kind: p.kind, headline: p.headline, uid: 9999 });
+    setOpenInside(null); setFullscreen(false); setSearch("");
+    showToast(`Opened: ${p.headline}`);
+  };
 
   const earthCrypto = live.crypto ? { price: live.crypto.price, change: live.crypto.change || 0 } : live.trading?.cryptoList?.find(c=>c.name==="BTC") ? { price: live.trading.cryptoList.find(c=>c.name==="BTC").price, change: live.trading.cryptoList.find(c=>c.name==="BTC").change || 0 } : null;
 
@@ -435,7 +451,7 @@ export default function EvaPhase1() {
     <div style={{ position:"fixed", inset:0, background:"radial-gradient(circle at 50% 50%, #04121f, #000 78%)", overflow:"hidden", fontFamily:"sans-serif", color:"#fff", touchAction:"pan-y" }}>
       <style>{`@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
 
-      {/* 3D EARTH - BEHIND EVERYTHING */}
+      {/* 3D EARTH - BEHIND EVERYTHING - HOLOGRAM */}
       <div style={{ position:"absolute", inset:0, zIndex:1 }}>
         <EarthGlobe
           news={live.news}
@@ -443,24 +459,31 @@ export default function EvaPhase1() {
           crypto={earthCrypto}
           trading={live.trading}
           onSelectCity={(city)=>{ showToast(`${city.name}, ${city.country} • Inside Earth`); }}
-          onSelectNews={(idx)=>{ setSelNews(idx); const n = live.news[idx]; if(n){ setPinned({ kind:"news", headline:"World Live News", uid: 9999 }); setOpenInside({ source:n.source, link:n.link }); } }}
           onSelectEarthBox={handleEarthBox}
         />
       </div>
 
-      <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", zIndex:40, display:"flex", gap:6, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(34,211,238,.3)", borderRadius:999, padding:"6px 6px 6px 14px", backdropFilter:"blur(6px)", width:"min(420px, 92%)" }}>
-        <input value={search} onChange={e=> setSearch(e.target.value)} placeholder="Search orbit..." style={{ flex:1, background:"transparent", border:"none", outline:"none", color:"#fff", fontSize:13, minWidth:0 }} />
-        <button onClick={()=> setSearch("")} style={{ background:"rgba(34,211,238,.15)", border:"none", borderRadius:999, padding:"8px 14px", fontWeight:800, cursor:"pointer", color:"#fff", flexShrink:0 }}>CLEAR</button>
+      <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", zIndex:40, display:"flex", flexDirection:"column", gap:6, width:"min(420px, 92%)" }}>
+        <div style={{ display:"flex", gap:6, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(34,211,238,.3)", borderRadius:999, padding:"6px 6px 6px 14px", backdropFilter:"blur(6px)" }}>
+          <input value={search} onChange={e=> setSearch(e.target.value)} placeholder="Search orbit..." style={{ flex:1, background:"transparent", border:"none", outline:"none", color:"#fff", fontSize:13, minWidth:0 }} />
+          <button onClick={()=> setSearch("")} style={{ background:"rgba(34,211,238,.15)", border:"none", borderRadius:999, padding:"8px 14px", fontWeight:800, cursor:"pointer", color:"#fff", flexShrink:0 }}>CLEAR</button>
+        </div>
+        {searchResults.length > 0 && (
+          <div style={{ background:"rgba(2,12,24,.95)", border:"1px solid rgba(34,211,238,.3)", borderRadius:14, overflow:"hidden" }}>
+            {searchResults.map((p,i)=> (
+              <div key={i} onClick={()=> openSearchResult(p)} style={{ padding:"10px 14px", fontSize:12, fontWeight:700, cursor:"pointer", borderBottom: i < searchResults.length-1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+                {p.headline} <span style={{ fontSize:10, color:"#67e8f9" }}>• TAP TO OPEN</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ position:"absolute", top:58, left:"50%", transform:"translateX(-50%)", zIndex:30, fontSize:10, color:"rgba(255,255,255,.6)", letterSpacing:1, whiteSpace:"nowrap", background:"rgba(0,0,0,.35)", padding:"4px 10px", borderRadius:999 }}>
         {live.date ? `TODAY ${live.date} • REAL DATA • SYNC ${syncTime || "…"}` : "TAP BOX TO OPEN • DOUBLE-TAP FOR FULL SCREEN • TAP OUTSIDE TO CLOSE"}
       </div>
 
-      {/* FIXED: FLOATING BOXES REMOVED HERE - This was the double-box / overlap bug.
-          Before, this block rendered 5 floating boxes on top of the 6 Earth boxes.
-          Now we render NOTHING here, so Earth is clean and only Earth boxes show.
-          Earth boxes are inside EarthGlobe.js - they still open pinned on tap. */}
+      {/* FLOATING BOXES REMOVED - Only Earth boxes show, inside EarthGlobe.js */}
 
       {showTrash && (
         <div style={{ position:"absolute", bottom:0, left:0, right:0, height:110, zIndex:60, background: dragY>80 ? "rgba(239,68,68,.35)" : "rgba(239,68,68,.15)", borderTop:"2px dashed #ef4444", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:4 }}>
@@ -482,7 +505,7 @@ export default function EvaPhase1() {
             <div style={{ marginTop:10, fontSize:10, color:"rgba(255,255,255,.5)", textAlign:"center" }}>Double-tap for full screen • Tap outside to close</div>
             <div style={{ display:"flex", gap:6, marginTop:10 }}>
               <button onClick={handleOpenInside} style={{ flex:1, background:"#22d3ee", color:"#000", textAlign:"center", padding:"6px 8px", borderRadius:999, fontWeight:800, fontSize:11, border:"none", cursor:"pointer" }}>OPEN INSIDE</button>
-              <button onClick={()=> handleTrash(pinned.uid)} style={{ flex:1, background:"rgba(239,68,68,.15)", border:"1px solid #ef4444", color:"#fff", padding:"6px 8px", borderRadius:999, cursor:"pointer", fontSize:11 }}>TRASH + NEW</button>
+              <button onClick={()=> handleTrash(pinned.uid)} style={{ flex:1, background:"rgba(239,68,68,.15)", border:"1px solid #ef4444", color:"#fff", padding:"6px 8px", borderRadius:999, cursor:"pointer", fontSize:11 }}>CLOSE</button>
             </div>
           </div>
         </div>
@@ -498,7 +521,7 @@ export default function EvaPhase1() {
             <div style={{ flex:1, overflowY:"auto", padding:14, paddingBottom:90 }}>{renderContent(pinned,true,true)}</div>
             <div style={{ position:"absolute", bottom:0, left:0, right:0, display:"flex", gap:6, padding:12, background:"rgba(2,6,23,.95)", borderTop:"1px solid rgba(255,255,255,.1)" }}>
               <button onClick={handleOpenInside} style={{ flex:1, background:"#22d3ee", color:"#000", textAlign:"center", padding:"8px", borderRadius:999, fontWeight:800, fontSize:12, border:"none", cursor:"pointer" }}>OPEN INSIDE</button>
-              <button onClick={()=> handleTrash(pinned.uid)} style={{ flex:1, background:"rgba(239,68,68,.15)", border:"1px solid #ef4444", color:"#fff", padding:"8px", borderRadius:999, cursor:"pointer", fontSize:12 }}>TRASH + NEW</button>
+              <button onClick={()=> handleTrash(pinned.uid)} style={{ flex:1, background:"rgba(239,68,68,.15)", border:"1px solid #ef4444", color:"#fff", padding:"8px", borderRadius:999, cursor:"pointer", fontSize:12 }}>CLOSE</button>
             </div>
           </div>
         </div>
@@ -507,4 +530,4 @@ export default function EvaPhase1() {
       <div style={{ position:"absolute", bottom:8, width:"100%", textAlign:"center", color:"rgba(103,232,249,.6)", fontSize:9, letterSpacing:3 }}>EVA • PHASE 2 • TAP OUTSIDE TO CLOSE • DOUBLE-TAP FULL</div>
     </div>
   );
-    }
+                                     }
