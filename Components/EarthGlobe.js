@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useMemo, useState, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Stars, Html, Billboard, OrbitControls } from "@react-three/drei";
+import { Stars, Html, Billboard, OrbitControls, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 
 function latLngToVec3(lat, lng, radius) {
@@ -12,32 +12,6 @@ function latLngToVec3(lat, lng, radius) {
     radius * Math.cos(phi),
     radius * Math.sin(phi) * Math.sin(theta)
   );
-}
-
-// GLOWING CONTINENT DOTS - These make the Earth shape inside the hologram
-// Not a photo, just blue glowing dots in shape of continents
-function getContinentPoints() {
-  const pts = [];
-  const addRegion = (latMin, latMax, lngMin, lngMax, count) => {
-    for (let i = 0; i < count; i++) {
-      const lat = latMin + Math.random() * (latMax - latMin);
-      const lng = lngMin + Math.random() * (lngMax - lngMin);
-      pts.push([lat, lng]);
-    }
-  };
-  // North America
-  addRegion(25, 70, -165, -55, 220);
-  // South America
-  addRegion(-55, 10, -80, -35, 160);
-  // Africa
-  addRegion(-35, 35, -18, 52, 220);
-  // Europe
-  addRegion(36, 70, -10, 45, 120);
-  // Asia
-  addRegion(10, 70, 45, 140, 280);
-  // Australia
-  addRegion(-40, -12, 113, 153, 80);
-  return pts;
 }
 
 const CITIES = [
@@ -91,27 +65,6 @@ function Particles() {
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
       <pointsMaterial size={0.035} color="#bae6fd" transparent opacity={0.9} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
-    </points>
-  );
-}
-
-// HOLOGRAM CONTINENTS - Glowing blue dots
-function HologramContinents() {
-  const { positions } = useMemo(() => {
-    const pts = getContinentPoints();
-    const positions = new Float32Array(pts.length * 3);
-    pts.forEach(([lat, lng], i) => {
-      const v = latLngToVec3(lat, lng, 1.95);
-      positions[i * 3] = v.x; positions[i * 3 + 1] = v.y; positions[i * 3 + 2] = v.z;
-    });
-    return { positions };
-  }, []);
-  return (
-    <points>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-      </bufferGeometry>
-      <pointsMaterial size={0.045} color="#38bdf8" transparent opacity={0.95} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
     </points>
   );
 }
@@ -251,13 +204,14 @@ function EarthGroup({ news, scores, crypto, trading, onSelectCity, onSelectEarth
   const earthRef = useRef();
   const shellRef = useRef();
   const floatRef = useRef();
+  // --- NEW: Load your real picture from public/earth.jpg ---
+  const earthTexture = useTexture("/earth.jpg");
+  // Make the picture look bright / holographic, not dark
+  earthTexture.colorSpace = THREE.SRGBColorSpace;
 
   useFrame((state, delta) => {
-    // Slow spin like the fan - 0.05
     if (earthRef.current) earthRef.current.rotation.y += delta * 0.05;
-    // Shell spins slightly different - gives hologram shimmer
     if (shellRef.current) shellRef.current.rotation.y -= delta * 0.015;
-    // Float up/down like hologram floating
     if (floatRef.current) floatRef.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.12;
   });
 
@@ -268,14 +222,18 @@ function EarthGroup({ news, scores, crypto, trading, onSelectCity, onSelectEarth
 
   return (
     <group ref={floatRef}>
-      {/* SPINNING GROUP - Continents + Cities + Arcs spin together */}
+      {/* SPINNING GROUP - Real Earth + Cities + Arcs spin together */}
       <group ref={earthRef}>
-        {/* Inner faint blue core - so Earth glows from inside like hologram */}
+        {/* --- NEW: REAL EARTH FROM YOUR PICTURE --- */}
+        <mesh>
+          <sphereGeometry args={[1.95, 64, 64]} />
+          <meshBasicMaterial map={earthTexture} transparent={false} toneMapped={false} />
+        </mesh>
+        {/* Faint blue inner glow under the picture, so it still glows like hologram */}
         <mesh>
           <sphereGeometry args={[1.9, 32, 32]} />
-          <meshBasicMaterial color="#0a2a6b" transparent opacity={0.28} blending={THREE.AdditiveBlending} depthWrite={false} />
+          <meshBasicMaterial color="#0a2a6b" transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
-        <HologramContinents />
         {CITIES.map((c, i) => <CityDot key={i} city={c} onSelect={onSelectCity} />)}
         {ARCS.map((a, i) => <ArcLine key={i} from={a.from} to={a.to} color={a.color} />)}
         {ARCS.map((a, i) => <FlyingDot key={`f${i}`} from={a.from} to={a.to} color={a.color} speed={0.18 + i * 0.04} />)}
@@ -283,20 +241,17 @@ function EarthGroup({ news, scores, crypto, trading, onSelectCity, onSelectEarth
 
       {/* HEXAGON HOLOGRAM SHELL - Does NOT spin fast, just shimmer */}
       <group ref={shellRef}>
-        {/* Hexagon / Wireframe shell - This is the transparent hologram look */}
         <mesh>
           <icosahedronGeometry args={[2.12, 3]} />
-          <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.38} blending={THREE.AdditiveBlending} depthWrite={false} />
+          <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.28} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
-        {/* Second lat/long wireframe - makes it look more like globe */}
         <mesh>
           <sphereGeometry args={[2.15, 18, 12]} />
-          <meshBasicMaterial color="#67e8f9" wireframe transparent opacity={0.16} blending={THREE.AdditiveBlending} depthWrite={false} />
+          <meshBasicMaterial color="#67e8f9" wireframe transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
-        {/* Glass shine shell - very faint */}
         <mesh>
           <sphereGeometry args={[2.18, 32, 32]} />
-          <meshBasicMaterial color="#a5f3fc" transparent opacity={0.07} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+          <meshBasicMaterial color="#a5f3fc" transparent opacity={0.05} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
       </group>
 
@@ -322,7 +277,6 @@ export default function EarthGlobe({ news, scores, crypto, trading, onSelectCity
     <div style={{ position: "absolute", inset: 0, zIndex: 1 }}>
       <Canvas camera={{ position: [0, 0.4, 5.6], fov: 42 }} gl={{ antialias: false, alpha: true, powerPreference: "low-power" }} dpr={[1, 1.5]} style={{ background: "transparent" }}>
         <Suspense fallback={null}>
-          {/* NO HEAVY LIGHTS NEEDED - Hologram is light itself */}
           <ambientLight intensity={0.6} />
           <Stars radius={100} depth={50} count={800} factor={4} saturation={0} fade speed={0.5} />
           <EarthGroup news={news} scores={scores} crypto={crypto} trading={trading} onSelectCity={onSelectCity} onSelectEarthBox={onSelectEarthBox} />
@@ -334,4 +288,4 @@ export default function EarthGlobe({ news, scores, crypto, trading, onSelectCity
       </Canvas>
     </div>
   );
-}
+    }
