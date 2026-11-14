@@ -58,23 +58,34 @@ export default function EVA(){
   const scrollRef=useRef(null), textareaRef=useRef(null), outerRef=useRef(null), didInitialScroll=useRef(false), swipeStartX=useRef(null), swipeStartY=useRef(null), longPressTimer=useRef(null), savedScrollTop=useRef(0), justSelectedAt=useRef(0), isLongPress=useRef(false), emojiGridRef=useRef(null), emojiScrollPosRef=useRef(0), emojiTabsRef=useRef(null), swipeStartXRef=useRef(null), swipeStartYRef=useRef(null), showEmojiRef=useRef(false);
   showEmojiRef.current=showEmoji;
 
-  // --- EVA VOICE: Jessica talks every reply ---
+  // --- EVA VOICE: Jessica talks every reply - controlled from 3-dot menu ---
   const evaAudioRef = useRef(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [alwaysListening, setAlwaysListening] = useState(false);
+  const voiceEnabledRef = useRef(true);
+  voiceEnabledRef.current = voiceEnabled;
+  const showToastRef = useRef(null);
   const speakEva = async (replyText) => {
-    if (!voiceEnabled || !replyText) return;
+    if (!voiceEnabledRef.current || !replyText) return;
     try {
       const cleanReply = clean(replyText).replace("▍","").slice(0, 900);
       if (!cleanReply.trim()) return;
       const res = await fetch("/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: cleanReply }) });
-      if (!res.ok) return;
+      if (!res.ok) { if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key in Vercel"); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       if (evaAudioRef.current) evaAudioRef.current.pause();
       const audio = new Audio(url);
       evaAudioRef.current = audio;
       await audio.play();
-    } catch(e) {}
+    } catch(e) { if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key"); }
+  };
+  const stopVoice = () => {
+    try { if (evaAudioRef.current) { evaAudioRef.current.pause(); evaAudioRef.current = null; } } catch(e) {}
+    setAlwaysListening(false);
+    setVoiceEnabled(false);
+    setShowMenu(false);
+    if(showToastRef.current) showToastRef.current("Voice Stopped");
   };
 
   // 2026 BACK BUTTON: press phone Back in HUD -> back to chat, no EXIT button needed
@@ -100,7 +111,8 @@ export default function EVA(){
   },[]);
 
   useEffect(()=>{ if(!isReady||didInitialScroll.current||messages.length===0) return; if(scrollRef.current) scrollRef.current.scrollTop=scrollRef.current.scrollHeight; didInitialScroll.current=true; },[isReady,messages.length]);
-  const showToast=t=>{ setToast(t); setTimeout(()=>setToast(""),1500); };
+  const showToast=t=>{ setToast(t); setTimeout(()=>setToast(""),2500); };
+  showToastRef.current = showToast;
   const saveToSupabase=async(sender,msgText)=>{ try{ const {error}=await supabase.from("messages").insert([{chat_id:CHAT_ID,sender,text:msgText}]); return !error; }catch(e){ return false; } };
   const openClearSheet=()=>{ setShowMenu(false); setShowClearSheet(true); };
   const doClearChat=async()=>{
@@ -126,8 +138,9 @@ export default function EVA(){
   const openDeleteSheet=e=>{ e?.stopPropagation(); e?.preventDefault(); setShowDeleteSheet(true); };
   const doDeleteForMe=async()=>{ const st=scrollRef.current?scrollRef.current.scrollTop:0; const del=new Set(selectedIdxs); setMessages(p=>{ const n=p.filter((_,i)=>!del.has(i)); try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(err){} return n; }); setShowDeleteSheet(false); setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast(selectedIdxs.length>1?`${selectedIdxs.length} messages deleted`:"Message deleted"); };
   const doDeleteForEveryone=async()=>{ const st=scrollRef.current?scrollRef.current.scrollTop:0; const del=new Set(selectedIdxs); for(const i of selectedIdxs.filter(i=>messages[i]?.from==="you")){ try{ const txt=messages[i]?.text; if(txt) await supabase.from("messages").delete().eq("chat_id",CHAT_ID).eq("sender","you").eq("text",txt); }catch(err){} } setMessages(p=>{ const n=p.filter((_,i)=>!del.has(i)); try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(err){} return n; }); setShowDeleteSheet(false); setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast("Message deleted for everyone"); };
-  const askEVA=async()=>{
-    if(!text.trim()||isThinking) return; const userText=text.trim(); const curReply=replyTo; setText(""); setReplyTo(null); setShowEmoji(false); setEmojiSearch(""); const nowTs=Date.now(); const lower=userText.toLowerCase();
+  const askEVA=async(overrideText)=>{
+    const incoming = typeof overrideText === "string" ? overrideText : "";
+    if((!incoming && !text.trim())||isThinking) return; const userText=(incoming||text).trim(); const curReply=replyTo; setText(""); setReplyTo(null); setShowEmoji(false); setEmojiSearch(""); const nowTs=Date.now(); const lower=userText.toLowerCase();
     if(lower.includes("my name is")){ const nm=userText.split(/my name is/i)[1].trim().split(" ")[0].replace(/[^a-zA-Z]/g,""); if(nm){ const cap=nm.charAt(0).toUpperCase()+nm.slice(1).toLowerCase(); setMyName(cap); localStorage.setItem("eva_user_name",cap); } }
     if(lower.includes("my best food is")){ const v=userText.split(/my best food is/i)[1].trim(); const np={...prefs,food:v}; setPrefs(np); localStorage.setItem("eva_user_prefs",JSON.stringify(np)); }
     if(lower.includes("i want to buy")){ const v=userText.split(/i want to buy/i)[1].trim(); const np={...prefs,want_to_buy:v}; setPrefs(np); localStorage.setItem("eva_user_prefs",JSON.stringify(np)); }
@@ -162,14 +175,17 @@ export default function EVA(){
         <div style={{display:"flex",padding:"12px 18px",alignItems:"center",justifyContent:"space-between",minHeight:56}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:38,height:38,borderRadius:999,overflow:"hidden",border:"2px solid #a78bfa",background:"linear-gradient(135deg,#1e1b4b,#4c1d95,#0ea5e9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>💧</div><b style={{fontSize:20,letterSpacing:2}}>EVA</b></div>
           <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,zIndex:70}}>
-            <button onClick={()=>setVoiceEnabled(v=>!v)} style={{background:voiceEnabled?"#22d3ee":"rgba(255,255,255,.2)",border:"none",color:voiceEnabled?"black":"white",padding:"6px 12px",borderRadius:999,fontWeight:"bold",fontSize:13}}>{voiceEnabled?"🔊 Voice ON":"🔇 Voice OFF"}</button>
             <button onClick={()=>setShowHud(true)} style={{background:"#22d3ee",border:"none",color:"black",padding:"6px 12px",borderRadius:999,fontWeight:"bold",fontSize:13}}>🌍 HUD</button>
             <button onClick={()=>window.location.href='/build'} style={{background:"#c084fc",border:"none",color:"black",padding:"6px 12px",borderRadius:999,fontWeight:"bold",fontSize:13}}>🔨 BUILD</button>
             <button onClick={e=>{e.stopPropagation(); setShowMenu(!showMenu);}} style={{width:42,height:42,borderRadius:999,background:"rgba(255,255,255,.14)",border:"1px solid rgba(255,255,255,.3)",color:"white",fontSize:22}}>⋮</button>
-            {showMenu && <div style={{position:"absolute",top:50,right:0,width:210,background:"rgba(10,10,20,.98)",borderRadius:14,overflow:"hidden",zIndex:80,boxShadow:"0 10px 30px rgba(0,0,0,.6)",border:"1px solid rgba(255,255,255,.12)"}} onClick={e=>e.stopPropagation()}>
+            {showMenu && <div style={{position:"absolute",top:50,right:0,width:240,background:"rgba(10,10,20,.98)",borderRadius:14,overflow:"hidden",zIndex:80,boxShadow:"0 10px 30px rgba(0,0,0,.6)",border:"1px solid rgba(255,255,255,.12)"}} onClick={e=>e.stopPropagation()}>
               <button onClick={()=>{setShowMenu(false); setShowSearch(true); setSearchQuery(""); setTimeout(()=>document.getElementById("eva-search-input")?.focus(),100);}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"white",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>🔍 Search</button>
               <button onClick={()=>{setShowMenu(false); setShowMedia(true);}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"white",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>🖼️ Media, links, and docs</button>
-              <button onClick={openClearSheet} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#ff8080",padding:"13px 16px",fontSize:14}}>🗑️ Clear Chat</button>
+              <button onClick={openClearSheet} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#ff8080",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>🗑️ Clear Chat</button>
+              <button onClick={()=>{setVoiceEnabled(v=>!v); setShowMenu(false);}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"white",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>{voiceEnabled?"🔊 Voice ON - Tap to Mute":"🔇 Voice OFF - Tap to Unmute"}</button>
+              <button onClick={()=>{const nv=!alwaysListening; setAlwaysListening(nv); setShowMenu(false); showToast(nv?"Always Listening ON":"Always Listening OFF");}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"white",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>{alwaysListening?"🎤 Always Listening ON":"🎤 Always Listening OFF"}</button>
+              <button onClick={()=>{setShowMenu(false); speakEva("Hello Boss, this is Eva. Can you hear me clearly?");}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"white",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>🔊 Test Voice</button>
+              <button onClick={stopVoice} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#ff8080",padding:"13px 16px",fontSize:14}}>⏹️ Stop Voice & Listening</button>
             </div>}
           </div>
         </div>
@@ -219,11 +235,11 @@ export default function EVA(){
         <div style={{display:"flex",gap:6,maxWidth:520,margin:"0 auto",background:"rgba(255,255,255,.14)",border:"1px solid rgba(255,255,255,.3)",borderRadius:999,padding:8,alignItems:"center"}}>
           <button onTouchStart={e=>e.preventDefault()} onMouseDown={e=>e.preventDefault()} onClick={toggleEmoji} style={{background:showEmoji?"#8b5cf6":"transparent",border:"none",fontSize:24,padding:"2px 4px",borderRadius:999}}>😊</button>
           <textarea ref={textareaRef} value={text} onChange={e=>setText(e.target.value)} onTouchStart={e=>{ if(showEmojiRef.current){ e.preventDefault(); setShowEmoji(false); setTimeout(()=>textareaRef.current?.focus(),120); } }} onFocus={()=>{ if(showEmojiRef.current) setShowEmoji(false); saveScroll(); }} onBlur={()=>setTimeout(restoreScroll,50)} onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); askEVA(); } }} placeholder="Ask EVA..." rows={1} enterKeyHint="send" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} readOnly={showEmoji} style={{flex:1,background:"transparent",border:"none",outline:"none",color:"white",padding:"10px 6px",fontSize:15,resize:"none",maxHeight:100}} />
-          <button onTouchStart={e=>e.preventDefault()} onMouseDown={e=>e.preventDefault()} onClick={askEVA} style={{background:"#8b5cf6",border:"none",color:"white",padding:"10px 18px",borderRadius:999,fontWeight:"bold"}}>Ask →</button>
+          <button onTouchStart={e=>e.preventDefault()} onMouseDown={e=>e.preventDefault()} onClick={()=>askEVA()} style={{background:"#8b5cf6",border:"none",color:"white",padding:"10px 18px",borderRadius:999,fontWeight:"bold"}}>Ask →</button>
         </div>
       </div>}
-      {/* EVA VOICE FLOATING BUTTON - Listening + Talking */}
-      <EvaVoice onUserSaid={(spokenText) => { setText(spokenText); setTimeout(() => { const ev = new KeyboardEvent("keydown", { key: "Enter" }); textareaRef.current?.dispatchEvent(ev); }, 300); }} />
+      {/* EVA VOICE - Invisible, controlled from 3-dot menu */}
+      <EvaVoice enabled={alwaysListening} onUserSaid={(spokenText) => { askEVA(spokenText); }} />
     </div>
   );
-  }
+              }
