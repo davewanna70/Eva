@@ -2,6 +2,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import EvaPhase1 from "./components/EvaPhase1";
+import EvaVoice from "./components/EvaVoice";
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const CHAT_ID = 1;
 // Emoji: "emoji keyword" - shorter, same search
@@ -56,6 +57,25 @@ export default function EVA(){
   const [showClearSheet,setShowClearSheet]=useState(false); const [clearMode,setClearMode]=useState("all");
   const scrollRef=useRef(null), textareaRef=useRef(null), outerRef=useRef(null), didInitialScroll=useRef(false), swipeStartX=useRef(null), swipeStartY=useRef(null), longPressTimer=useRef(null), savedScrollTop=useRef(0), justSelectedAt=useRef(0), isLongPress=useRef(false), emojiGridRef=useRef(null), emojiScrollPosRef=useRef(0), emojiTabsRef=useRef(null), swipeStartXRef=useRef(null), swipeStartYRef=useRef(null), showEmojiRef=useRef(false);
   showEmojiRef.current=showEmoji;
+
+  // --- EVA VOICE: Jessica talks every reply ---
+  const evaAudioRef = useRef(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const speakEva = async (replyText) => {
+    if (!voiceEnabled || !replyText) return;
+    try {
+      const cleanReply = clean(replyText).replace("▍","").slice(0, 900);
+      if (!cleanReply.trim()) return;
+      const res = await fetch("/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: cleanReply }) });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (evaAudioRef.current) evaAudioRef.current.pause();
+      const audio = new Audio(url);
+      evaAudioRef.current = audio;
+      await audio.play();
+    } catch(e) {}
+  };
 
   // 2026 BACK BUTTON: press phone Back in HUD -> back to chat, no EXIT button needed
   useEffect(()=>{ if(!showHud) return; window.history.pushState({hud:true},""); const onPop=()=>setShowHud(false); window.addEventListener("popstate",onPop); return ()=>window.removeEventListener("popstate",onPop); },[showHud]);
@@ -120,8 +140,8 @@ export default function EVA(){
       const history=[...messages,{from:"you",text:userText}].slice(-10).map(m=>({role:m.from==="you"?"user":"assistant",content:m.text}));
       const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:userText,history,userProfile:{name:myName,prefs,bestFood:prefs.food,wantToBuy:prefs.want_to_buy,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Africa/Lagos"}})});
       const ct=r.headers.get("content-type")||"";
-      if(ct.includes("application/json")){ const d=await r.json(); const reply=d.reply||"I am here. Please try again."; await typeOut(reply); saveToSupabase("eva",reply); }
-      else{ const reader=r.body.getReader(); const dec=new TextDecoder(); let full=""; let shown=""; const loop=setInterval(()=>{ if(shown.length<full.length){ shown=full.slice(0,shown.length+4); setMessages(p=>{ const c=[...p]; c[c.length-1]={from:"eva",text:clean(shown)+"▍",time:nowTs}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); } },18); while(true){ const {done,value}=await reader.read(); if(done) break; full+=dec.decode(value,{stream:true}); } clearInterval(loop); await typeOut(full); saveToSupabase("eva",full); }
+      if(ct.includes("application/json")){ const d=await r.json(); const reply=d.reply||"I am here. Please try again."; await typeOut(reply); speakEva(reply); saveToSupabase("eva",reply); }
+      else{ const reader=r.body.getReader(); const dec=new TextDecoder(); let full=""; let shown=""; const loop=setInterval(()=>{ if(shown.length<full.length){ shown=full.slice(0,shown.length+4); setMessages(p=>{ const c=[...p]; c[c.length-1]={from:"eva",text:clean(shown)+"▍",time:nowTs}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); } },18); while(true){ const {done,value}=await reader.read(); if(done) break; full+=dec.decode(value,{stream:true}); } clearInterval(loop); await typeOut(full); speakEva(full); saveToSupabase("eva",full); }
     }catch(e){ setMessages(p=>{ const w=p.slice(0,-1); const n=[...w,{from:"eva",text:"Network issue. Please try again.",time:Date.now()}]; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(e){} return n; }); }
     setIsThinking(false); textareaRef.current?.focus();
   };
@@ -142,6 +162,7 @@ export default function EVA(){
         <div style={{display:"flex",padding:"12px 18px",alignItems:"center",justifyContent:"space-between",minHeight:56}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:38,height:38,borderRadius:999,overflow:"hidden",border:"2px solid #a78bfa",background:"linear-gradient(135deg,#1e1b4b,#4c1d95,#0ea5e9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>💧</div><b style={{fontSize:20,letterSpacing:2}}>EVA</b></div>
           <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,zIndex:70}}>
+            <button onClick={()=>setVoiceEnabled(v=>!v)} style={{background:voiceEnabled?"#22d3ee":"rgba(255,255,255,.2)",border:"none",color:voiceEnabled?"black":"white",padding:"6px 12px",borderRadius:999,fontWeight:"bold",fontSize:13}}>{voiceEnabled?"🔊 Voice ON":"🔇 Voice OFF"}</button>
             <button onClick={()=>setShowHud(true)} style={{background:"#22d3ee",border:"none",color:"black",padding:"6px 12px",borderRadius:999,fontWeight:"bold",fontSize:13}}>🌍 HUD</button>
             <button onClick={()=>window.location.href='/build'} style={{background:"#c084fc",border:"none",color:"black",padding:"6px 12px",borderRadius:999,fontWeight:"bold",fontSize:13}}>🔨 BUILD</button>
             <button onClick={e=>{e.stopPropagation(); setShowMenu(!showMenu);}} style={{width:42,height:42,borderRadius:999,background:"rgba(255,255,255,.14)",border:"1px solid rgba(255,255,255,.3)",color:"white",fontSize:22}}>⋮</button>
@@ -201,6 +222,8 @@ export default function EVA(){
           <button onTouchStart={e=>e.preventDefault()} onMouseDown={e=>e.preventDefault()} onClick={askEVA} style={{background:"#8b5cf6",border:"none",color:"white",padding:"10px 18px",borderRadius:999,fontWeight:"bold"}}>Ask →</button>
         </div>
       </div>}
+      {/* EVA VOICE FLOATING BUTTON - Listening + Talking */}
+      <EvaVoice onUserSaid={(spokenText) => { setText(spokenText); setTimeout(() => { const ev = new KeyboardEvent("keydown", { key: "Enter" }); textareaRef.current?.dispatchEvent(ev); }, 300); }} />
     </div>
   );
-      }
+  }
