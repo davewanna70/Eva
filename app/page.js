@@ -56,12 +56,10 @@ export default function EVA(){
   const [showClearSheet,setShowClearSheet]=useState(false); const [clearMode,setClearMode]=useState("all");
   const scrollRef=useRef(null), textareaRef=useRef(null), outerRef=useRef(null), didInitialScroll=useRef(false), swipeStartX=useRef(null), swipeStartY=useRef(null), longPressTimer=useRef(null), savedScrollTop=useRef(0), justSelectedAt=useRef(0), isLongPress=useRef(false), emojiGridRef=useRef(null), emojiScrollPosRef=useRef(0), emojiTabsRef=useRef(null), swipeStartXRef=useRef(null), swipeStartYRef=useRef(null), showEmojiRef=useRef(false);
   showEmojiRef.current=showEmoji;
-  // FIXED: Prevent overlap - each question gets own ID, old typing is killed
   const activeRequestRef = useRef(0);
   const typingIntervalRef = useRef(null);
-  const isThinkingRef = useRef(false);
 
-  // --- EVA VOICE: FIXED - OFF by default, no auto-talk, no auto-fail ---
+  // --- EVA VOICE: OFF by default, Test Voice forces talk ---
   const evaAudioRef = useRef(null);
   const isSpeakingRef = useRef(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -69,8 +67,8 @@ export default function EVA(){
   const voiceEnabledRef = useRef(false);
   voiceEnabledRef.current = voiceEnabled;
   const showToastRef = useRef(null);
-  const speakEva = async (replyText) => {
-    if (!voiceEnabledRef.current || !replyText) return;
+  const speakEva = async (replyText, force = false) => {
+    if ((!voiceEnabledRef.current && !force) || !replyText) return;
     if (isSpeakingRef.current) return;
     try {
       const cleanReply = clean(replyText).replace("▍","").slice(0, 900);
@@ -143,21 +141,18 @@ export default function EVA(){
   const openDeleteSheet=e=>{ e?.stopPropagation(); e?.preventDefault(); setShowDeleteSheet(true); };
   const doDeleteForMe=async()=>{ const st=scrollRef.current?scrollRef.current.scrollTop:0; const del=new Set(selectedIdxs); setMessages(p=>{ const n=p.filter((_,i)=>!del.has(i)); try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(err){} return n; }); setShowDeleteSheet(false); setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast(selectedIdxs.length>1?`${selectedIdxs.length} messages deleted`:"Message deleted"); };
   const doDeleteForEveryone=async()=>{ const st=scrollRef.current?scrollRef.current.scrollTop:0; const del=new Set(selectedIdxs); for(const i of selectedIdxs.filter(i=>messages[i]?.from==="you")){ try{ const txt=messages[i]?.text; if(txt) await supabase.from("messages").delete().eq("chat_id",CHAT_ID).eq("sender","you").eq("text",txt); }catch(err){} } setMessages(p=>{ const n=p.filter((_,i)=>!del.has(i)); try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(err){} return n; }); setShowDeleteSheet(false); setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast("Message deleted for everyone"); };
-
-  // FIXED askEVA - No overlap, each answer has own ID, old typing killed
   const askEVA=async(overrideText)=>{
     const incoming = typeof overrideText === "string" ? overrideText : "";
     if((!incoming && !text.trim())) return;
-    if(isThinkingRef.current){ showToast("Wait make EVA finish first..."); return; }
+    if(isThinking){ showToast("Wait make EVA finish first..."); return; }
     const userText=(incoming||text).trim(); const curReply=replyTo; setText(""); setReplyTo(null); setShowEmoji(false); setEmojiSearch(""); const nowTs=Date.now(); const lower=userText.toLowerCase();
+    const myRequestId = ++activeRequestRef.current;
+    const evaMsgTime = nowTs + 1;
     if(lower.includes("my name is")){ const nm=userText.split(/my name is/i)[1].trim().split(" ")[0].replace(/[^a-zA-Z]/g,""); if(nm){ const cap=nm.charAt(0).toUpperCase()+nm.slice(1).toLowerCase(); setMyName(cap); localStorage.setItem("eva_user_name",cap); } }
     if(lower.includes("my best food is")){ const v=userText.split(/my best food is/i)[1].trim(); const np={...prefs,food:v}; setPrefs(np); localStorage.setItem("eva_user_prefs",JSON.stringify(np)); }
     if(lower.includes("i want to buy")){ const v=userText.split(/i want to buy/i)[1].trim(); const np={...prefs,want_to_buy:v}; setPrefs(np); localStorage.setItem("eva_user_prefs",JSON.stringify(np)); }
-    isThinkingRef.current = true; setIsThinking(true);
-    const myRequestId = ++activeRequestRef.current;
-    const evaMsgTime = nowTs + 1;
+    setIsThinking(true); const userMsgIndex=messages.length;
     if(typingIntervalRef.current) clearInterval(typingIntervalRef.current);
-    const userMsgIndex=messages.length;
     setMessages(p=>{ const n=[...p,{from:"you",text:userText,time:nowTs,status:"sending",replyTo:curReply},{from:"eva",text:"▍",time:evaMsgTime}]; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(e){} return n; });
     saveToSupabase("you",userText).then(ok=>{ if(!ok) return; setMessages(p=>{ const c=[...p]; for(let i=c.length-1;i>=0;i--){ if(c[i].from==="you"&&c[i].time===nowTs){ c[i]={...c[i],status:"delivered"}; break; } } try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); });
     setTimeout(()=>{ if(!scrollRef.current) return; const el=document.getElementById(`eva-msg-${userMsgIndex}`); if(!el){ scrollRef.current.scrollTop=scrollRef.current.scrollHeight; return; } scrollRef.current.scrollTo({top:el.offsetTop-12,behavior:"smooth"}); },80);
@@ -169,9 +164,8 @@ export default function EVA(){
       if(ct.includes("application/json")){ const d=await r.json(); const reply=d.reply||"I am here. Please try again."; await typeOut(reply); speakEva(reply); saveToSupabase("eva",reply); }
       else{ const reader=r.body.getReader(); const dec=new TextDecoder(); let full=""; while(true){ const {done,value}=await reader.read(); if(done) break; if(activeRequestRef.current!==myRequestId) break; full+=dec.decode(value,{stream:true}); const snapshot=full; setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:clean(snapshot)+"▍",time:evaMsgTime}; return c; }); } setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:clean(full),time:evaMsgTime}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); speakEva(full); saveToSupabase("eva",full); }
     }catch(e){ setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:"Network issue. Please try again.",time:evaMsgTime}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); }
-    isThinkingRef.current = false; setIsThinking(false); textareaRef.current?.focus();
+    setIsThinking(false); textareaRef.current?.focus();
   };
-
   const hideKeyboard=e=>{ if(e&&e.target!==e.currentTarget) return; setShowMenu(false); if(selectedIdxs.length>0){ const st=scrollRef.current?scrollRef.current.scrollTop:0; setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); return; } if(showEmojiRef.current) setShowEmoji(false); document.activeElement?.blur(); saveScroll(); setTimeout(restoreScroll,60); };
   const selectedHasYou=selectedIdxs.some(i=>messages[i]?.from==="you");
   const selectedOnlyEva=selectedIdxs.length>0&&!selectedHasYou;
@@ -195,7 +189,7 @@ export default function EVA(){
               <button onClick={openClearSheet} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#ff8080",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>🗑️ Clear Chat</button>
               <button onClick={()=>{setVoiceEnabled(v=>!v); setShowMenu(false);}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"white",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>{voiceEnabled?"🔊 Voice ON - Tap to Mute":"🔇 Voice OFF - Tap to Unmute"}</button>
               <button onClick={()=>{const nv=!alwaysListening; setAlwaysListening(nv); if(nv) setVoiceEnabled(true); setShowMenu(false); showToast(nv?"Always Listening ON":"Always Listening OFF");}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"white",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>{alwaysListening?"🎤 Always Listening ON":"🎤 Always Listening OFF"}</button>
-              <button onClick={()=>{setShowMenu(false); setVoiceEnabled(true); speakEva("Hello Boss, this is Eva. Can you hear me clearly?");}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"white",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>🔊 Test Voice</button>
+              <button onClick={()=>{setShowMenu(false); setVoiceEnabled(true); speakEva("Hello Boss, this is Eva. Can you hear me clearly?", true);}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"white",padding:"13px 16px",fontSize:14,borderBottom:"1px solid rgba(255,255,255,.08)"}}>🔊 Test Voice</button>
               <button onClick={stopVoice} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#ff8080",padding:"13px 16px",fontSize:14}}>⏹️ Stop Voice & Listening</button>
             </div>}
           </div>
@@ -252,4 +246,4 @@ export default function EVA(){
       <EvaVoice enabled={alwaysListening} onUserSaid={(spokenText) => { askEVA(spokenText); }} />
     </div>
   );
-  }
+      }
