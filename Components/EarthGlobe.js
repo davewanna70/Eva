@@ -37,24 +37,6 @@ const ARCS = [
   { from: [35.6762, 139.6503], to: [34.0522, -118.2437], color: "#f472b6" },
 ];
 
-// CLEAN ORBIT RING - No stones, just light
-function OrbitRing() {
-  const ringRef = useRef();
-  useFrame((_, delta) => { if (ringRef.current) ringRef.current.rotation.z += delta * 0.02; });
-  return (
-    <group ref={ringRef} rotation={[Math.PI / 2.35, 0, 0.25]}>
-      <mesh>
-        <torusGeometry args={[3.15, 0.012, 8, 140]} />
-        <meshBasicMaterial color="#38bdf8" transparent opacity={1} blending={THREE.AdditiveBlending} depthWrite={false} />
-      </mesh>
-      <mesh>
-        <torusGeometry args={[3.15, 0.05, 8, 140]} />
-        <meshBasicMaterial color="#22d3ee" transparent opacity={0.18} blending={THREE.AdditiveBlending} depthWrite={false} />
-      </mesh>
-    </group>
-  );
-}
-
 function FlyingDot({ from, to, color, speed = 0.25 }) {
   const ref = useRef();
   const curve = useMemo(() => {
@@ -78,7 +60,7 @@ function ArcLine({ from, to, color }) {
     return new THREE.QuadraticBezierCurve3(start, mid, end).getPoints(40);
   }, [from, to]);
   const geo = useMemo(() => new THREE.BufferGeometry().setFromPoints(points), [points]);
-  return <line geometry={geo}><lineBasicMaterial color={color} transparent opacity={0.85} blending={THREE.AdditiveBlending} depthWrite={false} /></line>;
+  return <line geometry={geo}><lineBasicMaterial color={color} transparent opacity={0.5} blending={THREE.AdditiveBlending} depthWrite={false} /></line>;
 }
 
 function CityDot({ city, onSelect }) {
@@ -92,7 +74,7 @@ function CityDot({ city, onSelect }) {
         <sphereGeometry args={[0.06, 12, 12]} />
         <meshBasicMaterial color={city.color} />
       </mesh>
-      <mesh><sphereGeometry args={[0.13, 12, 12]} /><meshBasicMaterial color={city.color} transparent opacity={0.35} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
+      <mesh><sphereGeometry args={[0.13, 12, 12]} /><meshBasicMaterial color={city.color} transparent opacity={0.25} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
       {hover && <Billboard><Html center distanceFactor={10} style={{ pointerEvents: "none" }}><div style={{ background: "rgba(0,0,0,0.92)", color: "#fff", fontSize: 10, padding: "5px 8px", borderRadius: 10, whiteSpace: "nowrap", border: `1px solid ${city.color}` }}><div style={{ fontWeight: 800 }}>{city.name}, {city.country}</div><div style={{ fontSize: 9, color: city.color }}>{city.activity}</div></div></Html></Billboard>}
     </group>
   );
@@ -102,7 +84,6 @@ function EarthGroup({ onSelectCity }) {
   const earthRef = useRef();
   const shellRef = useRef();
   const floatRef = useRef();
-  // --- YOUR NEW PICTURE ---
   const earthTexture = useTexture("/earth.jpg");
   earthTexture.colorSpace = THREE.SRGBColorSpace;
 
@@ -114,40 +95,32 @@ function EarthGroup({ onSelectCity }) {
 
   return (
     <group ref={floatRef}>
-      {/* NEW BRIGHT EARTH - Spins */}
+      {/* DIMMER EARTH - No more too bright */}
       <group ref={earthRef}>
         <mesh>
           <sphereGeometry args={[1.95, 64, 64]} />
-          <meshBasicMaterial map={earthTexture} transparent={false} toneMapped={false} />
+          <meshBasicMaterial map={earthTexture} color="#8fa8c8" toneMapped={true} transparent={false} />
         </mesh>
         {CITIES.map((c, i) => <CityDot key={i} city={c} onSelect={onSelectCity} />)}
         {ARCS.map((a, i) => <ArcLine key={i} from={a.from} to={a.to} color={a.color} />)}
         {ARCS.map((a, i) => <FlyingDot key={`f${i}`} from={a.from} to={a.to} color={a.color} speed={0.18 + i * 0.04} />)}
       </group>
 
-      {/* STRONG SECOND LAYER - Glass dome like in your new picture */}
+      {/* SECOND TRANSPARENT LAYER - BIGGER + MORE VISIBLE, NO LINES, NO WIREFRAME */}
       <group ref={shellRef}>
         <mesh>
-          <icosahedronGeometry args={[2.12, 3]} />
-          <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} />
+          <sphereGeometry args={[2.35, 32, 32]} />
+          <meshBasicMaterial color="#a5f3fc" transparent opacity={0.14} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
         <mesh>
-          <sphereGeometry args={[2.16, 18, 12]} />
-          <meshBasicMaterial color="#67e8f9" wireframe transparent opacity={0.25} blending={THREE.AdditiveBlending} depthWrite={false} />
-        </mesh>
-        <mesh>
-          <sphereGeometry args={[2.2, 32, 32]} />
-          <meshBasicMaterial color="#a5f3fc" transparent opacity={0.16} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
-        </mesh>
-        <mesh>
-          <sphereGeometry args={[2.28, 32, 32]} />
-          <meshBasicMaterial color="#bae6fd" transparent opacity={0.08} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+          <sphereGeometry args={[2.45, 32, 32]} />
+          <meshBasicMaterial color="#bae6fd" transparent opacity={0.07} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
       </group>
 
-      {/* ATMOSPHERE HALO - Brighter now to match new picture */}
-      <mesh><sphereGeometry args={[2.35, 32, 32]} /><meshBasicMaterial color="#3b82f6" transparent opacity={0.18} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
-      <mesh><sphereGeometry args={[2.6, 32, 32]} /><meshBasicMaterial color="#22d3ee" transparent opacity={0.08} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
+      {/* ATMOSPHERE HALO - Softer now */}
+      <mesh><sphereGeometry args={[2.55, 32, 32]} /><meshBasicMaterial color="#3b82f6" transparent opacity={0.08} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
+      <mesh><sphereGeometry args={[2.75, 32, 32]} /><meshBasicMaterial color="#22d3ee" transparent opacity={0.03} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
     </group>
   );
 }
@@ -158,12 +131,11 @@ export default function EarthGlobe({ onSelectCity }) {
       <Canvas camera={{ position: [0, 0.4, 5.6], fov: 42 }} gl={{ antialias: false, alpha: true, powerPreference: "low-power" }} dpr={[1, 1.5]} style={{ background: "transparent" }}>
         <Suspense fallback={null}>
           <ambientLight intensity={0.6} />
-          <Stars radius={100} depth={50} count={1500} factor={6} saturation={0} fade speed={0.8} />
+          <Stars radius={100} depth={50} count={1000} factor={4} saturation={0} fade speed={0.6} />
           <EarthGroup onSelectCity={onSelectCity} />
-          <OrbitRing />
           <OrbitControls enableZoom enablePan={false} minDistance={3.4} maxDistance={8} enableDamping />
         </Suspense>
       </Canvas>
     </div>
   );
-    }
+        }
