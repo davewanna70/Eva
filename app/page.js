@@ -58,30 +58,38 @@ export default function EVA(){
   const scrollRef=useRef(null), textareaRef=useRef(null), outerRef=useRef(null), didInitialScroll=useRef(false), swipeStartX=useRef(null), swipeStartY=useRef(null), longPressTimer=useRef(null), savedScrollTop=useRef(0), justSelectedAt=useRef(0), isLongPress=useRef(false), emojiGridRef=useRef(null), emojiScrollPosRef=useRef(0), emojiTabsRef=useRef(null), swipeStartXRef=useRef(null), swipeStartYRef=useRef(null), showEmojiRef=useRef(false);
   showEmojiRef.current=showEmoji;
 
-  // --- EVA VOICE: Jessica talks every reply - controlled from 3-dot menu ---
+  // --- EVA VOICE: FIXED - OFF by default, no auto-talk, no auto-fail ---
   const evaAudioRef = useRef(null);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const isSpeakingRef = useRef(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false); // FIXED: was true -> caused auto voice fail on load
   const [alwaysListening, setAlwaysListening] = useState(false);
-  const voiceEnabledRef = useRef(true);
+  const voiceEnabledRef = useRef(false); // FIXED: was true
   voiceEnabledRef.current = voiceEnabled;
   const showToastRef = useRef(null);
   const speakEva = async (replyText) => {
     if (!voiceEnabledRef.current || !replyText) return;
+    if (isSpeakingRef.current) return; // FIXED: don't overlap / retry voice
     try {
       const cleanReply = clean(replyText).replace("▍","").slice(0, 900);
       if (!cleanReply.trim()) return;
+      isSpeakingRef.current = true;
       const res = await fetch("/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: cleanReply }) });
-      if (!res.ok) { if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key in Vercel"); return; }
+      if (!res.ok) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key in Vercel"); return; }
       const blob = await res.blob();
+      // If backend returned JSON error instead of audio, don't try to play it
+      if (blob.type.includes("json")) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key in Vercel"); return; }
       const url = URL.createObjectURL(blob);
-      if (evaAudioRef.current) evaAudioRef.current.pause();
+      if (evaAudioRef.current) { try{ evaAudioRef.current.pause(); }catch{} }
       const audio = new Audio(url);
       evaAudioRef.current = audio;
+      audio.onended = () => { isSpeakingRef.current = false; URL.revokeObjectURL(url); };
+      audio.onerror = () => { isSpeakingRef.current = false; };
       await audio.play();
-    } catch(e) { if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key"); }
+    } catch(e) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key"); }
   };
   const stopVoice = () => {
     try { if (evaAudioRef.current) { evaAudioRef.current.pause(); evaAudioRef.current = null; } } catch(e) {}
+    isSpeakingRef.current = false;
     setAlwaysListening(false);
     setVoiceEnabled(false);
     setShowMenu(false);
@@ -154,7 +162,8 @@ export default function EVA(){
       const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:userText,history,userProfile:{name:myName,prefs,bestFood:prefs.food,wantToBuy:prefs.want_to_buy,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Africa/Lagos"}})});
       const ct=r.headers.get("content-type")||"";
       if(ct.includes("application/json")){ const d=await r.json(); const reply=d.reply||"I am here. Please try again."; await typeOut(reply); speakEva(reply); saveToSupabase("eva",reply); }
-      else{ const reader=r.body.getReader(); const dec=new TextDecoder(); let full=""; let shown=""; const loop=setInterval(()=>{ if(shown.length<full.length){ shown=full.slice(0,shown.length+4); setMessages(p=>{ const c=[...p]; c[c.length-1]={from:"eva",text:clean(shown)+"▍",time:nowTs}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); } },18); while(true){ const {done,value}=await reader.read(); if(done) break; full+=dec.decode(value,{stream:true}); } clearInterval(loop); await typeOut(full); speakEva(full); saveToSupabase("eva",full); }
+      else{ const reader=r.body.getReader(); const dec=new TextDecoder(); let full=""; let shown=""; const loop=setInterval(()=>{ if(shown.length<full.length){ shown=full.slice(0,shown.length+4); setMessages(p=>{ const c=[...p]; c[c.length-1]={from:"eva",text:clean(shown)+"▍",time:nowTs}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); } },18); while(true){ const {done,value}=await reader.read(); if(done) break; full+=dec.decode(value,{stream:true}); } clearInterval(loop); // FIXED: was typeOut(full) again -> caused type-stop-continue glitch. Now set final once.
+        setMessages(p=>{ const c=[...p]; c[c.length-1]={from:"eva",text:clean(full),time:nowTs}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); speakEva(full); saveToSupabase("eva",full); }
     }catch(e){ setMessages(p=>{ const w=p.slice(0,-1); const n=[...w,{from:"eva",text:"Network issue. Please try again.",time:Date.now()}]; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(e){} return n; }); }
     setIsThinking(false); textareaRef.current?.focus();
   };
@@ -242,4 +251,4 @@ export default function EVA(){
       <EvaVoice enabled={alwaysListening} onUserSaid={(spokenText) => { askEVA(spokenText); }} />
     </div>
   );
-              }
+                      }
