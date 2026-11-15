@@ -1,4 +1,7 @@
-// app/api/speak/route.js — JENNY ONLY, NO ELEVENLABS, NO CREDITS
+// app/api/speak/route.js — JENNY ONLY
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { EdgeTTS } from "@andresaya/edge-tts";
 
 export async function POST(req) {
@@ -11,10 +14,22 @@ export async function POST(req) {
     const cleanText = text.replace(/[*#_`>]/g, "").slice(0, 1000);
 
     const tts = new EdgeTTS();
-    const result = await tts.synthesize(cleanText, "en-US-JennyNeural");
+    // generate() na the correct one wey dey return audio
+    const result = await tts.generate(cleanText, "en-US-JennyNeural");
 
-    // result.audio na the mp3 buffer
-    const audioBuffer = result.audio || result;
+    let audioBuffer = result.audio;
+    // If e return Blob, convert am to Buffer
+    if (audioBuffer && typeof audioBuffer.arrayBuffer === "function") {
+      audioBuffer = Buffer.from(await audioBuffer.arrayBuffer());
+    }
+    // If e return Uint8Array / ArrayBuffer
+    if (audioBuffer instanceof ArrayBuffer) {
+      audioBuffer = Buffer.from(audioBuffer);
+    }
+
+    if (!audioBuffer || audioBuffer.length === 0) {
+      throw new Error("Jenny returned empty audio");
+    }
 
     return new Response(audioBuffer, {
       status: 200,
