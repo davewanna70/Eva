@@ -59,7 +59,7 @@ export default function EVA(){
   const activeRequestRef = useRef(0);
   const typingIntervalRef = useRef(null);
 
-  // --- EVA VOICE: OFF by default, Test Voice forces talk ---
+  // --- EVA VOICE: JENNY ONLY, NO ELEVENLABS, NO CREDITS ---
   const evaAudioRef = useRef(null);
   const isSpeakingRef = useRef(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -75,9 +75,9 @@ export default function EVA(){
       if (!cleanReply.trim()) return;
       isSpeakingRef.current = true;
       const res = await fetch("/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: cleanReply }) });
-      if (!res.ok) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key in Vercel"); return; }
+      if (!res.ok) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Jenny error, try again"); return; }
       const blob = await res.blob();
-      if (blob.type.includes("json")) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key in Vercel"); return; }
+      if (blob.type.includes("json")) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Jenny error, try again"); return; }
       const url = URL.createObjectURL(blob);
       if (evaAudioRef.current) { try{ evaAudioRef.current.pause(); }catch{} }
       const audio = new Audio(url);
@@ -85,7 +85,7 @@ export default function EVA(){
       audio.onended = () => { isSpeakingRef.current = false; URL.revokeObjectURL(url); };
       audio.onerror = () => { isSpeakingRef.current = false; };
       await audio.play();
-    } catch(e) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Check ElevenLabs Key"); }
+    } catch(e) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Jenny error"); }
   };
   const stopVoice = () => {
     try { if (evaAudioRef.current) { evaAudioRef.current.pause(); evaAudioRef.current = null; } } catch(e) {}
@@ -246,4 +246,4 @@ export default function EVA(){
       <EvaVoice enabled={alwaysListening} onUserSaid={(spokenText) => { askEVA(spokenText); }} />
     </div>
   );
-      }
+                                 }
