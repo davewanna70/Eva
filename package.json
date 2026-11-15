@@ -18,7 +18,7 @@
     "@react-three/drei": "^9.114.0",
     "@react-three/postprocessing": "^2.16.3",
     "postprocessing": "^6.36.0",
-    "edge-tts": "^2.0.1"
+    "@andresaya/edge-tts": "^1.9.1"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
