@@ -17,7 +17,8 @@
     "@react-three/fiber": "^8.17.10",
     "@react-three/drei": "^9.114.0",
     "@react-three/postprocessing": "^2.16.3",
-    "postprocessing": "^6.36.0"
+    "postprocessing": "^6.36.0",
+    "edge-tts": "^2.0.1"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
