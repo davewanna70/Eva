@@ -59,7 +59,7 @@ export default function EVA(){
   const activeRequestRef = useRef(0);
   const typingIntervalRef = useRef(null);
 
-  // --- EVA VOICE: JENNY ONLY, NO ELEVENLABS, NO CREDITS ---
+  // --- EVA VOICE: JENNY FIRST, BROWSER VOICE FALLBACK - ALWAYS TALKS ---
   const evaAudioRef = useRef(null);
   const isSpeakingRef = useRef(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -74,21 +74,48 @@ export default function EVA(){
       const cleanReply = clean(replyText).replace("▍","").slice(0, 900);
       if (!cleanReply.trim()) return;
       isSpeakingRef.current = true;
-      const res = await fetch("/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: cleanReply }) });
-      if (!res.ok) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Jenny error, try again"); return; }
-      const blob = await res.blob();
-      if (blob.type.includes("json")) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Jenny error, try again"); return; }
-      const url = URL.createObjectURL(blob);
-      if (evaAudioRef.current) { try{ evaAudioRef.current.pause(); }catch{} }
-      const audio = new Audio(url);
-      evaAudioRef.current = audio;
-      audio.onended = () => { isSpeakingRef.current = false; URL.revokeObjectURL(url); };
-      audio.onerror = () => { isSpeakingRef.current = false; };
-      await audio.play();
+
+      // 1. TRY JENNY FIRST
+      try {
+        const res = await fetch("/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: cleanReply }) });
+        if (res.ok) {
+          const blob = await res.blob();
+          if (!blob.type.includes("json") && blob.size > 1000) {
+            const url = URL.createObjectURL(blob);
+            if (evaAudioRef.current) { try{ evaAudioRef.current.pause(); }catch{} }
+            const audio = new Audio(url);
+            evaAudioRef.current = audio;
+            audio.onended = () => { isSpeakingRef.current = false; URL.revokeObjectURL(url); };
+            audio.onerror = () => { isSpeakingRef.current = false; };
+            await audio.play();
+            return;
+          }
+        }
+      } catch(e) { console.log("Jenny failed, using browser voice", e); }
+
+      // 2. FALLBACK - BROWSER FREE VOICE (ALWAYS WORKS, NO SERVER)
+      isSpeakingRef.current = false;
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(cleanReply);
+        utter.lang = "en-US";
+        utter.rate = 1.0;
+        utter.pitch = 1.0;
+        const voices = window.speechSynthesis.getVoices();
+        const jenny = voices.find(v => v.name.toLowerCase().includes("jenny") || v.name.toLowerCase().includes("aria") || v.name.toLowerCase().includes("natural") || v.name.toLowerCase().includes("zira"));
+        if (jenny) utter.voice = jenny;
+        utter.onend = () => { isSpeakingRef.current = false; };
+        utter.onerror = () => { isSpeakingRef.current = false; };
+        isSpeakingRef.current = true;
+        window.speechSynthesis.speak(utter);
+        return;
+      }
+      if(showToastRef.current) showToastRef.current("Voice failed - No voice available");
     } catch(e) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Jenny error"); }
   };
   const stopVoice = () => {
     try { if (evaAudioRef.current) { evaAudioRef.current.pause(); evaAudioRef.current = null; } } catch(e) {}
+    try { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); } catch(e) {}
     isSpeakingRef.current = false;
     setAlwaysListening(false);
     setVoiceEnabled(false);
@@ -246,4 +273,4 @@ export default function EVA(){
       <EvaVoice enabled={alwaysListening} onUserSaid={(spokenText) => { askEVA(spokenText); }} />
     </div>
   );
-                                 }
+}
