@@ -80,20 +80,7 @@ export default function EVA(){
   const activeRequestRef = useRef(0);
   const typingIntervalRef = useRef(null);
   const suggestion = getSuggestion(text, feedbackMap);
-  // FIX 1: WhatsApp-style keyboard - keep header + input visible
-  useEffect(() => {
-    const setH = () => {
-      const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-      document.documentElement.style.setProperty('--app-h', h + 'px');
-    };
-    setH();
-    window.visualViewport?.addEventListener('resize', setH);
-    window.addEventListener('resize', setH);
-    return () => {
-      window.visualViewport?.removeEventListener('resize', setH);
-      window.removeEventListener('resize', setH);
-    };
-  }, []);
+  // FIX: visualViewport REMOVED - it was causing keyboard to jump up/down on Android. Keep height fixed at 100dvh, let browser handle keyboard like WhatsApp web does.
   const saveTraining = async (snippetId, vote, userMsg, evaMsg) => {
     try {
       if (snippetId && vote) {
@@ -255,7 +242,7 @@ export default function EVA(){
   const deleteTitle=selectedIdxs.length===1?(selectedOnlyEva?"Delete message from EVA?":"Delete message?"):`Delete ${selectedIdxs.length} messages?`;
   if(showHud) return <EvaPhase1 />;
   return (
-    <div ref={outerRef} style={{height:"var(--app-h, 100dvh)",minHeight:"var(--app-h, 100dvh)",maxHeight:"var(--app-h, 100dvh)",background:"#030014",color:"white",display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:"sans-serif",position:"fixed",inset:0,overscrollBehavior:"none"}}>
+    <div ref={outerRef} style={{height:"100dvh",minHeight:"100dvh",maxHeight:"100dvh",background:"#030014",color:"white",display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:"sans-serif",position:"fixed",inset:0,overscrollBehavior:"none"}}>
       <style>{`*{-webkit-tap-highlight-color:transparent}.eva-no-select{-webkit-touch-callout:none!important;-webkit-user-select:none!important;user-select:none!important}.eva-no-select *{-webkit-touch-callout:none!important;-webkit-user-select:none!important;user-select:none!important}input,textarea{-webkit-user-select:text!important;user-select:text!important;-webkit-touch-callout:default!important}@keyframes evaLaugh{0%{transform:scale(.6) rotate(-8deg)}25%{transform:scale(1.25) rotate(6deg) translateY(-4px)}50%{transform:scale(1.1) rotate(-6deg) translateY(2px)}75%{transform:scale(1.2) rotate(4deg)}100%{transform:scale(1)}}@keyframes evaWink{0%{transform:scale(.7)}30%{transform:scale(1.2) rotate(-6deg)}60%{transform:scale(1.05) rotate(4deg)}100%{transform:scale(1)}}@keyframes evaLove{0%{transform:scale(.6)}30%{transform:scale(1.35)}50%{transform:scale(1.1)}70%{transform:scale(1.3)}100%{transform:scale(1)}}@keyframes evaCry{0%{transform:scale(.7) translateY(-6px)}40%{transform:scale(1.15) translateY(4px)}70%{transform:scale(1.05) translateY(2px)}100%{transform:scale(1)}}@keyframes evaCool{0%{transform:scale(.7) rotate(-10deg)}50%{transform:scale(1.2) rotate(4deg)}100%{transform:scale(1)}}@keyframes evaFire{0%{transform:scale(.9)}50%{transform:scale(1.25)}100%{transform:scale(1)}}@keyframes evaAngry{0%{transform:scale(.8)}20%{transform:scale(1.2) translateX(-4px)}40%{transform:scale(1.15) translateX(4px)}60%{transform:scale(1.2) translateX(-3px)}100%{transform:scale(1)}}@keyframes evaParty{0%{transform:scale(.6) translateY(10px)}40%{transform:scale(1.3) translateY(-8px) rotate(-6deg)}70%{transform:scale(1.1) translateY(2px) rotate(4deg)}100%{transform:scale(1)}}@keyframes evaSleep{0%{transform:scale(.9)}50%{transform:scale(1.15)}100%{transform:scale(1)}}@keyframes evaThink{0%{transform:scale(.8) rotate(-8deg)}50%{transform:scale(1.15) rotate(6deg)}100%{transform:scale(1)}}@keyframes evaHand{0%{transform:scale(.7) rotate(-10deg)}50%{transform:scale(1.2) rotate(10deg)}100%{transform:scale(1)}}@keyframes evaPop{0%{transform:scale(.5)}50%{transform:scale(1.25)}100%{transform:scale(1)}}.eva-laugh{animation:evaLaugh .8s ease-out 1}.eva-wink{animation:evaWink .7s ease-out 1}.eva-love{animation:evaLove .8s ease-out 1}.eva-cry{animation:evaCry .8s ease-out 1}.eva-cool{animation:evaCool .7s ease-out 1}.eva-fire{animation:evaFire .7s ease-out 1}.eva-angry{animation:evaAngry .7s ease-out 1}.eva-party{animation:evaParty .8s ease-out 1}.eva-sleep{animation:evaSleep .9s ease-out 1}.eva-think{animation:evaThink .7s ease-out 1}.eva-hand{animation:evaHand .7s ease-out 1}.eva-pop{animation:evaPop .6s ease-out 1}`}</style>
       {showMenu && <div style={{position:"fixed",inset:0,zIndex:35}} onClick={()=>setShowMenu(false)} />}
       <div style={{position:"relative",zIndex:50,flexShrink:0,background:"#030014",paddingTop:"env(safe-area-inset-top)",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
@@ -321,7 +308,6 @@ export default function EVA(){
       </div>}
       {!showSearch&&!showMedia && <div style={{position:"relative",zIndex:30,flexShrink:0,background:"#030014",padding:"8px 10px calc(8px + env(safe-area-inset-bottom))",borderTop:"1px solid rgba(255,255,255,.08)"}}>
         {replyTo && <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(139,92,246,.2)",borderRadius:10,padding:"6px 10px",marginBottom:6}}><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,color:"#c4b5fd",fontWeight:"bold"}}>{replyTo.from==="you"?"You":"EVA"}</div><div style={{fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{clean(replyTo.text)}</div></div><button onClick={()=>setReplyTo(null)} style={{background:"transparent",border:"none",color:"white",fontSize:16}}>✕</button></div>}
-        {suggestion && <button onClick={()=>askEVA(suggestion.prompt)} style={{width:"100%",textAlign:"left",background:"rgba(139,92,246,.25)",border:"1px solid rgba(139,92,246,.4)",color:"white",padding:"8px 12px",borderRadius:999,fontSize:13,marginBottom:6}}>✨ {suggestion.title} — tap to send</button>}
         <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
           <button onClick={toggleEmoji} style={{width:42,height:42,borderRadius:999,background:"rgba(255,255,255,.12)",border:"none",fontSize:22,flexShrink:0}}>{showEmoji?"⌨️":"😊"}</button>
           <textarea ref={textareaRef} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); askEVA();}}} placeholder="Message EVA..." rows={1} style={{flex:1,background:"rgba(255,255,255,.12)",border:"none",borderRadius:20,color:"white",padding:"10px 14px",fontSize:15,outline:"none",resize:"none",maxHeight:100}} />
@@ -332,4 +318,4 @@ export default function EVA(){
       <EvaVoice voiceEnabled={voiceEnabled} alwaysListening={alwaysListening} setVoiceEnabled={setVoiceEnabled} setAlwaysListening={setAlwaysListening} speakEva={speakEva} onUserMessage={(t)=>askEVA(t)} />
     </div>
   );
-                                                             }
+      }
