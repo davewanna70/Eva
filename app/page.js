@@ -74,20 +74,28 @@ export default function EVA(){
       const cleanReply = clean(replyText).replace("▍","").slice(0, 900);
       if (!cleanReply.trim()) return;
       isSpeakingRef.current = true;
-      // KORE ONLY - via /api/voice (Gemini Kore)
       const res = await fetch("/api/voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: cleanReply }) });
-      if (!res.ok) throw new Error("Kore voice failed");
+      if (!res.ok) {
+        const errText = await res.text().catch(()=> "");
+        throw new Error("Kore " + res.status + " " + errText.slice(0, 200));
+      }
       const blob = await res.blob();
-      if (blob.size < 1000) throw new Error("Empty audio");
-      const url = URL.createObjectURL(blob);
+      if (blob.size < 1000) throw new Error("Empty audio - size " + blob.size);
+      const url = URL.createObjectURL(new Blob([blob], { type: "audio/wav" }));
       if (evaAudioRef.current) { try{ evaAudioRef.current.pause(); }catch{} }
       const audio = new Audio(url);
+      audio.preload = "auto";
+      audio.playsInline = true;
       evaAudioRef.current = audio;
       audio.onended = () => { isSpeakingRef.current = false; URL.revokeObjectURL(url); };
-      audio.onerror = () => { isSpeakingRef.current = false; };
+      audio.onerror = () => { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Audio play error - try Test Voice again"); };
       await audio.play();
       return;
-    } catch(e) { isSpeakingRef.current = false; if(showToastRef.current) showToastRef.current("Voice failed - Kore error"); }
+    } catch(e) {
+      isSpeakingRef.current = false;
+      console.log("SPEAK ERROR:", e.message);
+      if(showToastRef.current) showToastRef.current("Voice failed: " + e.message.slice(0, 80));
+    }
   };
   const stopVoice = () => {
     try { if (evaAudioRef.current) { evaAudioRef.current.pause(); evaAudioRef.current = null; } } catch(e) {}
@@ -248,4 +256,4 @@ export default function EVA(){
       <EvaVoice enabled={alwaysListening} onUserSaid={(spokenText) => { askEVA(spokenText); }} />
     </div>
   );
-      }
+}
