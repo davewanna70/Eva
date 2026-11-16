@@ -80,33 +80,36 @@ export default function EVA(){
   const activeRequestRef = useRef(0);
   const typingIntervalRef = useRef(null);
   const keyboardWasOpenRef = useRef(false);
+  const keyboardTimerRef = useRef(null);
   const getInputText = () => (textareaRef.current?.value || "");
   const clearInput = () => { if(textareaRef.current){ textareaRef.current.value=""; textareaRef.current.style.height="auto"; } };
-  // FIX ONLY THIS: Keyboard must PUSH input up, not COVER it. Like WhatsApp.
+  // FIX STABLE: Only tell browser to resize natively. DO NOT resize or scroll on every keyboard animation frame. That was the jump.
   useEffect(()=>{
-    // Tell Chrome Android: resize page when keyboard opens, don't overlay it
     try{
       let meta = document.querySelector('meta[name="viewport"]');
       if(meta) meta.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content");
       else { meta=document.createElement("meta"); meta.name="viewport"; meta.content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"; document.head.appendChild(meta); }
     }catch(e){}
+    // Debounced: only after keyboard has FINISHED opening/closing, scroll once. Never during animation.
     if(!window.visualViewport) return;
     const vv = window.visualViewport;
+    let lastH = vv.height;
     const onResize = () => {
-      if(!outerRef.current) return;
-      if(showEmojiRef.current){
-        outerRef.current.style.height = window.innerHeight + "px";
-        outerRef.current.style.top = "0px";
-        return;
-      }
-      // No bottom lock anymore, so this height actually works now
-      outerRef.current.style.height = vv.height + "px";
-      outerRef.current.style.top = vv.offsetTop + "px";
-      if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const h = vv.height;
+      // Ignore tiny animation steps - only act when change is big and settled
+      if(Math.abs(h - lastH) < 80) return;
+      lastH = h;
+      if(keyboardTimerRef.current) clearTimeout(keyboardTimerRef.current);
+      keyboardTimerRef.current = setTimeout(()=>{
+        // Only scroll if user was already near bottom, so we don't yank chat when user is reading old messages
+        if(scrollRef.current){
+          const nearBottom = (scrollRef.current.scrollHeight - scrollRef.current.scrollTop - scrollRef.current.clientHeight) < 200;
+          if(nearBottom) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      }, 350);
     };
     vv.addEventListener("resize", onResize);
-    vv.addEventListener("scroll", onResize);
-    return ()=>{ vv.removeEventListener("resize", onResize); vv.removeEventListener("scroll", onResize); };
+    return ()=>{ vv.removeEventListener("resize", onResize); if(keyboardTimerRef.current) clearTimeout(keyboardTimerRef.current); };
   },[]);
   useEffect(()=>{
     const onVis = () => {
@@ -118,7 +121,6 @@ export default function EVA(){
         setTimeout(()=>{
           if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
           window.scrollTo(0,0);
-          if(outerRef.current){ outerRef.current.style.height = window.innerHeight + "px"; outerRef.current.style.top = "0px"; }
         }, 250);
       }
     };
@@ -132,8 +134,7 @@ export default function EVA(){
     if(showEmoji){
       try{ textareaRef.current?.blur(); }catch(e){}
       try{ document.activeElement?.blur(); }catch(e){}
-      if(outerRef.current){ outerRef.current.style.height = window.innerHeight + "px"; outerRef.current.style.top = "0px"; }
-      setTimeout(()=>{ if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, 100);
+      // NO scroll here - scrolling here was causing jump when emoji opens. Chat stays where it is.
     }
   },[showEmoji]);
   const saveTraining = async (snippetId, vote, userMsg, evaMsg) => {
@@ -350,10 +351,10 @@ export default function EVA(){
           {mediaTab==="Links" && (linksList.length===0?<div style={{textAlign:"center",color:"#888",fontSize:13,marginTop:40}}>No links yet</div>:linksList.map(({m,idx})=><button key={idx} onClick={()=>jumpTo(idx)} style={{width:"100%",textAlign:"left",background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:12,padding:"12px",marginBottom:8,color:"white"}}><div style={{fontSize:11,color:"#aaa",marginBottom:4}}>{m.from==="you"?"You":"EVA"} • {fmtTime(m.time)}</div>{getLinks(m.text).map((l,li)=><div key={li} style={{fontSize:14,color:"#4da3ff",wordBreak:"break-all",marginBottom:4}}>{l}</div>)}<div style={{fontSize:13,opacity:.8,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{clean(m.text)}</div></button>))}
         </div>
       </div>}
-      {!showSearch&&!showMedia && <div ref={scrollRef} className="eva-no-select" style={{position:"relative",zIndex:10,flex:1,minHeight:0,display:"flex",flexDirection:"column",gap:10,overflowY:"auto",padding:"12px 20px 10px",visibility:isReady?"visible":"hidden"}} onClick={hideKeyboard} onContextMenu={e=>e.preventDefault()} onSelectStart={e=>e.preventDefault()}>
+      {!showSearch&&!showMedia && <div ref={scrollRef} className="eva-no-select" style={{position:"relative",zIndex:10,flex:1,minHeight:0,display:"flex",flexDirection:"column",gap:10,overflowY:"auto",overflowAnchor:"auto",padding:"12px 20px 10px",visibility:isReady?"visible":"hidden"}} onClick={hideKeyboard} onContextMenu={e=>e.preventDefault()} onSelectStart={e=>e.preventDefault()}>
         {messages.length===0&&isReady && <div style={{background:"rgba(0,0,0,.65)",border:"1px solid rgba(255,255,255,.25)",padding:14,borderRadius:16,maxWidth:420,margin:"0 auto",textAlign:"center"}}>Hello, I am EVA. Ask me anything.</div>}
         {renderedMessages}
-        <div style={{height:10}} />
+        <div style={{height:10,overflowAnchor:"auto"}} />
       </div>}
       {toast && <div style={{position:"relative",zIndex:40,margin:"0 auto",background:"rgba(0,0,0,.9)",color:"white",padding:"8px 16px",borderRadius:999,fontSize:13,marginBottom:6}}>{toast}</div>}
       {isMulti&&!showSearch&&!showMedia && <div style={{position:"relative",zIndex:35,display:"flex",padding:"0 16px 6px"}}><div style={{display:"flex",alignItems:"center",gap:16,background:"rgba(0,0,0,.88)",border:"1px solid rgba(255,255,255,.18)",borderRadius:999,padding:"7px 14px"}}><span style={{fontSize:12,color:"#c4b5fd",fontWeight:"bold"}}>{selectedIdxs.length} selected</span><button onClick={doCopy} style={{background:"transparent",border:"none",padding:2}}><CopyIcon size={20}/></button><button onClick={doForward} style={{background:"transparent",border:"none",padding:2}}><ForwardIcon size={22}/></button><button onClick={openDeleteSheet} style={{background:"transparent",border:"none",padding:2}}><TrashIcon size={20}/></button><button onClick={()=>setSelectedIdxs([])} style={{background:"transparent",border:"none",color:"#aaa",fontSize:14}}>✕</button></div></div>}
@@ -380,4 +381,4 @@ export default function EVA(){
       <EvaVoice voiceEnabled={voiceEnabled} alwaysListening={alwaysListening} setVoiceEnabled={setVoiceEnabled} setAlwaysListening={setAlwaysListening} speakEva={speakEva} onUserMessage={(t)=>askEVA(t)} />
     </div>
   );
-        }
+          }
