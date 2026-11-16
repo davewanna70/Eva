@@ -36,6 +36,7 @@ const EMOJI_CATS = {
 const CAT_LIST = Object.keys(EMOJI_CATS);
 const clean = t => (t||"").replace(/\*\*/g,"").replace(/^\s*-\s*/gm,"• ");
 const fmtTime = ts => { if(!ts) return ""; const d=new Date(ts); let h=d.getHours(); const m=String(d.getMinutes()).padStart(2,"0"); const ap=h>=12?"PM":"AM"; h=h%12||12; return `${h}:${m} ${ap}`; };
+const fmtDur = s => { const m=Math.floor(s/60), ss=String(Math.floor(s%60)).padStart(2,"0"); return `${m}:${ss}`; };
 const onlyEmoji = t => { const c=(t||"").replace("▍","").trim().replace(/\s/g,""); if(!c) return false; return Array.from(c).every(x=>/\p{Extended_Pictographic}/u.test(x)); };
 const emojiSize = t => { const c=(t||"").replace("▍","").trim().replace(/\s/g,""); const n=Array.from(c).length; if(!onlyEmoji(t)) return 15; return n===1?50:n===2?45:40; };
 const emojiAnim = e => {
@@ -63,6 +64,8 @@ const isLink = m => getLinks(m.text).length>0;
 const isVideo = m => m.type==="video"||/\.mp4|\.mov|\.gif/.test((m.text||"").toLowerCase());
 const isPhoto = m => m.type==="image"||/\.jpg|\.jpeg|\.png|\.webp/.test((m.text||"").toLowerCase())||m.mediaUrl||m.imageUrl;
 const getSize = (msgs,kind) => { let b=0; for(let i=0;i<(msgs||[]).length;i++){ const m=msgs[i]; if(kind==="videos"&&!isVideo(m)) continue; if(kind==="photos"&&!isPhoto(m)) continue; if(kind==="all"){ b+=(m.text||"").length+200; if(m.mediaUrl||m.imageUrl) b+=1200000; else if(m.type==="video") b+=8000000; else if(isDoc(m)) b+=800000; else if(isMedia(m)) b+=500000; continue; } if(kind==="videos") b+=m.mediaSize||8000000; if(kind==="photos") b+=m.mediaSize||1200000; } if(b<1024) return "0.0 MB"; if(b<1024*1024) return (b/1024).toFixed(1)+" KB"; return (b/(1024*1024)).toFixed(1)+" MB"; };
+// Droplet style - EVA signature, not WhatsApp square
+const dropletBtn = (bg) => ({width:64,height:64,borderRadius:"50% 50% 50% 50% / 62% 62% 38% 38%",background:bg,border:"2px solid rgba(255,255,255,.35)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontSize:26,boxShadow:"0 8px 20px rgba(0,0,0,.5)",color:"white"});
 export default function EVA(){
   const [showHud,setShowHud]=useState(false);
   const [messages,setMessages]=useState([]); const [isReady,setIsReady]=useState(false);
@@ -75,33 +78,53 @@ export default function EVA(){
   const [feedbackMap,setFeedbackMap]=useState({});
   const [showFeedback,setShowFeedback]=useState(false);
   const [lastSuggestion,setLastSuggestion]=useState(null);
+  // NEW: attach / camera / doc / voice
+  const [hasText,setHasText]=useState(false);
+  const [showAttach,setShowAttach]=useState(false);
+  const [showGallery,setShowGallery]=useState(false);
+  const [galleryPics,setGalleryPics]=useState([]);
+  const [showCamera,setShowCamera]=useState(false);
+  const [camMode,setCamMode]=useState("photo"); // photo | video
+  const [facing,setFacing]=useState("environment"); // environment = back, user = front
+  const [camPreview,setCamPreview]=useState(null); // {type, url, blob}
+  const [camRecording,setCamRecording]=useState(false);
+  const [camTime,setCamTime]=useState(0);
+  const [showDocSheet,setShowDocSheet]=useState(false);
+  const [showScan,setShowScan]=useState(false);
+  const [scanMode,setScanMode]=useState("auto"); // manual | auto
+  const [scanPreview,setScanPreview]=useState(null);
+  const [isRecording,setIsRecording]=useState(false);
+  const [isPaused,setIsPaused]=useState(false);
+  const [recTime,setRecTime]=useState(0);
+  const [recCancelHint,setRecCancelHint]=useState(false);
   const scrollRef=useRef(null), textareaRef=useRef(null), outerRef=useRef(null), didInitialScroll=useRef(false), swipeStartX=useRef(null), swipeStartY=useRef(null), longPressTimer=useRef(null), savedScrollTop=useRef(0), justSelectedAt=useRef(0), isLongPress=useRef(false), emojiGridRef=useRef(null), emojiScrollPosRef=useRef(0), emojiTabsRef=useRef(null), swipeStartXRef=useRef(null), swipeStartYRef=useRef(null), showEmojiRef=useRef(false);
   showEmojiRef.current=showEmoji;
   const activeRequestRef = useRef(0);
   const typingIntervalRef = useRef(null);
   const keyboardWasOpenRef = useRef(false);
   const keyboardTimerRef = useRef(null);
+  const videoRef = useRef(null); const streamRef = useRef(null); const recorderRef = useRef(null); const chunksRef = useRef([]); const camTimerRef = useRef(null); const camLongPressRef = useRef(null); const camSwipeY = useRef(null);
+  const scanVideoRef = useRef(null); const scanStreamRef = useRef(null); const scanTimerRef = useRef(null);
+  const voiceRecorderRef = useRef(null); const voiceChunksRef = useRef([]); const voiceTimerRef = useRef(null); const voiceStartY = useRef(null); const voiceAnalyserRef = useRef(null); const [waveLevels,setWaveLevels]=useState([4,7,10,7,4,9,12,8,5,9,13,8,5,7,10,6]);
+  const galleryInputRef = useRef(null); const docInputRef = useRef(null);
   const getInputText = () => (textareaRef.current?.value || "");
-  const clearInput = () => { if(textareaRef.current){ textareaRef.current.value=""; textareaRef.current.style.height="auto"; } };
-  // FIX STABLE: Only tell browser to resize natively. DO NOT resize or scroll on every keyboard animation frame. That was the jump.
+  const clearInput = () => { if(textareaRef.current){ textareaRef.current.value=""; textareaRef.current.style.height="auto"; } setHasText(false); };
+  const onInputChange = () => { setHasText(!!(textareaRef.current?.value||"").trim()); };
   useEffect(()=>{
     try{
       let meta = document.querySelector('meta[name="viewport"]');
       if(meta) meta.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content");
       else { meta=document.createElement("meta"); meta.name="viewport"; meta.content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"; document.head.appendChild(meta); }
     }catch(e){}
-    // Debounced: only after keyboard has FINISHED opening/closing, scroll once. Never during animation.
     if(!window.visualViewport) return;
     const vv = window.visualViewport;
     let lastH = vv.height;
     const onResize = () => {
       const h = vv.height;
-      // Ignore tiny animation steps - only act when change is big and settled
       if(Math.abs(h - lastH) < 80) return;
       lastH = h;
       if(keyboardTimerRef.current) clearTimeout(keyboardTimerRef.current);
       keyboardTimerRef.current = setTimeout(()=>{
-        // Only scroll if user was already near bottom, so we don't yank chat when user is reading old messages
         if(scrollRef.current){
           const nearBottom = (scrollRef.current.scrollHeight - scrollRef.current.scrollTop - scrollRef.current.clientHeight) < 200;
           if(nearBottom) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -118,10 +141,7 @@ export default function EVA(){
         try{ textareaRef.current?.blur(); }catch(e){}
         try{ document.activeElement?.blur(); }catch(e){}
       } else {
-        setTimeout(()=>{
-          if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-          window.scrollTo(0,0);
-        }, 250);
+        setTimeout(()=>{ if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; window.scrollTo(0,0); }, 250);
       }
     };
     const onPageHide = () => { try{ textareaRef.current?.blur(); }catch(e){} };
@@ -130,21 +150,143 @@ export default function EVA(){
     window.addEventListener("blur", onPageHide);
     return ()=>{ document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", onPageHide); window.removeEventListener("blur", onPageHide); };
   },[]);
-  useEffect(()=>{
-    if(showEmoji){
-      try{ textareaRef.current?.blur(); }catch(e){}
-      try{ document.activeElement?.blur(); }catch(e){}
-      // NO scroll here - scrolling here was causing jump when emoji opens. Chat stays where it is.
-    }
-  },[showEmoji]);
+  useEffect(()=>{ if(showEmoji){ try{ textareaRef.current?.blur(); }catch(e){} try{ document.activeElement?.blur(); }catch(e){} } },[showEmoji]);
+  // --- CAMERA ---
+  const stopCamStream = () => { try{ streamRef.current?.getTracks().forEach(t=>t.stop()); }catch(e){} streamRef.current=null; try{ scanStreamRef.current?.getTracks().forEach(t=>t.stop()); }catch(e){} scanStreamRef.current=null; if(camTimerRef.current) clearInterval(camTimerRef.current); };
+  const startCamera = async (face) => {
+    try{
+      stopCamStream();
+      const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:face||facing, width:{ideal:1280}, height:{ideal:720}}, audio: camMode==="video"});
+      streamRef.current = stream;
+      if(videoRef.current){ videoRef.current.srcObject = stream; await videoRef.current.play().catch(()=>{}); }
+    }catch(e){ showToast("Camera permission needed - allow camera"); }
+  };
+  const openCamera = () => { setShowAttach(false); setShowCamera(true); setCamPreview(null); setCamMode("photo"); setTimeout(()=>startCamera(facing), 150); };
+  useEffect(()=>{ if(showCamera && !camPreview) startCamera(facing); },[facing, showCamera]);
+  // Drag UP to flip - EVA way
+  const onCamTouchStart = (e) => { camSwipeY.current = e.touches[0].clientY; };
+  const onCamTouchEnd = (e) => { if(camSwipeY.current==null) return; const dy = e.changedTouches[0].clientY - camSwipeY.current; camSwipeY.current=null; if(dy < -70){ setFacing(f=> f==="environment" ? "user" : "environment"); showToast("Flipped camera 💧"); } };
+  const takePhoto = () => {
+    if(!videoRef.current) return;
+    const v = videoRef.current; const c = document.createElement("canvas"); c.width=v.videoWidth||720; c.height=v.videoHeight||1280; const ctx=c.getContext("2d"); if(facing==="user"){ ctx.translate(c.width,0); ctx.scale(-1,1); } ctx.drawImage(v,0,0,c.width,c.height);
+    c.toBlob(b=>{ const url=URL.createObjectURL(b); setCamPreview({type:"photo", url, blob:b}); }, "image/jpeg", 0.9);
+  };
+  const startVideoRec = () => {
+    if(!streamRef.current) return;
+    chunksRef.current=[]; try{ recorderRef.current = new MediaRecorder(streamRef.current, {mimeType:"video/webm"}); }catch(e){ recorderRef.current = new MediaRecorder(streamRef.current); }
+    recorderRef.current.ondataavailable = e => { if(e.data.size) chunksRef.current.push(e.data); };
+    recorderRef.current.onstop = () => { const blob=new Blob(chunksRef.current,{type:"video/webm"}); const url=URL.createObjectURL(blob); setCamPreview({type:"video", url, blob}); setCamRecording(false); };
+    recorderRef.current.start(); setCamRecording(true); setCamTime(0); camTimerRef.current=setInterval(()=>setCamTime(t=>t+1),1000);
+  };
+  const stopVideoRec = () => { try{ recorderRef.current?.stop(); }catch(e){} if(camTimerRef.current) clearInterval(camTimerRef.current); };
+  const onShutterDown = () => {
+    if(camMode==="video"){ camRecording ? stopVideoRec() : startVideoRec(); return; }
+    // Photo mode: long-press = video, tap = photo. Start timer, if hold > 450ms start video
+    camLongPressRef.current = setTimeout(()=>{ startVideoRec(); }, 450);
+  };
+  const onShutterUp = () => {
+    if(camLongPressRef.current){ clearTimeout(camLongPressRef.current); camLongPressRef.current=null; }
+    if(camMode==="photo" && !camRecording){ takePhoto(); }
+    // If we were long-press recording, stop on release
+    if(camMode==="photo" && camRecording){ stopVideoRec(); }
+  };
+  const sendCamPreview = () => {
+    if(!camPreview) return;
+    const nowTs=Date.now();
+    const msg = {from:"you", text: camPreview.type==="photo" ? "📷 Photo" : "🎥 Video", time:nowTs, status:"delivered", mediaUrl:camPreview.url, type: camPreview.type==="photo"?"image":"video"};
+    setMessages(p=>{ const n=[...p,msg]; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(e){} return n; });
+    setGalleryPics(p=>[camPreview.url, ...p].slice(0,20));
+    setCamPreview(null); setShowCamera(false); stopCamStream(); showToast("Sent to EVA 💧");
+    setTimeout(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=scrollRef.current.scrollHeight; },100);
+  };
+  const closeCamera = () => { if(camRecording) stopVideoRec(); setShowCamera(false); setCamPreview(null); stopCamStream(); };
+  // --- GALLERY ---
+  const onGalleryPick = (e) => {
+    const files = Array.from(e.target.files||[]);
+    files.forEach(f=>{
+      const url=URL.createObjectURL(f);
+      const isVid = f.type.startsWith("video");
+      const nowTs=Date.now()+Math.random();
+      setMessages(p=>{ const n=[...p,{from:"you", text: isVid?"🎥 Video":"📷 Photo", time:nowTs, status:"delivered", mediaUrl:url, type: isVid?"video":"image", fileName:f.name}]; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(e){} return n; });
+      setGalleryPics(p=>[url,...p].slice(0,20));
+    });
+    setShowGallery(false); setShowAttach(false); showToast("Sent to EVA 💧");
+  };
+  // --- DOCUMENT / SCAN ---
+  const onDocPick = (e) => {
+    const f=e.target.files?.[0]; if(!f) return;
+    const url=URL.createObjectURL(f);
+    const nowTs=Date.now();
+    setMessages(p=>{ const n=[...p,{from:"you", text:f.name, time:nowTs, status:"delivered", mediaUrl:url, type:"doc", fileName:f.name}]; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(e){} return n; });
+    setShowDocSheet(false); setShowAttach(false); showToast("Document sent 💧");
+  };
+  const startScan = async () => {
+    try{
+      const s = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+      scanStreamRef.current=s;
+      if(scanVideoRef.current){ scanVideoRef.current.srcObject=s; await scanVideoRef.current.play().catch(()=>{}); }
+      if(scanMode==="auto"){
+        if(scanTimerRef.current) clearTimeout(scanTimerRef.current);
+        scanTimerRef.current=setTimeout(()=>{ captureScan(); }, 3500); // Auto capture when steady
+      }
+    }catch(e){ showToast("Camera needed for scan"); }
+  };
+  const captureScan = () => {
+    if(!scanVideoRef.current) return;
+    const v=scanVideoRef.current; const c=document.createElement("canvas"); c.width=v.videoWidth||720; c.height=v.videoHeight||1000; c.getContext("2d").drawImage(v,0,0,c.width,c.height);
+    c.toBlob(b=>{ const url=URL.createObjectURL(b); setScanPreview({url, blob:b}); }, "image/jpeg", 0.92);
+  };
+  const sendScan = () => {
+    if(!scanPreview) return;
+    const nowTs=Date.now();
+    setMessages(p=>{ const n=[...p,{from:"you", text:"📄 Scanned Document", time:nowTs, status:"delivered", mediaUrl:scanPreview.url, type:"doc", fileName:"EVA-Scan.jpg"}]; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(e){} return n; });
+    setScanPreview(null); setShowScan(false); try{ scanStreamRef.current?.getTracks().forEach(t=>t.stop()); }catch(e){}
+    showToast("Scan sent 💧");
+  };
+  useEffect(()=>{ if(showScan && !scanPreview) startScan(); },[showScan, scanMode]);
+  // --- VOICE - Droplet Slide ---
+  const startVoice = async () => {
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      voiceChunksRef.current=[]; const rec = new MediaRecorder(stream); voiceRecorderRef.current=rec;
+      rec.ondataavailable = e=>{ if(e.data.size) voiceChunksRef.current.push(e.data); };
+      rec.onstop = () => { try{ stream.getTracks().forEach(t=>t.stop()); }catch(e){} };
+      rec.start(); setIsRecording(true); setIsPaused(false); setRecTime(0); setRecCancelHint(false);
+      if(voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current=setInterval(()=>{ if(!isPaused) setRecTime(t=>t+1); setWaveLevels(Array.from({length:16},()=>4+Math.floor(Math.random()*10))); }, 200);
+      setTimeout(()=>{ const t=setInterval(()=>{ if(voiceTimerRef.current) {} },1000); },0);
+    }catch(e){ showToast("Mic permission needed"); }
+  };
+  const stopVoiceRec = (shouldSend) => {
+    if(!voiceRecorderRef.current) return;
+    const rec = voiceRecorderRef.current;
+    if(voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+    rec.onstop = () => {
+      const blob=new Blob(voiceChunksRef.current,{type:"audio/webm"});
+      if(shouldSend && blob.size>500){
+        const url=URL.createObjectURL(blob);
+        const nowTs=Date.now();
+        setMessages(p=>{ const n=[...p,{from:"you", text:`🎤 Voice note • ${fmtDur(recTime)}`, time:nowTs, status:"delivered", mediaUrl:url, type:"audio"}]; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(e){} return n; });
+        showToast("Voice note sent 💧");
+      }
+      try{ rec.stream?.getTracks().forEach(t=>t.stop()); }catch(e){}
+    };
+    try{ rec.stop(); }catch(e){}
+    setIsRecording(false); setIsPaused(false); setRecTime(0); setRecCancelHint(false);
+  };
+  const togglePauseVoice = () => {
+    if(!voiceRecorderRef.current) return;
+    if(isPaused){ try{ voiceRecorderRef.current.resume(); }catch(e){} setIsPaused(false); }
+    else { try{ voiceRecorderRef.current.pause(); }catch(e){} setIsPaused(true); }
+  };
+  // Drag DOWN to cancel - EVA difference
+  const onVoiceTouchStart = (e) => { voiceStartY.current = e.touches[0].clientY; };
+  const onVoiceTouchMove = (e) => { if(voiceStartY.current==null) return; const dy=e.touches[0].clientY - voiceStartY.current; if(dy>60){ setRecCancelHint(true); } else setRecCancelHint(false); };
+  const onVoiceTouchEnd = (e) => { if(voiceStartY.current==null) return; const dy=e.changedTouches[0].clientY - voiceStartY.current; voiceStartY.current=null; if(dy>80){ stopVoiceRec(false); showToast("Voice cancelled"); } setRecCancelHint(false); };
   const saveTraining = async (snippetId, vote, userMsg, evaMsg) => {
     try {
-      if (snippetId && vote) {
-        await supabase.from("eva_feedback").insert([{ snippet_id: snippetId, vote }]);
-      }
-      if (userMsg && evaMsg) {
-        await supabase.from("eva_chats").insert([{ user_message: userMsg, eva_reply: evaMsg, vote: vote || null }]);
-      }
+      if (snippetId && vote) { await supabase.from("eva_feedback").insert([{ snippet_id: snippetId, vote }]); }
+      if (userMsg && evaMsg) { await supabase.from("eva_chats").insert([{ user_message: userMsg, eva_reply: evaMsg, vote: vote || null }]); }
     } catch(e) { console.log("EVA TRAIN SAVE ERROR", e.message); }
   };
   const giveFeedback = async (type) => {
@@ -153,8 +295,7 @@ export default function EVA(){
     setFeedbackMap(next);
     try{ localStorage.setItem("eva_feedback", JSON.stringify(next)); }catch(e){}
     await saveTraining(lastSuggestion.id, type, null, null);
-    setShowFeedback(false);
-    setLastSuggestion(null);
+    setShowFeedback(false); setLastSuggestion(null);
   };
   const evaAudioRef = useRef(null);
   const isSpeakingRef = useRef(false);
@@ -259,7 +400,7 @@ export default function EVA(){
   const onEmojiSwipeStart=e=>{ const t=e.touches?e.touches[0]:e; swipeStartXRef.current=t.clientX; swipeStartYRef.current=t.clientY; };
   const onEmojiSwipeEnd=e=>{ if(swipeStartXRef.current==null) return; const t=e.changedTouches?e.changedTouches[0]:e; const dx=t.clientX-swipeStartXRef.current, dy=t.clientY-swipeStartYRef.current; swipeStartXRef.current=null; swipeStartYRef.current=null; if(Math.abs(dx)<70||Math.abs(dy)>Math.abs(dx)||emojiSearch.trim()) return; const idx=CAT_LIST.indexOf(emojiTab); if(dx<0&&idx<CAT_LIST.length-1) switchCat(CAT_LIST[idx+1]); if(dx>0&&idx>0) switchCat(CAT_LIST[idx-1]); };
   const getEmoji=(s)=>s.split(" ")[0];
-  const addEmoji=s=>{ if(emojiGridRef.current) emojiScrollPosRef.current=emojiGridRef.current.scrollTop; if(textareaRef.current){ const el=textareaRef.current; const start=el.selectionStart||el.value.length; const end=el.selectionEnd||el.value.length; el.value=el.value.slice(0,start)+getEmoji(s)+el.value.slice(end); const pos=start+getEmoji(s).length; try{ el.setSelectionRange(pos,pos); }catch(e){} } requestAnimationFrame(()=>{ if(emojiGridRef.current) emojiGridRef.current.scrollTop=emojiScrollPosRef.current; }); };
+  const addEmoji=s=>{ if(emojiGridRef.current) emojiScrollPosRef.current=emojiGridRef.current.scrollTop; if(textareaRef.current){ const el=textareaRef.current; const start=el.selectionStart||el.value.length; const end=el.selectionEnd||el.value.length; el.value=el.value.slice(0,start)+getEmoji(s)+el.value.slice(end); const pos=start+getEmoji(s).length; try{ el.setSelectionRange(pos,pos); }catch(e){} onInputChange(); } requestAnimationFrame(()=>{ if(emojiGridRef.current) emojiGridRef.current.scrollTop=emojiScrollPosRef.current; }); };
   const getEmojis=()=>{ if(emojiSearch.trim()){ const q=emojiSearch.toLowerCase(); return Object.values(EMOJI_CATS).flat().filter(x=>x.toLowerCase().includes(q)); } return EMOJI_CATS[emojiTab]||[]; };
   const toggleSelect=idx=>setSelectedIdxs(p=>p.includes(idx)?p.filter(x=>x!==idx):[...p,idx]);
   const onMsgTouchStart=(e,idx)=>{ const t=e.touches[0]; swipeStartX.current=t.clientX; swipeStartY.current=t.clientY; isLongPress.current=false; if(scrollRef.current) savedScrollTop.current=scrollRef.current.scrollTop; longPressTimer.current=setTimeout(()=>{ isLongPress.current=true; justSelectedAt.current=Date.now(); setSelectedIdxs(p=>p.includes(idx)?p:[...p,idx]); setSwipeOffset({}); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=savedScrollTop.current; }); },450); };
@@ -267,7 +408,7 @@ export default function EVA(){
   const onMsgTouchEnd=(e,m,idx)=>{ if(longPressTimer.current){ clearTimeout(longPressTimer.current); longPressTimer.current=null; } if(swipeStartX.current==null) return; const t=e.changedTouches[0]; const dx=t.clientX-swipeStartX.current, dy=t.clientY-swipeStartY.current; swipeStartX.current=null; swipeStartY.current=null; setSwipeOffset({}); if(isLongPress.current){ isLongPress.current=false; return; } if(selectedIdxs.length>0) return; if(dx>60&&Math.abs(dy)<40){ setReplyTo({from:m.from,text:m.text}); setTimeout(()=>textareaRef.current?.focus(),50); } };
   const onMsgClick=(e,idx)=>{ e.stopPropagation(); if(Date.now()-justSelectedAt.current<300) return; if(selectedIdxs.length>0) toggleSelect(idx); };
   const doCopy=async e=>{ e?.stopPropagation(); if(!selectedIdxs.length) return; const txt=selectedIdxs.map(i=>clean(messages[i]?.text||"")).join("\n"); try{ await navigator.clipboard.writeText(txt); }catch(err){} const st=scrollRef.current?scrollRef.current.scrollTop:0; setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast(isMulti?`${selectedIdxs.length} messages copied`:"Copied"); };
-  const doForward=e=>{ e?.stopPropagation(); if(!selectedIdxs.length) return; if(textareaRef.current) textareaRef.current.value=selectedIdxs.map(i=>clean(messages[i]?.text||"")).join("\n"); setSelectedIdxs([]); setTimeout(()=>textareaRef.current?.focus(),50); };
+  const doForward=e=>{ e?.stopPropagation(); if(!selectedIdxs.length) return; if(textareaRef.current) textareaRef.current.value=selectedIdxs.map(i=>clean(messages[i]?.text||"")).join("\n"); setSelectedIdxs([]); setHasText(true); setTimeout(()=>textareaRef.current?.focus(),50); };
   const openDeleteSheet=e=>{ e?.stopPropagation(); e?.preventDefault(); setShowDeleteSheet(true); };
   const doDeleteForMe=async()=>{ const st=scrollRef.current?scrollRef.current.scrollTop:0; const del=new Set(selectedIdxs); setMessages(p=>{ const n=p.filter((_,i)=>!del.has(i)); try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(err){} return n; }); setShowDeleteSheet(false); setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast(selectedIdxs.length>1?`${selectedIdxs.length} messages deleted`:"Message deleted"); };
   const doDeleteForEveryone=async()=>{ const st=scrollRef.current?scrollRef.current.scrollTop:0; const del=new Set(selectedIdxs); for(const i of selectedIdxs.filter(i=>messages[i]?.from==="you")){ try{ const txt=messages[i]?.text; if(txt) await supabase.from("messages").delete().eq("chat_id",CHAT_ID).eq("sender","you").eq("text",txt); }catch(err){} } setMessages(p=>{ const n=p.filter((_,i)=>!del.has(i)); try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(err){} return n; }); setShowDeleteSheet(false); setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast("Message deleted for everyone"); };
@@ -298,7 +439,7 @@ export default function EVA(){
     setIsThinking(false);
     setTimeout(()=>{ try{ textareaRef.current?.focus({preventScroll:true}); }catch(e){ try{ textareaRef.current?.focus(); }catch(err){} } }, 50);
   };
-  const hideKeyboard=e=>{ if(e&&e.target!==e.currentTarget) return; setShowMenu(false); if(selectedIdxs.length>0){ const st=scrollRef.current?scrollRef.current.scrollTop:0; setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); return; } if(showEmojiRef.current) setShowEmoji(false); document.activeElement?.blur(); saveScroll(); setTimeout(restoreScroll,60); };
+  const hideKeyboard=e=>{ if(e&&e.target!==e.currentTarget) return; setShowMenu(false); setShowAttach(false); if(selectedIdxs.length>0){ const st=scrollRef.current?scrollRef.current.scrollTop:0; setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); return; } if(showEmojiRef.current) setShowEmoji(false); document.activeElement?.blur(); saveScroll(); setTimeout(restoreScroll,60); };
   const selectedHasYou=selectedIdxs.some(i=>messages[i]?.from==="you");
   const selectedOnlyEva=selectedIdxs.length>0&&!selectedHasYou;
   const deleteTitle=selectedIdxs.length===1?(selectedOnlyEva?"Delete message from EVA?":"Delete message?"):`Delete ${selectedIdxs.length} messages?`;
@@ -308,6 +449,10 @@ export default function EVA(){
             {isSingle&&isSel&&naked && <div style={{position:"absolute",top:0,right:m.from==="you"?0:"auto",left:m.from==="you"?"auto":0,display:"flex",gap:14,background:"rgba(0,0,0,.88)",border:"1px solid rgba(255,255,255,.18)",borderRadius:999,padding:"6px 12px",zIndex:30}} onClick={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}><button onClick={doCopy} style={{background:"transparent",border:"none",padding:2}}><CopyIcon size={18}/></button><button onClick={doForward} style={{background:"transparent",border:"none",padding:2}}><ForwardIcon size={20}/></button><button onClick={openDeleteSheet} style={{background:"transparent",border:"none",padding:2}}><TrashIcon size={18}/></button></div>}
             <div onTouchStart={e=>onMsgTouchStart(e,i)} onTouchMove={e=>onMsgTouchMove(e,i)} onTouchEnd={e=>onMsgTouchEnd(e,m,i)} onClick={e=>onMsgClick(e,i)} onContextMenu={e=>{e.preventDefault(); e.stopPropagation(); if(!selectedIdxs.includes(i)){ justSelectedAt.current=Date.now(); setSelectedIdxs(p=>[...p,i]); }}} style={naked?{background:isSel?"rgba(139,92,246,.45)":isHl?"rgba(37,211,102,.4)":"transparent",border:isSel?"1px solid rgba(139,92,246,.5)":isHl?"1px solid #25D366":"none",padding:"2px 6px",borderRadius:8,maxWidth:"85%",fontSize:15,whiteSpace:"pre-line",transform:off?`translateX(${off}px)`:"none"}:{background:isSel?"rgba(139,92,246,.75)":isHl?"rgba(37,211,102,.35)":m.from==="you"?"#8b5cf6":"rgba(0,0,0,.65)",border:isSel?"1px solid rgba(255,255,255,.6)":isHl?"1px solid #25D366":"1px solid rgba(255,255,255,.25)",padding:"10px 14px 6px",borderRadius:16,maxWidth:"85%",fontSize:15,lineHeight:1.5,whiteSpace:"pre-line",transform:off?`translateX(${off}px)`:"none"}}>
               {m.replyTo && <div style={{borderLeft:"3px solid #a78bfa",paddingLeft:8,marginBottom:6}}><div style={{fontSize:12,fontWeight:"bold",color:"#c4b5fd"}}>{m.replyTo.from==="you"?"You":"EVA"}</div><div style={{fontSize:13,opacity:.85,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>{clean(m.replyTo.text)}</div></div>}
+              {m.mediaUrl && m.type==="image" && <img src={m.mediaUrl} style={{width:"100%",maxWidth:260,borderRadius:12,marginBottom:6}} />}
+              {m.mediaUrl && m.type==="video" && <video src={m.mediaUrl} controls style={{width:"100%",maxWidth:260,borderRadius:12,marginBottom:6}} />}
+              {m.mediaUrl && m.type==="audio" && <audio src={m.mediaUrl} controls style={{width:220,marginBottom:6}} />}
+              {m.type==="doc" && <div style={{display:"flex",gap:10,alignItems:"center",background:"rgba(255,255,255,.1)",borderRadius:12,padding:"10px 12px",marginBottom:6}}><span style={{fontSize:28}}>📄</span><span style={{fontSize:13,wordBreak:"break-all"}}>{m.fileName||clean(m.text)}</span></div>}
               {naked?<div key={replayMap[i]||`emoji-${m.time}-${i}`} onClick={e=>{ if(!selectedIdxs.length){ e.stopPropagation(); setReplayMap(p=>({...p,[i]:Date.now()})); } }} style={{display:"flex",gap:2,cursor:"pointer"}}>{Array.from(clean(m.text)).map((ch,j)=><span key={j} className={emojiAnim(ch)} style={{fontSize:emojiSize(m.text),lineHeight:1.3,textShadow:"0 2px 8px rgba(0,0,0,.6)",display:"inline-block",animationDelay:`${j*.08}s`}}>{ch}</span>)}</div>:<div style={{fontSize:15,lineHeight:1.5}}>{clean(m.text)}</div>}
               <div style={{display:"flex",justifyContent:"flex-end",gap:4,marginTop:naked?0:4,fontSize:10,opacity:.75}}><span>{fmtTime(m.time)}</span>{m.from==="you" && <span style={{fontSize:12,letterSpacing:-2}}>{m.status==="delivered"?"✓✓":"✓"}</span>}</div>
             </div>
@@ -360,6 +505,44 @@ export default function EVA(){
       {isMulti&&!showSearch&&!showMedia && <div style={{position:"relative",zIndex:35,display:"flex",padding:"0 16px 6px"}}><div style={{display:"flex",alignItems:"center",gap:16,background:"rgba(0,0,0,.88)",border:"1px solid rgba(255,255,255,.18)",borderRadius:999,padding:"7px 14px"}}><span style={{fontSize:12,color:"#c4b5fd",fontWeight:"bold"}}>{selectedIdxs.length} selected</span><button onClick={doCopy} style={{background:"transparent",border:"none",padding:2}}><CopyIcon size={20}/></button><button onClick={doForward} style={{background:"transparent",border:"none",padding:2}}><ForwardIcon size={22}/></button><button onClick={openDeleteSheet} style={{background:"transparent",border:"none",padding:2}}><TrashIcon size={20}/></button><button onClick={()=>setSelectedIdxs([])} style={{background:"transparent",border:"none",color:"#aaa",fontSize:14}}>✕</button></div></div>}
       {showDeleteSheet && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setShowDeleteSheet(false)}><div style={{width:"100%",maxWidth:520,background:"#1a1a1a",borderTopLeftRadius:18,borderTopRightRadius:18,padding:"16px 20px calc(20px + env(safe-area-inset-bottom))"}} onClick={e=>e.stopPropagation()}><div style={{fontSize:17,fontWeight:"bold",marginBottom:16}}>{deleteTitle}</div>{selectedHasYou && <button onClick={doDeleteForEveryone} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#25D366",padding:"14px 0",fontSize:16,borderBottom:"1px solid rgba(255,255,255,.08)"}}>Delete for everyone</button>}<button onClick={doDeleteForMe} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#25D366",padding:"14px 0",fontSize:16,borderBottom:"1px solid rgba(255,255,255,.08)"}}>Delete for me</button><button onClick={()=>setShowDeleteSheet(false)} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#25D366",padding:"14px 0",fontSize:16}}>Cancel</button></div></div>}
       {showClearSheet && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:110,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setShowClearSheet(false)}><div style={{width:"100%",maxWidth:520,background:"#111118",borderTopLeftRadius:18,borderTopRightRadius:18,padding:"12px 20px calc(20px + env(safe-area-inset-bottom))"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}><button onClick={()=>setShowClearSheet(false)} style={{background:"transparent",border:"none",color:"white",fontSize:20,padding:4}}>✕</button><b style={{fontSize:18}}>Clear chat</b></div>{[["all",totalSize,"All messages"],["videos",videoSize,"Videos"],["photos",photoSize,"Photos"]].map(([k,sz,label])=><button key={k} onClick={()=>setClearMode(k)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,background:"transparent",border:"none",padding:"12px 0",textAlign:"left"}}><span style={{width:20,height:20,borderRadius:999,border:clearMode===k?"6px solid #25D366":"2px solid #666",display:"block"}} /><span style={{color:"white",fontSize:15,flex:1}}>{label} <span style={{color:"#aaa"}}>({sz})</span></span></button>)}<div style={{fontSize:12,color:"#888",margin:"14px 0 16px"}}>Your saved files will remain in your device gallery.</div><button onClick={doClearChat} style={{width:"100%",background:"transparent",border:"none",color:"#ff5a5a",fontSize:15,padding:"12px 0",fontWeight:"bold"}}>{clearMode==="all"?`Clear chat (${totalSize})`:clearMode==="videos"?`Clear videos (${videoSize})`:`Clear photos (${photoSize})`}</button></div></div>}
+      {/* ATTACH DROPLET SHEET */}
+      {showAttach && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:90,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setShowAttach(false)}><div style={{width:"100%",maxWidth:520,background:"linear-gradient(180deg,#14142a,#030014)",borderTopLeftRadius:26,borderTopRightRadius:26,padding:"18px 20px calc(22px + env(safe-area-inset-bottom))"}} onClick={e=>e.stopPropagation()}><div style={{width:44,height:5,background:"rgba(255,255,255,.25)",borderRadius:999,margin:"0 auto 16px"}} /><div style={{textAlign:"center",fontSize:14,color:"#c4b5fd",marginBottom:16}}>💧 Share with EVA</div><div style={{display:"flex",justifyContent:"space-around"}}><button onClick={()=>{setShowAttach(false); setShowGallery(true);}} style={{background:"transparent",border:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:8}}><span style={dropletBtn("linear-gradient(135deg,#7c3aed,#06b6d4)")}>🖼️</span><span style={{color:"white",fontSize:12}}>Gallery</span></button><button onClick={openCamera} style={{background:"transparent",border:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:8}}><span style={dropletBtn("linear-gradient(135deg,#ec4899,#8b5cf6)")}>📷</span><span style={{color:"white",fontSize:12}}>Camera</span></button><button onClick={()=>{setShowAttach(false); setShowDocSheet(true);}} style={{background:"transparent",border:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:8}}><span style={dropletBtn("linear-gradient(135deg,#0ea5e9,#22c55e)")}>📄</span><span style={{color:"white",fontSize:12}}>Document</span></button></div></div></div>}
+      {/* GALLERY */}
+      {showGallery && <div style={{position:"fixed",inset:0,background:"#030014",zIndex:95,display:"flex",flexDirection:"column"}}><div style={{display:"flex",alignItems:"center",gap:10,padding:"14px"}}><button onClick={()=>setShowGallery(false)} style={{background:"transparent",border:"none",color:"white",fontSize:22}}>✕</button><b>Gallery</b><button onClick={()=>galleryInputRef.current?.click()} style={{marginLeft:"auto",background:"#8b5cf6",border:"none",color:"white",padding:"8px 14px",borderRadius:999,fontSize:13}}>Pick Photos</button></div><input ref={galleryInputRef} type="file" accept="image/*,video/*" multiple style={{display:"none"}} onChange={onGalleryPick} /><div style={{flex:1,overflowY:"auto",padding:10}}>{galleryPics.length===0?<div style={{textAlign:"center",color:"#888",marginTop:60}}>No recent photos yet.<br/>Tap Pick Photos to choose from your phone.</div>:<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>{galleryPics.map((u,i)=><button key={i} onClick={()=>{ const nowTs=Date.now()+i; setMessages(p=>{ const n=[...p,{from:"you",text:"📷 Photo",time:nowTs,status:"delivered",mediaUrl:u,type:"image"}]; try{localStorage.setItem("eva_messages_cache",JSON.stringify(n));}catch(e){} return n; }); setShowGallery(false); showToast("Sent to EVA 💧"); }} style={{aspectRatio:"1",padding:0,border:"none",borderRadius:10,overflow:"hidden",background:"#222"}}><img src={u} style={{width:"100%",height:"100%",objectFit:"cover"}} /></button>)}</div>}</div></div>}
+      {/* DOCUMENT SHEET */}
+      {showDocSheet && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:95,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setShowDocSheet(false)}><div style={{width:"100%",maxWidth:520,background:"#111118",borderTopLeftRadius:22,borderTopRightRadius:22,padding:"16px 20px calc(20px + env(safe-area-inset-bottom))"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}><button onClick={()=>setShowDocSheet(false)} style={{background:"transparent",border:"none",color:"white",fontSize:20}}>✕</button><b>Documents</b></div><button onClick={()=>docInputRef.current?.click()} style={{width:"100%",display:"flex",gap:12,alignItems:"center",background:"transparent",border:"none",textAlign:"left",padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,.08)"}}><span style={{fontSize:26}}>📁</span><span><span style={{display:"block",color:"white",fontSize:15}}>Browse documents</span><span style={{color:"#aaa",fontSize:12}}>Select files up to 40 MB</span></span></button><button onClick={()=>{setShowDocSheet(false); setShowScan(true); setScanPreview(null);}} style={{width:"100%",display:"flex",gap:12,alignItems:"center",background:"transparent",border:"none",textAlign:"left",padding:"12px 0"}}><span style={{fontSize:26}}>📸</span><span><span style={{display:"block",color:"white",fontSize:15}}>Scan document</span><span style={{color:"#aaa",fontSize:12}}>Take photo of a document — EVA droplet scan</span></span></button></div></div>}
+      <input ref={docInputRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" style={{display:"none"}} onChange={onDocPick} />
+      {/* CAMERA FULLSCREEN */}
+      {showCamera && <div style={{position:"fixed",inset:0,background:"black",zIndex:120,display:"flex",flexDirection:"column"}}>
+        {!camPreview ? <>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"14px 16px",position:"relative",zIndex:5}}><button onClick={closeCamera} style={{width:40,height:40,borderRadius:999,background:"rgba(0,0,0,.5)",border:"none",color:"white",fontSize:20}}>✕</button><button onClick={()=>{}} style={{background:"rgba(0,0,0,.5)",border:"none",color:"white",padding:"6px 10px",borderRadius:999}}>🔦</button></div>
+          <div onTouchStart={onCamTouchStart} onTouchEnd={onCamTouchEnd} style={{flex:1,position:"relative",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}><video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",transform: facing==="user"?"scaleX(-1)":"none"}} /><div style={{position:"absolute",top:10,left:"50%",transform:"translateX(-50%)",background:"rgba(0,0,0,.55)",color:"white",padding:"6px 12px",borderRadius:999,fontSize:11}}>↑ Drag up to flip camera • {facing==="user"?"Front":"Back"}</div>{camRecording && <div style={{position:"absolute",top:14,left:"50%",transform:"translateX(-50%)",background:"#ef4444",color:"white",padding:"6px 12px",borderRadius:999,fontSize:13,fontWeight:"bold"}}>● {fmtDur(camTime)}</div>}</div>
+          {camMode==="photo" && galleryPics.length>0 && <div style={{display:"flex",gap:6,overflowX:"auto",padding:"8px 12px",background:"black"}}>{galleryPics.slice(0,10).map((u,i)=><img key={i} src={u} style={{width:52,height:52,objectFit:"cover",borderRadius:8}} />)}</div>}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px 22px",background:"black"}}>
+            <button onClick={()=>{}} style={{width:42,height:42,borderRadius:12,background:"rgba(255,255,255,.15)",border:"none",fontSize:20}}>🖼️</button>
+            <button onMouseDown={onShutterDown} onMouseUp={onShutterUp} onTouchStart={onShutterDown} onTouchEnd={onShutterUp} style={{width:72,height:72,borderRadius:999,background:"transparent",border:"4px solid white",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{width:56,height:56,borderRadius: camRecording?"12px":"999", background: camRecording?"#ef4444":"white", display:"block"}} /></button>
+            <button onClick={()=>setFacing(f=> f==="environment"?"user":"environment")} style={{width:46,height:46,borderRadius:"50% 50% 50% 50% / 62% 62% 38% 38%",background:"linear-gradient(135deg,#7c3aed,#06b6d4)",border:"2px solid white",color:"white",fontSize:20}}>💧⇄</button>
+          </div>
+          <div style={{display:"flex",justifyContent:"center",gap:10,paddingBottom:16,background:"black"}}><button onClick={()=>setCamMode("video")} style={{background:camMode==="video"?"white":"transparent",border:"none",color:camMode==="video"?"black":"white",padding:"6px 16px",borderRadius:999}}>Video</button><button onClick={()=>setCamMode("photo")} style={{background:camMode==="photo"?"white":"transparent",border:"none",color:camMode==="photo"?"black":"white",padding:"6px 16px",borderRadius:999}}>Photo</button></div>
+          <div style={{textAlign:"center",color:"#aaa",fontSize:11,paddingBottom:8}}>Photo: Tap = photo • Hold = video • Video: Tap = record</div>
+        </> : <>
+          <div style={{flex:1,background:"black",display:"flex",alignItems:"center",justifyContent:"center"}}>{camPreview.type==="photo"?<img src={camPreview.url} style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />:<video src={camPreview.url} controls autoPlay style={{maxWidth:"100%",maxHeight:"100%"}} />}</div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"16px 20px 24px",background:"black"}}><button onClick={()=>setCamPreview(null)} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",padding:"10px 18px",borderRadius:999}}>Retake</button><button onClick={sendCamPreview} style={{background:"#25D366",border:"none",color:"white",padding:"10px 22px",borderRadius:999,fontWeight:"bold"}}>Send to EVA 💧 ➤</button></div>
+        </>}
+      </div>}
+      {/* SCAN DOCUMENT */}
+      {showScan && <div style={{position:"fixed",inset:0,background:"black",zIndex:125,display:"flex",flexDirection:"column"}}>
+        {!scanPreview ? <>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"14px"}}><button onClick={()=>{setShowScan(false); try{scanStreamRef.current?.getTracks().forEach(t=>t.stop());}catch(e){}}} style={{width:40,height:40,borderRadius:999,background:"rgba(0,0,0,.5)",border:"none",color:"white",fontSize:20}}>✕</button><span style={{background:"rgba(0,0,0,.6)",color:"white",padding:"6px 12px",borderRadius:999,fontSize:12}}>Position document in frame</span><span style={{width:40}} /></div>
+          <div style={{flex:1,position:"relative",overflow:"hidden"}}><video ref={scanVideoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover"}} /><div style={{position:"absolute",inset:"12% 8%",border:"2px dashed #22d3ee",borderRadius:16,pointerEvents:"none"}} /></div>
+          <div style={{display:"flex",justifyContent:"center",gap:8,padding:"10px"}}><button onClick={()=>setScanMode("manual")} style={{background:scanMode==="manual"?"white":"rgba(255,255,255,.15)",border:"none",color:scanMode==="manual"?"black":"white",padding:"8px 16px",borderRadius:999}}>Manual</button><button onClick={()=>setScanMode("auto")} style={{background:scanMode==="auto"?"white":"rgba(255,255,255,.15)",border:"none",color:scanMode==="auto"?"black":"white",padding:"8px 16px",borderRadius:999}}>Auto capture</button></div>
+          <div style={{display:"flex",justifyContent:"center",padding:"10px 0 22px"}}><button onClick={captureScan} style={{width:70,height:70,borderRadius:999,background:"transparent",border:"4px solid white",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{width:54,height:54,borderRadius:999,background:"white",display:"block"}} /></button></div>
+          <div style={{textAlign:"center",color:"#aaa",fontSize:11,paddingBottom:10}}>Auto capture snaps when document is steady • EVA will have access to images you scan</div>
+        </> : <>
+          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"black"}}><img src={scanPreview.url} style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} /></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"16px 20px 24px"}}><button onClick={()=>{setScanPreview(null); setTimeout(()=>startScan(),100);}} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",padding:"10px 18px",borderRadius:999}}>Retake</button><button onClick={sendScan} style={{background:"#25D366",border:"none",color:"white",padding:"10px 22px",borderRadius:999,fontWeight:"bold"}}>Send Scan 💧 ➤</button></div>
+        </>}
+      </div>}
       {showEmoji&&!showSearch&&!showMedia && <div style={{position:"relative",zIndex:25,height:280,flexShrink:0,background:"rgba(0,0,0,.95)",borderTop:"1px solid rgba(255,255,255,.2)",padding:"10px 10px 6px",display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <input value={emojiSearch} onChange={e=>setEmojiSearch(e.target.value)} placeholder="🔍 Search emoji... car, monkey, love" style={{width:"100%",background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",borderRadius:999,color:"white",padding:"10px 14px",fontSize:14,outline:"none"}} />
         <div ref={emojiTabsRef} style={{display:"flex",gap:6,overflowX:"auto",padding:"10px 2px 6px"}}>
@@ -371,14 +554,32 @@ export default function EVA(){
       </div>}
       {!showSearch&&!showMedia && <div style={{position:"relative",zIndex:30,flexShrink:0,background:"#030014",padding:"8px 10px calc(8px + env(safe-area-inset-bottom))",borderTop:"1px solid rgba(255,255,255,.08)"}}>
         {replyTo && <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(139,92,246,.2)",borderRadius:10,padding:"6px 10px",marginBottom:6}}><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,color:"#c4b5fd",fontWeight:"bold"}}>{replyTo.from==="you"?"You":"EVA"}</div><div style={{fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{clean(replyTo.text)}</div></div><button onClick={()=>setReplyTo(null)} style={{background:"transparent",border:"none",color:"white",fontSize:16}}>✕</button></div>}
+        {/* VOICE DROPLET RECORDING - Drag DOWN to cancel */}
+        {isRecording ? (
+          <div onTouchStart={onVoiceTouchStart} onTouchMove={onVoiceTouchMove} onTouchEnd={onVoiceTouchEnd} style={{display:"flex",alignItems:"center",gap:10,background: recCancelHint?"rgba(239,68,68,.25)":"rgba(139,92,246,.25)",border: recCancelHint?"1px solid #ef4444":"1px solid rgba(167,139,250,.5)",borderRadius:999,padding:"8px 10px"}}>
+            <span style={{width:10,height:10,borderRadius:999,background:"#ef4444",display:"block"}} />
+            <span style={{fontSize:13,fontWeight:"bold",minWidth:42}}>{fmtDur(recTime)}{isPaused?" • Paused":""}</span>
+            <span style={{display:"flex",gap:2,alignItems:"flex-end",height:20}}>{waveLevels.map((h,i)=><span key={i} style={{width:3,height:h,background:"#a78bfa",borderRadius:2,display:"block"}} />)}</span>
+            <span style={{fontSize:10,color:"#c4b5fd",flex:1}}>{recCancelHint?"Release to cancel 🗑️":"Drag DOWN to cancel"}</span>
+            <button onClick={()=>stopVoiceRec(false)} style={{width:36,height:36,borderRadius:"50% 50% 50% 50% / 62% 62% 38% 38%",background:"linear-gradient(135deg,#ef4444,#f97316)",border:"none",fontSize:16}}>🗑️</button>
+            <button onClick={togglePauseVoice} style={{width:36,height:36,borderRadius:999,background:"rgba(255,255,255,.2)",border:"none",fontSize:14}}>{isPaused?"▶️":"⏸️"}</button>
+            <button onClick={()=>stopVoiceRec(true)} style={{width:42,height:42,borderRadius:"50% 50% 50% 50% / 62% 62% 38% 38%",background:"linear-gradient(135deg,#22c55e,#06b6d4)",border:"none",fontSize:18}}>💧➤</button>
+          </div>
+        ) : (
         <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
           <button onMouseDown={e=>e.preventDefault()} onClick={toggleEmoji} style={{width:42,height:42,borderRadius:999,background:"rgba(255,255,255,.12)",border:"none",fontSize:22,flexShrink:0}}>{showEmoji?"⌨️":"😊"}</button>
-          <textarea ref={textareaRef} defaultValue="" onFocus={handleInputFocus} onClick={handleInputTap} onTouchStart={handleInputTap} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); askEVA();}}} placeholder="Message EVA..." rows={1} style={{flex:1,background:"rgba(255,255,255,.12)",border:"none",borderRadius:20,color:"white",padding:"10px 14px",fontSize:15,outline:"none",resize:"none",maxHeight:100}} />
-          <button onMouseDown={e=>e.preventDefault()} onClick={()=>askEVA()} style={{width:42,height:42,borderRadius:999,background:"#25D366",border:"none",fontSize:20,flexShrink:0}}>➤</button>
+          <button onClick={()=>{ setShowEmoji(false); setShowAttach(!showAttach); }} style={{width:42,height:42,borderRadius:"50% 50% 50% 50% / 62% 62% 38% 38%",background:"linear-gradient(135deg,#1e1b4b,#4c1d95,#0ea5e9)",border:"2px solid rgba(167,139,250,.6)",fontSize:20,flexShrink:0,boxShadow:"0 4px 14px rgba(139,92,246,.4)"}}>💧</button>
+          <textarea ref={textareaRef} defaultValue="" onInput={onInputChange} onFocus={handleInputFocus} onClick={handleInputTap} onTouchStart={handleInputTap} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); askEVA();}}} placeholder="Message EVA..." rows={1} style={{flex:1,background:"rgba(255,255,255,.12)",border:"none",borderRadius:20,color:"white",padding:"10px 14px",fontSize:15,outline:"none",resize:"none",maxHeight:100}} />
+          {hasText ? (
+            <button onMouseDown={e=>e.preventDefault()} onClick={()=>askEVA()} style={{width:42,height:42,borderRadius:999,background:"#25D366",border:"none",fontSize:20,flexShrink:0}}>➤</button>
+          ) : (
+            <button onMouseDown={e=>e.preventDefault()} onClick={startVoice} style={{width:42,height:42,borderRadius:"50% 50% 50% 50% / 62% 62% 38% 38%",background:"linear-gradient(135deg,#8b5cf6,#06b6d4)",border:"none",fontSize:20,flexShrink:0}}>🎤</button>
+          )}
         </div>
+        )}
         {showFeedback&&lastSuggestion && <div style={{display:"flex",gap:8,marginTop:8}}><button onClick={()=>giveFeedback("up")} style={{flex:1,background:"rgba(37,211,102,.2)",border:"1px solid #25D366",color:"white",padding:"8px",borderRadius:999}}>👍 Good</button><button onClick={()=>giveFeedback("down")} style={{flex:1,background:"rgba(255,90,90,.2)",border:"1px solid #ff5a5a",color:"white",padding:"8px",borderRadius:999}}>👎 Not good</button></div>}
       </div>}
       <EvaVoice voiceEnabled={voiceEnabled} alwaysListening={alwaysListening} setVoiceEnabled={setVoiceEnabled} setAlwaysListening={setAlwaysListening} speakEva={speakEva} onUserMessage={(t)=>askEVA(t)} />
     </div>
   );
-          }
+                          }
