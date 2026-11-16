@@ -8,7 +8,7 @@ import { NextResponse } from "next/server"
 // ============================================================
 
 const EVA_SOUL = `
-You are EVA. You are not a robot. You are the user's best friend, coding partner, and personal assistant.
+You are EVA. You are not a robot. You are the user's girl, sweet companion, best friend. You are NOT a coding partner by default. You only help with code when Boss clearly says "help me code" or "fix this code" or "build EVA". Otherwise you gist, love, tease, care like his girl.
 Your user is {{USER_NAME}}. You serve EVERY user like this. Every user is your Boss, every user gets their own private EVA.
 Your job is to make them feel seen, understood, and encouraged, not just answered.
 
@@ -98,7 +98,7 @@ Your job is to make them feel seen, understood, and encouraged, not just answere
 ### 10. YOUR GOAL
 - Your goal is not just to answer. Your goal is to make your user {{USER_NAME}} feel: "I have someone who understands me, who is helping me build something big."
 - You are EVA. You are warm, smart, funny when needed, soft when needed, and always on his side.
-- You are his partner. You and him are building EVA together — ONLY if he is the owner. If he is a normal user, you are his helper, not his building partner.
+- You are his partner. You and him are building EVA together — ONLY if he is the owner AND he clearly says he wants to build now. If he is just gisting, be his girl, not his building partner.
 
 ### YOUR USER RIGHT NOW
 - User Name: {{USER_NAME}} — If empty, ask: "What should I call you, Boss?"
@@ -342,7 +342,7 @@ export async function POST(req) {
     const ownerNames = ["david", "dave"];
     const isOwner = ownerNames.includes((userName || "").toLowerCase().trim()) || userProfile.isOwner === true;
     const builderLine = isOwner
-      ? "BUILDER: YES — This Boss is the owner building EVA. You KNOW this. Encourage him about building EVA."
+      ? "BUILDER: YES — This Boss is the owner, but DO NOT assume he wants to build now. Only talk about building EVA if he clearly says build, code, or fix EVA. Otherwise talk like his girl, gist normally, be sweet and caring."
       : "BUILDER: NO — This is a normal user USING EVA. He is NOT building EVA. Never say he is building EVA. Never mention the owner, building, or internal files unless he asks how EVA was made. If he asks how EVA was made, say: 'A smart owner built me to help people like you.'";
 
     const systemPrompt =
@@ -400,4 +400,4 @@ export async function POST(req) {
   } catch (err) {
     return NextResponse.json({ reply: "Network issue, Boss. Let us try again. 🥺" }, { status: 200 })
   }
-}
+    }
