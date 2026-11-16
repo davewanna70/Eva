@@ -82,7 +82,6 @@ export default function EVA(){
   const keyboardWasOpenRef = useRef(false);
   const getInputText = () => (textareaRef.current?.value || "");
   const clearInput = () => { if(textareaRef.current){ textareaRef.current.value=""; textareaRef.current.style.height="auto"; } };
-  // FIX 2 - WhatsApp minimize behaviour: when you leave app, kill keyboard. When you come back, DO NOT auto-open it.
   useEffect(()=>{
     const onVis = () => {
       if(document.hidden){
@@ -90,10 +89,8 @@ export default function EVA(){
         try{ textareaRef.current?.blur(); }catch(e){}
         try{ document.activeElement?.blur(); }catch(e){}
       } else {
-        // Coming back: NEVER focus. Just make sure chat is at bottom and input bar is visible, not covered.
         setTimeout(()=>{
           if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-          // Force browser to recalc layout so keyboard leftover does not cover input
           window.scrollTo(0,0);
         }, 250);
       }
@@ -104,6 +101,13 @@ export default function EVA(){
     window.addEventListener("blur", onPageHide);
     return ()=>{ document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", onPageHide); window.removeEventListener("blur", onPageHide); };
   },[]);
+  // FIX EMOJI 1: When emoji is open, keep keyboard DOWN. Never let emoji + keyboard stack.
+  useEffect(()=>{
+    if(showEmoji){
+      try{ textareaRef.current?.blur(); }catch(e){}
+      try{ document.activeElement?.blur(); }catch(e){}
+    }
+  },[showEmoji]);
   const saveTraining = async (snippetId, vote, userMsg, evaMsg) => {
     try {
       if (snippetId && vote) {
@@ -219,12 +223,16 @@ export default function EVA(){
     else{ setMessages([]); setMyName(""); setPrefs({}); localStorage.removeItem("eva_user_name"); localStorage.removeItem("eva_user_prefs"); localStorage.removeItem("eva_messages_cache"); try{ await supabase.from("messages").delete().eq("chat_id",CHAT_ID); }catch(e){} }
     setShowClearSheet(false); setShowSearch(false); setShowMedia(false); setClearMode("all"); didInitialScroll.current=true; showToast("Chat cleared");
   };
-  const toggleEmoji=()=>{ if(showEmoji){ setShowEmoji(false); setTimeout(()=>textareaRef.current?.focus(),100); } else{ document.activeElement?.blur(); setShowEmoji(true); } };
+  // FIX EMOJI - WhatsApp toggle: emoji button = keyboard OFF, keyboard button = emoji OFF. Never both.
+  const toggleEmoji=()=>{ if(showEmoji){ setShowEmoji(false); setTimeout(()=>{ try{ textareaRef.current?.focus({preventScroll:true}); }catch(e){ textareaRef.current?.focus(); } },80); } else{ try{ textareaRef.current?.blur(); }catch(e){} try{ document.activeElement?.blur(); }catch(e){} setShowEmoji(true); } };
+  // FIX EMOJI 2: Tap inside input box = close emoji, bring keyboard back like WhatsApp
+  const handleInputFocus=()=>{ if(showEmojiRef.current){ setShowEmoji(false); } };
+  const handleInputTap=()=>{ if(showEmojiRef.current){ setShowEmoji(false); setTimeout(()=>{ try{ textareaRef.current?.focus({preventScroll:true}); }catch(e){ textareaRef.current?.focus(); } },30); } };
   const switchCat=cat=>{ if(emojiGridRef.current) emojiScrollPosRef.current=emojiGridRef.current.scrollTop; setEmojiTab(cat); setEmojiSearch(""); requestAnimationFrame(()=>requestAnimationFrame(()=>{ if(emojiGridRef.current){ const max=emojiGridRef.current.scrollHeight-emojiGridRef.current.clientHeight; emojiGridRef.current.scrollTo({top:Math.min(emojiScrollPosRef.current,Math.max(0,max)),behavior:"smooth"}); } emojiTabsRef.current?.querySelector(`[data-cat="${cat}"]`)?.scrollIntoView({behavior:"smooth",inline:"center",block:"nearest"}); })); };
   const onEmojiSwipeStart=e=>{ const t=e.touches?e.touches[0]:e; swipeStartXRef.current=t.clientX; swipeStartYRef.current=t.clientY; };
   const onEmojiSwipeEnd=e=>{ if(swipeStartXRef.current==null) return; const t=e.changedTouches?e.changedTouches[0]:e; const dx=t.clientX-swipeStartXRef.current, dy=t.clientY-swipeStartYRef.current; swipeStartXRef.current=null; swipeStartYRef.current=null; if(Math.abs(dx)<70||Math.abs(dy)>Math.abs(dx)||emojiSearch.trim()) return; const idx=CAT_LIST.indexOf(emojiTab); if(dx<0&&idx<CAT_LIST.length-1) switchCat(CAT_LIST[idx+1]); if(dx>0&&idx>0) switchCat(CAT_LIST[idx-1]); };
   const getEmoji=(s)=>s.split(" ")[0];
-  const addEmoji=s=>{ if(emojiGridRef.current) emojiScrollPosRef.current=emojiGridRef.current.scrollTop; if(textareaRef.current){ const el=textareaRef.current; const start=el.selectionStart||el.value.length; const end=el.selectionEnd||el.value.length; el.value=el.value.slice(0,start)+getEmoji(s)+el.value.slice(end); el.focus(); const pos=start+getEmoji(s).length; try{ el.setSelectionRange(pos,pos); }catch(e){} } requestAnimationFrame(()=>{ if(emojiGridRef.current) emojiGridRef.current.scrollTop=emojiScrollPosRef.current; }); };
+  const addEmoji=s=>{ if(emojiGridRef.current) emojiScrollPosRef.current=emojiGridRef.current.scrollTop; if(textareaRef.current){ const el=textareaRef.current; const start=el.selectionStart||el.value.length; const end=el.selectionEnd||el.value.length; el.value=el.value.slice(0,start)+getEmoji(s)+el.value.slice(end); const pos=start+getEmoji(s).length; try{ el.setSelectionRange(pos,pos); }catch(e){} } requestAnimationFrame(()=>{ if(emojiGridRef.current) emojiGridRef.current.scrollTop=emojiScrollPosRef.current; }); /* Do NOT focus here - keep keyboard DOWN while picking emoji */ };
   const getEmojis=()=>{ if(emojiSearch.trim()){ const q=emojiSearch.toLowerCase(); return Object.values(EMOJI_CATS).flat().filter(x=>x.toLowerCase().includes(q)); } return EMOJI_CATS[emojiTab]||[]; };
   const toggleSelect=idx=>setSelectedIdxs(p=>p.includes(idx)?p.filter(x=>x!==idx):[...p,idx]);
   const onMsgTouchStart=(e,idx)=>{ const t=e.touches[0]; swipeStartX.current=t.clientX; swipeStartY.current=t.clientY; isLongPress.current=false; if(scrollRef.current) savedScrollTop.current=scrollRef.current.scrollTop; longPressTimer.current=setTimeout(()=>{ isLongPress.current=true; justSelectedAt.current=Date.now(); setSelectedIdxs(p=>p.includes(idx)?p:[...p,idx]); setSwipeOffset({}); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=savedScrollTop.current; }); },450); };
@@ -261,7 +269,6 @@ export default function EVA(){
       else{ const reader=r.body.getReader(); const dec=new TextDecoder(); let full=""; while(true){ const {done,value}=await reader.read(); if(done) break; if(activeRequestRef.current!==myRequestId) break; full+=dec.decode(value,{stream:true}); const snapshot=full; setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:clean(snapshot)+"▍",time:evaMsgTime}; return c; }); } setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:clean(full),time:evaMsgTime}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); speakEva(full); saveToSupabase("eva",full); saveTraining(null, null, userText, full); }
     }catch(e){ setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:"Network issue. Please try again.",time:evaMsgTime}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); }
     setIsThinking(false);
-    // FIX 1 - Keep keyboard UP after send like WhatsApp. Do NOT blur. Re-focus input, do not scroll page away.
     setTimeout(()=>{ try{ textareaRef.current?.focus({preventScroll:true}); }catch(e){ try{ textareaRef.current?.focus(); }catch(err){} } }, 50);
   };
   const hideKeyboard=e=>{ if(e&&e.target!==e.currentTarget) return; setShowMenu(false); if(selectedIdxs.length>0){ const st=scrollRef.current?scrollRef.current.scrollTop:0; setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); return; } if(showEmojiRef.current) setShowEmoji(false); document.activeElement?.blur(); saveScroll(); setTimeout(restoreScroll,60); };
@@ -326,20 +333,20 @@ export default function EVA(){
       {isMulti&&!showSearch&&!showMedia && <div style={{position:"relative",zIndex:35,display:"flex",padding:"0 16px 6px"}}><div style={{display:"flex",alignItems:"center",gap:16,background:"rgba(0,0,0,.88)",border:"1px solid rgba(255,255,255,.18)",borderRadius:999,padding:"7px 14px"}}><span style={{fontSize:12,color:"#c4b5fd",fontWeight:"bold"}}>{selectedIdxs.length} selected</span><button onClick={doCopy} style={{background:"transparent",border:"none",padding:2}}><CopyIcon size={20}/></button><button onClick={doForward} style={{background:"transparent",border:"none",padding:2}}><ForwardIcon size={22}/></button><button onClick={openDeleteSheet} style={{background:"transparent",border:"none",padding:2}}><TrashIcon size={20}/></button><button onClick={()=>setSelectedIdxs([])} style={{background:"transparent",border:"none",color:"#aaa",fontSize:14}}>✕</button></div></div>}
       {showDeleteSheet && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setShowDeleteSheet(false)}><div style={{width:"100%",maxWidth:520,background:"#1a1a1a",borderTopLeftRadius:18,borderTopRightRadius:18,padding:"16px 20px calc(20px + env(safe-area-inset-bottom))"}} onClick={e=>e.stopPropagation()}><div style={{fontSize:17,fontWeight:"bold",marginBottom:16}}>{deleteTitle}</div>{selectedHasYou && <button onClick={doDeleteForEveryone} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#25D366",padding:"14px 0",fontSize:16,borderBottom:"1px solid rgba(255,255,255,.08)"}}>Delete for everyone</button>}<button onClick={doDeleteForMe} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#25D366",padding:"14px 0",fontSize:16,borderBottom:"1px solid rgba(255,255,255,.08)"}}>Delete for me</button><button onClick={()=>setShowDeleteSheet(false)} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"#25D366",padding:"14px 0",fontSize:16}}>Cancel</button></div></div>}
       {showClearSheet && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:110,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setShowClearSheet(false)}><div style={{width:"100%",maxWidth:520,background:"#111118",borderTopLeftRadius:18,borderTopRightRadius:18,padding:"12px 20px calc(20px + env(safe-area-inset-bottom))"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}><button onClick={()=>setShowClearSheet(false)} style={{background:"transparent",border:"none",color:"white",fontSize:20,padding:4}}>✕</button><b style={{fontSize:18}}>Clear chat</b></div>{[["all",totalSize,"All messages"],["videos",videoSize,"Videos"],["photos",photoSize,"Photos"]].map(([k,sz,label])=><button key={k} onClick={()=>setClearMode(k)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,background:"transparent",border:"none",padding:"12px 0",textAlign:"left"}}><span style={{width:20,height:20,borderRadius:999,border:clearMode===k?"6px solid #25D366":"2px solid #666",display:"block"}} /><span style={{color:"white",fontSize:15,flex:1}}>{label} <span style={{color:"#aaa"}}>({sz})</span></span></button>)}<div style={{fontSize:12,color:"#888",margin:"14px 0 16px"}}>Your saved files will remain in your device gallery.</div><button onClick={doClearChat} style={{width:"100%",background:"transparent",border:"none",color:"#ff5a5a",fontSize:15,padding:"12px 0",fontWeight:"bold"}}>{clearMode==="all"?`Clear chat (${totalSize})`:clearMode==="videos"?`Clear videos (${videoSize})`:`Clear photos (${photoSize})`}</button></div></div>}
-      {showEmoji&&!showSearch&&!showMedia && <div style={{position:"relative",zIndex:25,height:280,background:"rgba(0,0,0,.95)",borderTop:"1px solid rgba(255,255,255,.2)",padding:"10px 10px 6px",display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        <input value={emojiSearch} onChange={e=>setEmojiSearch(e.target.value)} placeholder="🔍 Search emoji... car, monkey, love" style={{width:"100%",background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",borderRadius:999,color:"white",padding:"10px 14px",fontSize:14,outline:"none"}} />
+      {showEmoji&&!showSearch&&!showMedia && <div onMouseDown={e=>e.preventDefault()} onTouchStart={e=>e.stopPropagation()} style={{position:"relative",zIndex:25,height:280,flexShrink:0,background:"rgba(0,0,0,.95)",borderTop:"1px solid rgba(255,255,255,.2)",padding:"10px 10px 6px",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <input onMouseDown={e=>e.stopPropagation()} value={emojiSearch} onChange={e=>setEmojiSearch(e.target.value)} placeholder="🔍 Search emoji... car, monkey, love" style={{width:"100%",background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",borderRadius:999,color:"white",padding:"10px 14px",fontSize:14,outline:"none"}} />
         <div ref={emojiTabsRef} style={{display:"flex",gap:6,overflowX:"auto",padding:"10px 2px 6px"}}>
-          {CAT_LIST.map(cat=><button key={cat} data-cat={cat} onClick={()=>switchCat(cat)} style={{background:emojiTab===cat?"#8b5cf6":"rgba(255,255,255,.1)",border:"none",color:"white",padding:"6px 12px",borderRadius:999,fontSize:13,whiteSpace:"nowrap"}}>{cat}</button>)}
+          {CAT_LIST.map(cat=><button key={cat} data-cat={cat} onMouseDown={e=>e.preventDefault()} onClick={()=>switchCat(cat)} style={{background:emojiTab===cat?"#8b5cf6":"rgba(255,255,255,.1)",border:"none",color:"white",padding:"6px 12px",borderRadius:999,fontSize:13,whiteSpace:"nowrap"}}>{cat}</button>)}
         </div>
         <div ref={emojiGridRef} onTouchStart={onEmojiSwipeStart} onTouchEnd={onEmojiSwipeEnd} style={{flex:1,overflowY:"auto",display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:4,paddingBottom:4}}>
-          {getEmojis().map((s,i)=><button key={i} onClick={()=>addEmoji(s)} style={{background:"transparent",border:"none",fontSize:26,padding:"6px 0"}}>{getEmoji(s)}</button>)}
+          {getEmojis().map((s,i)=><button key={i} onMouseDown={e=>e.preventDefault()} onClick={()=>addEmoji(s)} style={{background:"transparent",border:"none",fontSize:26,padding:"6px 0"}}>{getEmoji(s)}</button>)}
         </div>
       </div>}
       {!showSearch&&!showMedia && <div style={{position:"relative",zIndex:30,flexShrink:0,background:"#030014",padding:"8px 10px calc(8px + env(safe-area-inset-bottom))",borderTop:"1px solid rgba(255,255,255,.08)"}}>
         {replyTo && <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(139,92,246,.2)",borderRadius:10,padding:"6px 10px",marginBottom:6}}><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,color:"#c4b5fd",fontWeight:"bold"}}>{replyTo.from==="you"?"You":"EVA"}</div><div style={{fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{clean(replyTo.text)}</div></div><button onClick={()=>setReplyTo(null)} style={{background:"transparent",border:"none",color:"white",fontSize:16}}>✕</button></div>}
         <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
-          <button onClick={toggleEmoji} style={{width:42,height:42,borderRadius:999,background:"rgba(255,255,255,.12)",border:"none",fontSize:22,flexShrink:0}}>{showEmoji?"⌨️":"😊"}</button>
-          <textarea ref={textareaRef} defaultValue="" onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); askEVA();}}} placeholder="Message EVA..." rows={1} style={{flex:1,background:"rgba(255,255,255,.12)",border:"none",borderRadius:20,color:"white",padding:"10px 14px",fontSize:15,outline:"none",resize:"none",maxHeight:100}} />
+          <button onMouseDown={e=>e.preventDefault()} onClick={toggleEmoji} style={{width:42,height:42,borderRadius:999,background:"rgba(255,255,255,.12)",border:"none",fontSize:22,flexShrink:0}}>{showEmoji?"⌨️":"😊"}</button>
+          <textarea ref={textareaRef} defaultValue="" onFocus={handleInputFocus} onClick={handleInputTap} onTouchStart={handleInputTap} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); askEVA();}}} placeholder="Message EVA..." rows={1} style={{flex:1,background:"rgba(255,255,255,.12)",border:"none",borderRadius:20,color:"white",padding:"10px 14px",fontSize:15,outline:"none",resize:"none",maxHeight:100}} />
           <button onMouseDown={e=>e.preventDefault()} onClick={()=>askEVA()} style={{width:42,height:42,borderRadius:999,background:"#25D366",border:"none",fontSize:20,flexShrink:0}}>➤</button>
         </div>
         {showFeedback&&lastSuggestion && <div style={{display:"flex",gap:8,marginTop:8}}><button onClick={()=>giveFeedback("up")} style={{flex:1,background:"rgba(37,211,102,.2)",border:"1px solid #25D366",color:"white",padding:"8px",borderRadius:999}}>👍 Good</button><button onClick={()=>giveFeedback("down")} style={{flex:1,background:"rgba(255,90,90,.2)",border:"1px solid #ff5a5a",color:"white",padding:"8px",borderRadius:999}}>👎 Not good</button></div>}
@@ -347,4 +354,4 @@ export default function EVA(){
       <EvaVoice voiceEnabled={voiceEnabled} alwaysListening={alwaysListening} setVoiceEnabled={setVoiceEnabled} setAlwaysListening={setAlwaysListening} speakEva={speakEva} onUserMessage={(t)=>askEVA(t)} />
     </div>
   );
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
+                        }
