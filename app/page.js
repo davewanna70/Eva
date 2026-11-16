@@ -65,7 +65,6 @@ const isPhoto = m => m.type==="image"||/\.jpg|\.jpeg|\.png|\.webp/.test((m.text|
 const getSize = (msgs,kind) => { let b=0; for(let i=0;i<(msgs||[]).length;i++){ const m=msgs[i]; if(kind==="videos"&&!isVideo(m)) continue; if(kind==="photos"&&!isPhoto(m)) continue; if(kind==="all"){ b+=(m.text||"").length+200; if(m.mediaUrl||m.imageUrl) b+=1200000; else if(m.type==="video") b+=8000000; else if(isDoc(m)) b+=800000; else if(isMedia(m)) b+=500000; continue; } if(kind==="videos") b+=m.mediaSize||8000000; if(kind==="photos") b+=m.mediaSize||1200000; } if(b<1024) return "0.0 MB"; if(b<1024*1024) return (b/1024).toFixed(1)+" KB"; return (b/(1024*1024)).toFixed(1)+" MB"; };
 export default function EVA(){
   const [showHud,setShowHud]=useState(false);
-  // FIX FINAL: No more text state. Input is UNCONTROLLED - typing will NOT trigger React re-render at all. WhatsApp way.
   const [messages,setMessages]=useState([]); const [isReady,setIsReady]=useState(false);
   const [showMenu,setShowMenu]=useState(false); const [showEmoji,setShowEmoji]=useState(false); const [emojiTab,setEmojiTab]=useState("😊 Faces"); const [emojiSearch,setEmojiSearch]=useState("");
   const [isThinking,setIsThinking]=useState(false); const [myName,setMyName]=useState(""); const [prefs,setPrefs]=useState({}); const [replayMap,setReplayMap]=useState({});
@@ -80,8 +79,31 @@ export default function EVA(){
   showEmojiRef.current=showEmoji;
   const activeRequestRef = useRef(0);
   const typingIntervalRef = useRef(null);
+  const keyboardWasOpenRef = useRef(false);
   const getInputText = () => (textareaRef.current?.value || "");
   const clearInput = () => { if(textareaRef.current){ textareaRef.current.value=""; textareaRef.current.style.height="auto"; } };
+  // FIX 2 - WhatsApp minimize behaviour: when you leave app, kill keyboard. When you come back, DO NOT auto-open it.
+  useEffect(()=>{
+    const onVis = () => {
+      if(document.hidden){
+        keyboardWasOpenRef.current = (document.activeElement === textareaRef.current);
+        try{ textareaRef.current?.blur(); }catch(e){}
+        try{ document.activeElement?.blur(); }catch(e){}
+      } else {
+        // Coming back: NEVER focus. Just make sure chat is at bottom and input bar is visible, not covered.
+        setTimeout(()=>{
+          if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          // Force browser to recalc layout so keyboard leftover does not cover input
+          window.scrollTo(0,0);
+        }, 250);
+      }
+    };
+    const onPageHide = () => { try{ textareaRef.current?.blur(); }catch(e){} };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("blur", onPageHide);
+    return ()=>{ document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", onPageHide); window.removeEventListener("blur", onPageHide); };
+  },[]);
   const saveTraining = async (snippetId, vote, userMsg, evaMsg) => {
     try {
       if (snippetId && vote) {
@@ -238,7 +260,9 @@ export default function EVA(){
       if(ct.includes("application/json")){ const d=await r.json(); const reply=d.reply||"I am here. Please try again."; await typeOut(reply); speakEva(reply); saveToSupabase("eva",reply); saveTraining(null, null, userText, reply); }
       else{ const reader=r.body.getReader(); const dec=new TextDecoder(); let full=""; while(true){ const {done,value}=await reader.read(); if(done) break; if(activeRequestRef.current!==myRequestId) break; full+=dec.decode(value,{stream:true}); const snapshot=full; setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:clean(snapshot)+"▍",time:evaMsgTime}; return c; }); } setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:clean(full),time:evaMsgTime}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); speakEva(full); saveToSupabase("eva",full); saveTraining(null, null, userText, full); }
     }catch(e){ setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:"Network issue. Please try again.",time:evaMsgTime}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); }
-    setIsThinking(false); textareaRef.current?.focus();
+    setIsThinking(false);
+    // FIX 1 - Keep keyboard UP after send like WhatsApp. Do NOT blur. Re-focus input, do not scroll page away.
+    setTimeout(()=>{ try{ textareaRef.current?.focus({preventScroll:true}); }catch(e){ try{ textareaRef.current?.focus(); }catch(err){} } }, 50);
   };
   const hideKeyboard=e=>{ if(e&&e.target!==e.currentTarget) return; setShowMenu(false); if(selectedIdxs.length>0){ const st=scrollRef.current?scrollRef.current.scrollTop:0; setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); return; } if(showEmojiRef.current) setShowEmoji(false); document.activeElement?.blur(); saveScroll(); setTimeout(restoreScroll,60); };
   const selectedHasYou=selectedIdxs.some(i=>messages[i]?.from==="you");
@@ -316,11 +340,11 @@ export default function EVA(){
         <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
           <button onClick={toggleEmoji} style={{width:42,height:42,borderRadius:999,background:"rgba(255,255,255,.12)",border:"none",fontSize:22,flexShrink:0}}>{showEmoji?"⌨️":"😊"}</button>
           <textarea ref={textareaRef} defaultValue="" onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); askEVA();}}} placeholder="Message EVA..." rows={1} style={{flex:1,background:"rgba(255,255,255,.12)",border:"none",borderRadius:20,color:"white",padding:"10px 14px",fontSize:15,outline:"none",resize:"none",maxHeight:100}} />
-          <button onClick={()=>askEVA()} style={{width:42,height:42,borderRadius:999,background:"#25D366",border:"none",fontSize:20,flexShrink:0}}>➤</button>
+          <button onMouseDown={e=>e.preventDefault()} onClick={()=>askEVA()} style={{width:42,height:42,borderRadius:999,background:"#25D366",border:"none",fontSize:20,flexShrink:0}}>➤</button>
         </div>
         {showFeedback&&lastSuggestion && <div style={{display:"flex",gap:8,marginTop:8}}><button onClick={()=>giveFeedback("up")} style={{flex:1,background:"rgba(37,211,102,.2)",border:"1px solid #25D366",color:"white",padding:"8px",borderRadius:999}}>👍 Good</button><button onClick={()=>giveFeedback("down")} style={{flex:1,background:"rgba(255,90,90,.2)",border:"1px solid #ff5a5a",color:"white",padding:"8px",borderRadius:999}}>👎 Not good</button></div>}
       </div>}
       <EvaVoice voiceEnabled={voiceEnabled} alwaysListening={alwaysListening} setVoiceEnabled={setVoiceEnabled} setAlwaysListening={setAlwaysListening} speakEva={speakEva} onUserMessage={(t)=>askEVA(t)} />
     </div>
   );
-  }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
