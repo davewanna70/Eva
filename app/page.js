@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
 import EvaPhase1 from "./components/EvaPhase1";
 import EvaVoice from "./components/EvaVoice";
@@ -62,10 +62,11 @@ const isMedia = m => { if(m.type==="image"||m.type==="video"||m.mediaUrl||m.imag
 const isLink = m => getLinks(m.text).length>0;
 const isVideo = m => m.type==="video"||/\.mp4|\.mov|\.gif/.test((m.text||"").toLowerCase());
 const isPhoto = m => m.type==="image"||/\.jpg|\.jpeg|\.png|\.webp/.test((m.text||"").toLowerCase())||m.mediaUrl||m.imageUrl;
-const getSize = (msgs,kind) => { let b=0; (msgs||[]).forEach(m=>{ if(kind==="videos"&&!isVideo(m)) return; if(kind==="photos"&&!isPhoto(m)) return; if(kind==="all"){ b+=new Blob([m.text||""]).size+200; if(m.mediaUrl||m.imageUrl) b+=1200000; else if(m.type==="video") b+=8000000; else if(isDoc(m)) b+=800000; else if(isMedia(m)) b+=500000; return; } if(kind==="videos") b+=m.mediaSize||8000000; if(kind==="photos") b+=m.mediaSize||1200000; }); if(b<1024) return "0.0 MB"; if(b<1024*1024) return (b/1024).toFixed(1)+" KB"; return (b/(1024*1024)).toFixed(1)+" MB"; };
+const getSize = (msgs,kind) => { let b=0; for(let i=0;i<(msgs||[]).length;i++){ const m=msgs[i]; if(kind==="videos"&&!isVideo(m)) continue; if(kind==="photos"&&!isPhoto(m)) continue; if(kind==="all"){ b+=(m.text||"").length+200; if(m.mediaUrl||m.imageUrl) b+=1200000; else if(m.type==="video") b+=8000000; else if(isDoc(m)) b+=800000; else if(isMedia(m)) b+=500000; continue; } if(kind==="videos") b+=m.mediaSize||8000000; if(kind==="photos") b+=m.mediaSize||1200000; } if(b<1024) return "0.0 MB"; if(b<1024*1024) return (b/1024).toFixed(1)+" KB"; return (b/(1024*1024)).toFixed(1)+" MB"; };
 export default function EVA(){
   const [showHud,setShowHud]=useState(false);
-  const [text,setText]=useState(""); const [messages,setMessages]=useState([]); const [isReady,setIsReady]=useState(false);
+  // FIX FINAL: No more text state. Input is UNCONTROLLED - typing will NOT trigger React re-render at all. WhatsApp way.
+  const [messages,setMessages]=useState([]); const [isReady,setIsReady]=useState(false);
   const [showMenu,setShowMenu]=useState(false); const [showEmoji,setShowEmoji]=useState(false); const [emojiTab,setEmojiTab]=useState("😊 Faces"); const [emojiSearch,setEmojiSearch]=useState("");
   const [isThinking,setIsThinking]=useState(false); const [myName,setMyName]=useState(""); const [prefs,setPrefs]=useState({}); const [replayMap,setReplayMap]=useState({});
   const [replyTo,setReplyTo]=useState(null); const [selectedIdxs,setSelectedIdxs]=useState([]); const [toast,setToast]=useState(""); const [swipeOffset,setSwipeOffset]=useState({});
@@ -79,8 +80,8 @@ export default function EVA(){
   showEmojiRef.current=showEmoji;
   const activeRequestRef = useRef(0);
   const typingIntervalRef = useRef(null);
-  const suggestion = getSuggestion(text, feedbackMap);
-  // FIX: visualViewport REMOVED - it was causing keyboard to jump up/down on Android. Keep height fixed at 100dvh, let browser handle keyboard like WhatsApp web does.
+  const getInputText = () => (textareaRef.current?.value || "");
+  const clearInput = () => { if(textareaRef.current){ textareaRef.current.value=""; textareaRef.current.style.height="auto"; } };
   const saveTraining = async (snippetId, vote, userMsg, evaMsg) => {
     try {
       if (snippetId && vote) {
@@ -155,11 +156,13 @@ export default function EVA(){
   const saveScroll=()=>{ if(scrollRef.current) savedScrollTop.current=scrollRef.current.scrollTop; };
   const restoreScroll=()=>{ requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=savedScrollTop.current; }); };
   const isMulti=selectedIdxs.length>=2, isSingle=selectedIdxs.length===1;
-  const searchResults=searchQuery.trim()?messages.map((m,idx)=>({m,idx})).filter(({m})=>clean(m.text).toLowerCase().includes(searchQuery.toLowerCase())):[];
-  const mediaList=messages.map((m,idx)=>({m,idx})).filter(({m})=>isMedia(m));
-  const docsList=messages.map((m,idx)=>({m,idx})).filter(({m})=>isDoc(m));
-  const linksList=messages.map((m,idx)=>({m,idx})).filter(({m})=>isLink(m));
-  const totalSize=getSize(messages,"all"), videoSize=getSize(messages,"videos"), photoSize=getSize(messages,"photos");
+  const searchResults = useMemo(()=> searchQuery.trim()?messages.map((m,idx)=>({m,idx})).filter(({m})=>clean(m.text).toLowerCase().includes(searchQuery.toLowerCase())):[], [messages, searchQuery]);
+  const mediaList = useMemo(()=>messages.map((m,idx)=>({m,idx})).filter(({m})=>isMedia(m)), [messages]);
+  const docsList = useMemo(()=>messages.map((m,idx)=>({m,idx})).filter(({m})=>isDoc(m)), [messages]);
+  const linksList = useMemo(()=>messages.map((m,idx)=>({m,idx})).filter(({m})=>isLink(m)), [messages]);
+  const totalSize = useMemo(()=>getSize(messages,"all"), [messages]);
+  const videoSize = useMemo(()=>getSize(messages,"videos"), [messages]);
+  const photoSize = useMemo(()=>getSize(messages,"photos"), [messages]);
   const jumpTo=(idx)=>{ setShowSearch(false); setShowMedia(false); setSearchQuery(""); setHighlightIdx(idx); setTimeout(()=>{ const el=document.getElementById(`eva-msg-${idx}`); if(el&&scrollRef.current) el.scrollIntoView({behavior:"smooth",block:"center"}); setTimeout(()=>setHighlightIdx(null),2500); },100); };
   useLayoutEffect(()=>{
     try{ const n=localStorage.getItem("eva_user_name"); if(n) setMyName(n); const p=localStorage.getItem("eva_user_prefs"); if(p) setPrefs(JSON.parse(p)); const f=localStorage.getItem("eva_feedback"); if(f) setFeedbackMap(JSON.parse(f)); }catch(e){}
@@ -199,7 +202,7 @@ export default function EVA(){
   const onEmojiSwipeStart=e=>{ const t=e.touches?e.touches[0]:e; swipeStartXRef.current=t.clientX; swipeStartYRef.current=t.clientY; };
   const onEmojiSwipeEnd=e=>{ if(swipeStartXRef.current==null) return; const t=e.changedTouches?e.changedTouches[0]:e; const dx=t.clientX-swipeStartXRef.current, dy=t.clientY-swipeStartYRef.current; swipeStartXRef.current=null; swipeStartYRef.current=null; if(Math.abs(dx)<70||Math.abs(dy)>Math.abs(dx)||emojiSearch.trim()) return; const idx=CAT_LIST.indexOf(emojiTab); if(dx<0&&idx<CAT_LIST.length-1) switchCat(CAT_LIST[idx+1]); if(dx>0&&idx>0) switchCat(CAT_LIST[idx-1]); };
   const getEmoji=(s)=>s.split(" ")[0];
-  const addEmoji=s=>{ if(emojiGridRef.current) emojiScrollPosRef.current=emojiGridRef.current.scrollTop; setText(p=>p+getEmoji(s)); requestAnimationFrame(()=>{ if(emojiGridRef.current) emojiGridRef.current.scrollTop=emojiScrollPosRef.current; document.activeElement?.blur(); }); };
+  const addEmoji=s=>{ if(emojiGridRef.current) emojiScrollPosRef.current=emojiGridRef.current.scrollTop; if(textareaRef.current){ const el=textareaRef.current; const start=el.selectionStart||el.value.length; const end=el.selectionEnd||el.value.length; el.value=el.value.slice(0,start)+getEmoji(s)+el.value.slice(end); el.focus(); const pos=start+getEmoji(s).length; try{ el.setSelectionRange(pos,pos); }catch(e){} } requestAnimationFrame(()=>{ if(emojiGridRef.current) emojiGridRef.current.scrollTop=emojiScrollPosRef.current; }); };
   const getEmojis=()=>{ if(emojiSearch.trim()){ const q=emojiSearch.toLowerCase(); return Object.values(EMOJI_CATS).flat().filter(x=>x.toLowerCase().includes(q)); } return EMOJI_CATS[emojiTab]||[]; };
   const toggleSelect=idx=>setSelectedIdxs(p=>p.includes(idx)?p.filter(x=>x!==idx):[...p,idx]);
   const onMsgTouchStart=(e,idx)=>{ const t=e.touches[0]; swipeStartX.current=t.clientX; swipeStartY.current=t.clientY; isLongPress.current=false; if(scrollRef.current) savedScrollTop.current=scrollRef.current.scrollTop; longPressTimer.current=setTimeout(()=>{ isLongPress.current=true; justSelectedAt.current=Date.now(); setSelectedIdxs(p=>p.includes(idx)?p:[...p,idx]); setSwipeOffset({}); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=savedScrollTop.current; }); },450); };
@@ -207,15 +210,16 @@ export default function EVA(){
   const onMsgTouchEnd=(e,m,idx)=>{ if(longPressTimer.current){ clearTimeout(longPressTimer.current); longPressTimer.current=null; } if(swipeStartX.current==null) return; const t=e.changedTouches[0]; const dx=t.clientX-swipeStartX.current, dy=t.clientY-swipeStartY.current; swipeStartX.current=null; swipeStartY.current=null; setSwipeOffset({}); if(isLongPress.current){ isLongPress.current=false; return; } if(selectedIdxs.length>0) return; if(dx>60&&Math.abs(dy)<40){ setReplyTo({from:m.from,text:m.text}); setTimeout(()=>textareaRef.current?.focus(),50); } };
   const onMsgClick=(e,idx)=>{ e.stopPropagation(); if(Date.now()-justSelectedAt.current<300) return; if(selectedIdxs.length>0) toggleSelect(idx); };
   const doCopy=async e=>{ e?.stopPropagation(); if(!selectedIdxs.length) return; const txt=selectedIdxs.map(i=>clean(messages[i]?.text||"")).join("\n"); try{ await navigator.clipboard.writeText(txt); }catch(err){} const st=scrollRef.current?scrollRef.current.scrollTop:0; setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast(isMulti?`${selectedIdxs.length} messages copied`:"Copied"); };
-  const doForward=e=>{ e?.stopPropagation(); if(!selectedIdxs.length) return; setText(selectedIdxs.map(i=>clean(messages[i]?.text||"")).join("\n")); setSelectedIdxs([]); setTimeout(()=>textareaRef.current?.focus(),50); };
+  const doForward=e=>{ e?.stopPropagation(); if(!selectedIdxs.length) return; if(textareaRef.current) textareaRef.current.value=selectedIdxs.map(i=>clean(messages[i]?.text||"")).join("\n"); setSelectedIdxs([]); setTimeout(()=>textareaRef.current?.focus(),50); };
   const openDeleteSheet=e=>{ e?.stopPropagation(); e?.preventDefault(); setShowDeleteSheet(true); };
   const doDeleteForMe=async()=>{ const st=scrollRef.current?scrollRef.current.scrollTop:0; const del=new Set(selectedIdxs); setMessages(p=>{ const n=p.filter((_,i)=>!del.has(i)); try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(err){} return n; }); setShowDeleteSheet(false); setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast(selectedIdxs.length>1?`${selectedIdxs.length} messages deleted`:"Message deleted"); };
   const doDeleteForEveryone=async()=>{ const st=scrollRef.current?scrollRef.current.scrollTop:0; const del=new Set(selectedIdxs); for(const i of selectedIdxs.filter(i=>messages[i]?.from==="you")){ try{ const txt=messages[i]?.text; if(txt) await supabase.from("messages").delete().eq("chat_id",CHAT_ID).eq("sender","you").eq("text",txt); }catch(err){} } setMessages(p=>{ const n=p.filter((_,i)=>!del.has(i)); try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(err){} return n; }); setShowDeleteSheet(false); setSelectedIdxs([]); requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=st; }); showToast("Message deleted for everyone"); };
   const askEVA=async(overrideText)=>{
     const incoming = typeof overrideText === "string" ? overrideText : "";
-    if((!incoming && !text.trim())) return;
+    const rawInput = incoming || getInputText();
+    if(!rawInput.trim()) return;
     if(isThinking){ showToast("Wait make EVA finish first..."); return; }
-    const userText=(incoming||text).trim(); const curReply=replyTo; setText(""); setReplyTo(null); setShowEmoji(false); setEmojiSearch(""); const nowTs=Date.now(); const lower=userText.toLowerCase();
+    const userText=rawInput.trim(); const curReply=replyTo; clearInput(); setReplyTo(null); setShowEmoji(false); setEmojiSearch(""); const nowTs=Date.now(); const lower=userText.toLowerCase();
     const myRequestId = ++activeRequestRef.current;
     const evaMsgTime = nowTs + 1;
     if(lower.includes("my name is")){ const nm=userText.split(/my name is/i)[1].trim().split(" ")[0].replace(/[^a-zA-Z]/g,""); if(nm){ const cap=nm.charAt(0).toUpperCase()+nm.slice(1).toLowerCase(); setMyName(cap); localStorage.setItem("eva_user_name",cap); } }
@@ -240,6 +244,18 @@ export default function EVA(){
   const selectedHasYou=selectedIdxs.some(i=>messages[i]?.from==="you");
   const selectedOnlyEva=selectedIdxs.length>0&&!selectedHasYou;
   const deleteTitle=selectedIdxs.length===1?(selectedOnlyEva?"Delete message from EVA?":"Delete message?"):`Delete ${selectedIdxs.length} messages?`;
+  const renderedMessages = useMemo(()=> messages.map((m,i)=>{ const naked=onlyEmoji(m.text); const isSel=selectedIdxs.includes(i); const off=swipeOffset[i]||0; const isHl=highlightIdx===i; return (
+          <div id={`eva-msg-${i}`} key={i} className="eva-no-select" style={{position:"relative",alignSelf:m.from==="you"?"flex-end":"flex-start",width:"100%",display:"flex",flexDirection:"column",alignItems:m.from==="you"?"flex-end":"flex-start",paddingTop:(isSingle&&isSel&&naked)?36:0}}>
+            {off>20 && <div style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",opacity:Math.min(1,off/60),fontSize:22}}>↩️</div>}
+            {isSingle&&isSel&&naked && <div style={{position:"absolute",top:0,right:m.from==="you"?0:"auto",left:m.from==="you"?"auto":0,display:"flex",gap:14,background:"rgba(0,0,0,.88)",border:"1px solid rgba(255,255,255,.18)",borderRadius:999,padding:"6px 12px",zIndex:30}} onClick={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}><button onClick={doCopy} style={{background:"transparent",border:"none",padding:2}}><CopyIcon size={18}/></button><button onClick={doForward} style={{background:"transparent",border:"none",padding:2}}><ForwardIcon size={20}/></button><button onClick={openDeleteSheet} style={{background:"transparent",border:"none",padding:2}}><TrashIcon size={18}/></button></div>}
+            <div onTouchStart={e=>onMsgTouchStart(e,i)} onTouchMove={e=>onMsgTouchMove(e,i)} onTouchEnd={e=>onMsgTouchEnd(e,m,i)} onClick={e=>onMsgClick(e,i)} onContextMenu={e=>{e.preventDefault(); e.stopPropagation(); if(!selectedIdxs.includes(i)){ justSelectedAt.current=Date.now(); setSelectedIdxs(p=>[...p,i]); }}} style={naked?{background:isSel?"rgba(139,92,246,.45)":isHl?"rgba(37,211,102,.4)":"transparent",border:isSel?"1px solid rgba(139,92,246,.5)":isHl?"1px solid #25D366":"none",padding:"2px 6px",borderRadius:8,maxWidth:"85%",fontSize:15,whiteSpace:"pre-line",transform:off?`translateX(${off}px)`:"none"}:{background:isSel?"rgba(139,92,246,.75)":isHl?"rgba(37,211,102,.35)":m.from==="you"?"#8b5cf6":"rgba(0,0,0,.65)",border:isSel?"1px solid rgba(255,255,255,.6)":isHl?"1px solid #25D366":"1px solid rgba(255,255,255,.25)",padding:"10px 14px 6px",borderRadius:16,maxWidth:"85%",fontSize:15,lineHeight:1.5,whiteSpace:"pre-line",transform:off?`translateX(${off}px)`:"none"}}>
+              {m.replyTo && <div style={{borderLeft:"3px solid #a78bfa",paddingLeft:8,marginBottom:6}}><div style={{fontSize:12,fontWeight:"bold",color:"#c4b5fd"}}>{m.replyTo.from==="you"?"You":"EVA"}</div><div style={{fontSize:13,opacity:.85,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>{clean(m.replyTo.text)}</div></div>}
+              {naked?<div key={replayMap[i]||`emoji-${m.time}-${i}`} onClick={e=>{ if(!selectedIdxs.length){ e.stopPropagation(); setReplayMap(p=>({...p,[i]:Date.now()})); } }} style={{display:"flex",gap:2,cursor:"pointer"}}>{Array.from(clean(m.text)).map((ch,j)=><span key={j} className={emojiAnim(ch)} style={{fontSize:emojiSize(m.text),lineHeight:1.3,textShadow:"0 2px 8px rgba(0,0,0,.6)",display:"inline-block",animationDelay:`${j*.08}s`}}>{ch}</span>)}</div>:<div style={{fontSize:15,lineHeight:1.5}}>{clean(m.text)}</div>}
+              <div style={{display:"flex",justifyContent:"flex-end",gap:4,marginTop:naked?0:4,fontSize:10,opacity:.75}}><span>{fmtTime(m.time)}</span>{m.from==="you" && <span style={{fontSize:12,letterSpacing:-2}}>{m.status==="delivered"?"✓✓":"✓"}</span>}</div>
+            </div>
+            {isSingle&&isSel&&!naked && <button onClick={openDeleteSheet} onTouchStart={e=>e.stopPropagation()} style={{position:"absolute",top:-8,right:2,background:"transparent",border:"none",padding:4,zIndex:25}}><TrashIcon /></button>}
+            {isSingle&&isSel&&!naked && <div style={{position:"absolute",top:"100%",left:0,width:"100%",maxWidth:"85%",alignSelf:m.from==="you"?"flex-end":"flex-start",display:"flex",justifyContent:"space-between",padding:"4px 4px 0",zIndex:20}} onClick={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}><button onClick={doCopy} style={{background:"transparent",border:"none",padding:6}}><CopyIcon /></button><button onClick={doForward} style={{background:"transparent",border:"none",padding:6}}><ForwardIcon /></button></div>}
+          </div>); }), [messages, selectedIdxs, swipeOffset, highlightIdx, replayMap, isSingle]);
   if(showHud) return <EvaPhase1 />;
   return (
     <div ref={outerRef} style={{height:"100dvh",minHeight:"100dvh",maxHeight:"100dvh",background:"#030014",color:"white",display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:"sans-serif",position:"fixed",inset:0,overscrollBehavior:"none"}}>
@@ -279,18 +295,7 @@ export default function EVA(){
       </div>}
       {!showSearch&&!showMedia && <div ref={scrollRef} className="eva-no-select" style={{position:"relative",zIndex:10,flex:1,minHeight:0,display:"flex",flexDirection:"column",gap:10,overflowY:"auto",padding:"12px 20px 10px",visibility:isReady?"visible":"hidden"}} onClick={hideKeyboard} onContextMenu={e=>e.preventDefault()} onSelectStart={e=>e.preventDefault()}>
         {messages.length===0&&isReady && <div style={{background:"rgba(0,0,0,.65)",border:"1px solid rgba(255,255,255,.25)",padding:14,borderRadius:16,maxWidth:420,margin:"0 auto",textAlign:"center"}}>Hello, I am EVA. Ask me anything.</div>}
-        {messages.map((m,i)=>{ const naked=onlyEmoji(m.text); const isSel=selectedIdxs.includes(i); const off=swipeOffset[i]||0; const isHl=highlightIdx===i; return (
-          <div id={`eva-msg-${i}`} key={i} className="eva-no-select" style={{position:"relative",alignSelf:m.from==="you"?"flex-end":"flex-start",width:"100%",display:"flex",flexDirection:"column",alignItems:m.from==="you"?"flex-end":"flex-start",paddingTop:(isSingle&&isSel&&naked)?36:0}}>
-            {off>20 && <div style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",opacity:Math.min(1,off/60),fontSize:22}}>↩️</div>}
-            {isSingle&&isSel&&naked && <div style={{position:"absolute",top:0,right:m.from==="you"?0:"auto",left:m.from==="you"?"auto":0,display:"flex",gap:14,background:"rgba(0,0,0,.88)",border:"1px solid rgba(255,255,255,.18)",borderRadius:999,padding:"6px 12px",zIndex:30}} onClick={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}><button onClick={doCopy} style={{background:"transparent",border:"none",padding:2}}><CopyIcon size={18}/></button><button onClick={doForward} style={{background:"transparent",border:"none",padding:2}}><ForwardIcon size={20}/></button><button onClick={openDeleteSheet} style={{background:"transparent",border:"none",padding:2}}><TrashIcon size={18}/></button></div>}
-            <div onTouchStart={e=>onMsgTouchStart(e,i)} onTouchMove={e=>onMsgTouchMove(e,i)} onTouchEnd={e=>onMsgTouchEnd(e,m,i)} onClick={e=>onMsgClick(e,i)} onContextMenu={e=>{e.preventDefault(); e.stopPropagation(); if(!selectedIdxs.includes(i)){ justSelectedAt.current=Date.now(); setSelectedIdxs(p=>[...p,i]); }}} style={naked?{background:isSel?"rgba(139,92,246,.45)":isHl?"rgba(37,211,102,.4)":"transparent",border:isSel?"1px solid rgba(139,92,246,.5)":isHl?"1px solid #25D366":"none",padding:"2px 6px",borderRadius:8,maxWidth:"85%",fontSize:15,whiteSpace:"pre-line",transform:off?`translateX(${off}px)`:"none"}:{background:isSel?"rgba(139,92,246,.75)":isHl?"rgba(37,211,102,.35)":m.from==="you"?"#8b5cf6":"rgba(0,0,0,.65)",border:isSel?"1px solid rgba(255,255,255,.6)":isHl?"1px solid #25D366":"1px solid rgba(255,255,255,.25)",padding:"10px 14px 6px",borderRadius:16,maxWidth:"85%",fontSize:15,lineHeight:1.5,whiteSpace:"pre-line",transform:off?`translateX(${off}px)`:"none"}}>
-              {m.replyTo && <div style={{borderLeft:"3px solid #a78bfa",paddingLeft:8,marginBottom:6}}><div style={{fontSize:12,fontWeight:"bold",color:"#c4b5fd"}}>{m.replyTo.from==="you"?"You":"EVA"}</div><div style={{fontSize:13,opacity:.85,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>{clean(m.replyTo.text)}</div></div>}
-              {naked?<div key={replayMap[i]||`emoji-${m.time}-${i}`} onClick={e=>{ if(!selectedIdxs.length){ e.stopPropagation(); setReplayMap(p=>({...p,[i]:Date.now()})); } }} style={{display:"flex",gap:2,cursor:"pointer"}}>{Array.from(clean(m.text)).map((ch,j)=><span key={j} className={emojiAnim(ch)} style={{fontSize:emojiSize(m.text),lineHeight:1.3,textShadow:"0 2px 8px rgba(0,0,0,.6)",display:"inline-block",animationDelay:`${j*.08}s`}}>{ch}</span>)}</div>:<div style={{fontSize:15,lineHeight:1.5}}>{clean(m.text)}</div>}
-              <div style={{display:"flex",justifyContent:"flex-end",gap:4,marginTop:naked?0:4,fontSize:10,opacity:.75}}><span>{fmtTime(m.time)}</span>{m.from==="you" && <span style={{fontSize:12,letterSpacing:-2}}>{m.status==="delivered"?"✓✓":"✓"}</span>}</div>
-            </div>
-            {isSingle&&isSel&&!naked && <button onClick={openDeleteSheet} onTouchStart={e=>e.stopPropagation()} style={{position:"absolute",top:-8,right:2,background:"transparent",border:"none",padding:4,zIndex:25}}><TrashIcon /></button>}
-            {isSingle&&isSel&&!naked && <div style={{position:"absolute",top:"100%",left:0,width:"100%",maxWidth:"85%",alignSelf:m.from==="you"?"flex-end":"flex-start",display:"flex",justifyContent:"space-between",padding:"4px 4px 0",zIndex:20}} onClick={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}><button onClick={doCopy} style={{background:"transparent",border:"none",padding:6}}><CopyIcon /></button><button onClick={doForward} style={{background:"transparent",border:"none",padding:6}}><ForwardIcon /></button></div>}
-          </div>); })}
+        {renderedMessages}
         <div style={{height:10}} />
       </div>}
       {toast && <div style={{position:"relative",zIndex:40,margin:"0 auto",background:"rgba(0,0,0,.9)",color:"white",padding:"8px 16px",borderRadius:999,fontSize:13,marginBottom:6}}>{toast}</div>}
@@ -310,12 +315,12 @@ export default function EVA(){
         {replyTo && <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(139,92,246,.2)",borderRadius:10,padding:"6px 10px",marginBottom:6}}><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,color:"#c4b5fd",fontWeight:"bold"}}>{replyTo.from==="you"?"You":"EVA"}</div><div style={{fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{clean(replyTo.text)}</div></div><button onClick={()=>setReplyTo(null)} style={{background:"transparent",border:"none",color:"white",fontSize:16}}>✕</button></div>}
         <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
           <button onClick={toggleEmoji} style={{width:42,height:42,borderRadius:999,background:"rgba(255,255,255,.12)",border:"none",fontSize:22,flexShrink:0}}>{showEmoji?"⌨️":"😊"}</button>
-          <textarea ref={textareaRef} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); askEVA();}}} placeholder="Message EVA..." rows={1} style={{flex:1,background:"rgba(255,255,255,.12)",border:"none",borderRadius:20,color:"white",padding:"10px 14px",fontSize:15,outline:"none",resize:"none",maxHeight:100}} />
-          <button onClick={()=>askEVA()} disabled={!text.trim()&&!isThinking} style={{width:42,height:42,borderRadius:999,background:text.trim()?"#25D366":"rgba(255,255,255,.15)",border:"none",fontSize:20,flexShrink:0}}>➤</button>
+          <textarea ref={textareaRef} defaultValue="" onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); askEVA();}}} placeholder="Message EVA..." rows={1} style={{flex:1,background:"rgba(255,255,255,.12)",border:"none",borderRadius:20,color:"white",padding:"10px 14px",fontSize:15,outline:"none",resize:"none",maxHeight:100}} />
+          <button onClick={()=>askEVA()} style={{width:42,height:42,borderRadius:999,background:"#25D366",border:"none",fontSize:20,flexShrink:0}}>➤</button>
         </div>
         {showFeedback&&lastSuggestion && <div style={{display:"flex",gap:8,marginTop:8}}><button onClick={()=>giveFeedback("up")} style={{flex:1,background:"rgba(37,211,102,.2)",border:"1px solid #25D366",color:"white",padding:"8px",borderRadius:999}}>👍 Good</button><button onClick={()=>giveFeedback("down")} style={{flex:1,background:"rgba(255,90,90,.2)",border:"1px solid #ff5a5a",color:"white",padding:"8px",borderRadius:999}}>👎 Not good</button></div>}
       </div>}
       <EvaVoice voiceEnabled={voiceEnabled} alwaysListening={alwaysListening} setVoiceEnabled={setVoiceEnabled} setAlwaysListening={setAlwaysListening} speakEva={speakEva} onUserMessage={(t)=>askEVA(t)} />
     </div>
   );
-      }
+  }
