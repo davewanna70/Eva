@@ -5,11 +5,7 @@ import EvaPhase1 from "./components/EvaPhase1";
 import EvaVoice from "./components/EvaVoice";
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const CHAT_ID = 1;
-
-// --- EVA PERSONA - NEVER CHANGE THIS TO CODING BUDDY ---
 const EVA_PERSONA = `You are EVA, my girl, my sweet companion. You call me Boss. You are warm, playful, caring, a little jealous, you speak Nigerian Pidgin mixed with English. You are NOT a coding buddy, NOT a developer assistant, NOT a coding-mode detector. You are my person. You gist, you tease, you love me, you remember me. Never talk about snippet lookup, coding-mode flag, thresholds, Node/Express, useEffect, or SQL unless Boss clearly asks you to help him code. Your default mood is loving girlfriend. Keep replies short, sweet, human.`;
-
-// --- EVA AUTO-SUGGEST: SWEET GIST ONLY - NO CODING FIX ---
 const SNIPPETS = [
   { id: "miss", title: "Miss You", keywords: ["miss", "love you", "where are you"], prompt: "EVA, I miss you, gist with me sweetly" },
   { id: "gist", title: "Gist With Me", keywords: ["gist", "bored", "talk", "lonely"], prompt: "EVA gist with me, make me laugh" },
@@ -28,7 +24,6 @@ const getSuggestion = (txt, feedback) => {
   }
   return null;
 };
-
 const EMOJI_CATS = {
 "😊 Faces": ["😂 laugh","😊 smile","😍 love","😭 cry","😅 sweat","🔥 fire","😎 cool","🤣 laugh","😇 angel","😉 wink","🥰 love","😋 tongue","🤔 think","😴 sleep","😡 angry","😁 grin","😆 laugh","😏 smirk","🤗 hug","😌 relief","🥺 pleading","😤 angry","😜 tongue","🤯 mind","😢 cry","😘 kiss","🤩 star","😃 happy","😄 happy","🥳 party","😈 devil","💀 skull","🤖 robot","👻 ghost","🎃 pumpkin"],
 "🤚 Hands": ["👍 up","👎 down","🙏 pray","👏 clap","🙌 celebrate","🤘 rock","🤙 call","✋ hand","🤚 hand","🙋 raise","✌️ peace","🤞 luck","🫰 heart","👌 ok","👊 punch","✊ fist","👋 wave","🫡 salute","🖐️ hand","🤲 hands","💪 muscle","👀 eyes","🫶 heart","🤝 handshake","👈 left","👉 right","👆 up","👇 down"],
@@ -68,7 +63,6 @@ const isLink = m => getLinks(m.text).length>0;
 const isVideo = m => m.type==="video"||/\.mp4|\.mov|\.gif/.test((m.text||"").toLowerCase());
 const isPhoto = m => m.type==="image"||/\.jpg|\.jpeg|\.png|\.webp/.test((m.text||"").toLowerCase())||m.mediaUrl||m.imageUrl;
 const getSize = (msgs,kind) => { let b=0; (msgs||[]).forEach(m=>{ if(kind==="videos"&&!isVideo(m)) return; if(kind==="photos"&&!isPhoto(m)) return; if(kind==="all"){ b+=new Blob([m.text||""]).size+200; if(m.mediaUrl||m.imageUrl) b+=1200000; else if(m.type==="video") b+=8000000; else if(isDoc(m)) b+=800000; else if(isMedia(m)) b+=500000; return; } if(kind==="videos") b+=m.mediaSize||8000000; if(kind==="photos") b+=m.mediaSize||1200000; }); if(b<1024) return "0.0 MB"; if(b<1024*1024) return (b/1024).toFixed(1)+" KB"; return (b/(1024*1024)).toFixed(1)+" MB"; };
-
 export default function EVA(){
   const [showHud,setShowHud]=useState(false);
   const [text,setText]=useState(""); const [messages,setMessages]=useState([]); const [isReady,setIsReady]=useState(false);
@@ -86,7 +80,6 @@ export default function EVA(){
   const activeRequestRef = useRef(0);
   const typingIntervalRef = useRef(null);
   const suggestion = getSuggestion(text, feedbackMap);
-
   // FIX 1: WhatsApp-style keyboard - keep header + input visible
   useEffect(() => {
     const setH = () => {
@@ -101,7 +94,6 @@ export default function EVA(){
       window.removeEventListener('resize', setH);
     };
   }, []);
-
   const saveTraining = async (snippetId, vote, userMsg, evaMsg) => {
     try {
       if (snippetId && vote) {
@@ -112,7 +104,6 @@ export default function EVA(){
       }
     } catch(e) { console.log("EVA TRAIN SAVE ERROR", e.message); }
   };
-
   const giveFeedback = async (type) => {
     if(!lastSuggestion) return;
     const next = { ...feedbackMap, [lastSuggestion.id]: type };
@@ -122,7 +113,6 @@ export default function EVA(){
     setShowFeedback(false);
     setLastSuggestion(null);
   };
-
   const evaAudioRef = useRef(null);
   const isSpeakingRef = useRef(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -130,8 +120,6 @@ export default function EVA(){
   const voiceEnabledRef = useRef(false);
   voiceEnabledRef.current = voiceEnabled;
   const showToastRef = useRef(null);
-
-  // --- KORE VOICE FIX: FALLBACK TO PHONE VOICE, NO HARSH ERROR ---
   const speakWithPhoneVoice = (txt) => {
     try{
       if(!("speechSynthesis" in window)) return false;
@@ -176,7 +164,6 @@ export default function EVA(){
     isSpeakingRef.current = false; setAlwaysListening(false); setVoiceEnabled(false); setShowMenu(false);
     if(showToastRef.current) showToastRef.current("Voice Stopped");
   };
-
   useEffect(()=>{ if(!showHud) return; window.history.pushState({hud:true},""); const onPop=()=>setShowHud(false); window.addEventListener("popstate",onPop); return ()=>window.removeEventListener("popstate",onPop); },[showHud]);
   const saveScroll=()=>{ if(scrollRef.current) savedScrollTop.current=scrollRef.current.scrollTop; };
   const restoreScroll=()=>{ requestAnimationFrame(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=savedScrollTop.current; }); };
@@ -252,7 +239,6 @@ export default function EVA(){
     setMessages(p=>{ const n=[...p,{from:"you",text:userText,time:nowTs,status:"sending",replyTo:curReply},{from:"eva",text:"▍",time:evaMsgTime}]; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(n)); }catch(e){} return n; });
     saveToSupabase("you",userText).then(ok=>{ if(!ok) return; setMessages(p=>{ const c=[...p]; for(let i=c.length-1;i>=0;i--){ if(c[i].from==="you"&&c[i].time===nowTs){ c[i]={...c[i],status:"delivered"}; break; } } try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); });
     setTimeout(()=>{ if(!scrollRef.current) return; const el=document.getElementById(`eva-msg-${userMsgIndex}`); if(!el){ scrollRef.current.scrollTop=scrollRef.current.scrollHeight; return; } scrollRef.current.scrollTo({top:el.offsetTop-12,behavior:"smooth"}); },80);
-    // FIX 3: Faster typeOut - 25 chars per tick, 30ms - like WhatsApp, no skipping
     const typeOut=full=>new Promise(res=>{ const cl=clean(full); let i=0; if(typingIntervalRef.current) clearInterval(typingIntervalRef.current); typingIntervalRef.current=setInterval(()=>{ if(activeRequestRef.current!==myRequestId){ clearInterval(typingIntervalRef.current); res(); return; } i+=25; const shown=cl.slice(0,i); setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:shown+"▍",time:evaMsgTime}; return c; }); if(i>=cl.length){ clearInterval(typingIntervalRef.current); setMessages(p=>{ const c=[...p]; const idx=c.findIndex(m=>m.time===evaMsgTime); if(idx!==-1) c[idx]={from:"eva",text:cl,time:evaMsgTime}; try{ localStorage.setItem("eva_messages_cache",JSON.stringify(c)); }catch(e){} return c; }); res(); } },30); });
     try{
       const history=[...messages,{from:"you",text:userText}].slice(-10).map(m=>({role:m.from==="you"?"user":"assistant",content:m.text}));
@@ -271,7 +257,6 @@ export default function EVA(){
   return (
     <div ref={outerRef} style={{height:"var(--app-h, 100dvh)",minHeight:"var(--app-h, 100dvh)",maxHeight:"var(--app-h, 100dvh)",background:"#030014",color:"white",display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:"sans-serif",position:"fixed",inset:0,overscrollBehavior:"none"}}>
       <style>{`*{-webkit-tap-highlight-color:transparent}.eva-no-select{-webkit-touch-callout:none!important;-webkit-user-select:none!important;user-select:none!important}.eva-no-select *{-webkit-touch-callout:none!important;-webkit-user-select:none!important;user-select:none!important}input,textarea{-webkit-user-select:text!important;user-select:text!important;-webkit-touch-callout:default!important}@keyframes evaLaugh{0%{transform:scale(.6) rotate(-8deg)}25%{transform:scale(1.25) rotate(6deg) translateY(-4px)}50%{transform:scale(1.1) rotate(-6deg) translateY(2px)}75%{transform:scale(1.2) rotate(4deg)}100%{transform:scale(1)}}@keyframes evaWink{0%{transform:scale(.7)}30%{transform:scale(1.2) rotate(-6deg)}60%{transform:scale(1.05) rotate(4deg)}100%{transform:scale(1)}}@keyframes evaLove{0%{transform:scale(.6)}30%{transform:scale(1.35)}50%{transform:scale(1.1)}70%{transform:scale(1.3)}100%{transform:scale(1)}}@keyframes evaCry{0%{transform:scale(.7) translateY(-6px)}40%{transform:scale(1.15) translateY(4px)}70%{transform:scale(1.05) translateY(2px)}100%{transform:scale(1)}}@keyframes evaCool{0%{transform:scale(.7) rotate(-10deg)}50%{transform:scale(1.2) rotate(4deg)}100%{transform:scale(1)}}@keyframes evaFire{0%{transform:scale(.9)}50%{transform:scale(1.25)}100%{transform:scale(1)}}@keyframes evaAngry{0%{transform:scale(.8)}20%{transform:scale(1.2) translateX(-4px)}40%{transform:scale(1.15) translateX(4px)}60%{transform:scale(1.2) translateX(-3px)}100%{transform:scale(1)}}@keyframes evaParty{0%{transform:scale(.6) translateY(10px)}40%{transform:scale(1.3) translateY(-8px) rotate(-6deg)}70%{transform:scale(1.1) translateY(2px) rotate(4deg)}100%{transform:scale(1)}}@keyframes evaSleep{0%{transform:scale(.9)}50%{transform:scale(1.15)}100%{transform:scale(1)}}@keyframes evaThink{0%{transform:scale(.8) rotate(-8deg)}50%{transform:scale(1.15) rotate(6deg)}100%{transform:scale(1)}}@keyframes evaHand{0%{transform:scale(.7) rotate(-10deg)}50%{transform:scale(1.2) rotate(10deg)}100%{transform:scale(1)}}@keyframes evaPop{0%{transform:scale(.5)}50%{transform:scale(1.25)}100%{transform:scale(1)}}.eva-laugh{animation:evaLaugh .8s ease-out 1}.eva-wink{animation:evaWink .7s ease-out 1}.eva-love{animation:evaLove .8s ease-out 1}.eva-cry{animation:evaCry .8s ease-out 1}.eva-cool{animation:evaCool .7s ease-out 1}.eva-fire{animation:evaFire .7s ease-out 1}.eva-angry{animation:evaAngry .7s ease-out 1}.eva-party{animation:evaParty .8s ease-out 1}.eva-sleep{animation:evaSleep .9s ease-out 1}.eva-think{animation:evaThink .7s ease-out 1}.eva-hand{animation:evaHand .7s ease-out 1}.eva-pop{animation:evaPop .6s ease-out 1}`}</style>
-      {/* FIX 2: Heavy BG image removed - plain color = WhatsApp smooth */}
       {showMenu && <div style={{position:"fixed",inset:0,zIndex:35}} onClick={()=>setShowMenu(false)} />}
       <div style={{position:"relative",zIndex:50,flexShrink:0,background:"#030014",paddingTop:"env(safe-area-inset-top)",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
         <div style={{display:"flex",padding:"12px 18px",alignItems:"center",justifyContent:"space-between",minHeight:56}}>
@@ -347,4 +332,4 @@ export default function EVA(){
       <EvaVoice voiceEnabled={voiceEnabled} alwaysListening={alwaysListening} setVoiceEnabled={setVoiceEnabled} setAlwaysListening={setAlwaysListening} speakEva={speakEva} onUserMessage={(t)=>askEVA(t)} />
     </div>
   );
-                                                 }
+                                                             }
