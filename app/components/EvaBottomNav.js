@@ -1,29 +1,50 @@
 "use client";
 
-// EVA Bottom Nav - ONLY Discover + Chat
-// Discover LEFT = we dey build am now
-// Chat RIGHT = placeholder for connect like WhatsApp, coming soon
-
-export default function EvaBottomNav({ onOpenDiscover, onOpenChat }) {
+export default function EvaBottomNav() {
   return (
-    <div className="absolute bottom-4 left-0 right-0 px-4 flex justify-between items-center z-30 pointer-events-none">
-      
-      {/* LEFT - DISCOVER */}
+    <div style={{
+      position: 'fixed',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      display: 'flex',
+      justifyContent: 'space-between',
+      padding: '12px 20px 16px 20px',
+      background: '#0a0a12',
+      borderTop: '1px solid #222',
+      zIndex: 100
+    }}>
+      {/* LEFT UNDER - DISCOVER */}
       <button
-        onClick={onOpenDiscover}
-        className="pointer-events-auto flex items-center gap-1.5 bg-black/60 backdrop-blur border border-white/20 text-white text-[13px] px-4 py-2 rounded-full"
+        onClick={() => window.location.href = '/discover'}
+        style={{
+          background: '#1a1a2e',
+          color: 'white',
+          border: '1px solid #333',
+          padding: '12px 28px',
+          borderRadius: '25px',
+          fontSize: '15px',
+          fontWeight: 'bold'
+        }}
       >
-        ✨ Discover
+        Discover
       </button>
 
-      {/* RIGHT - CHAT (placeholder for now) */}
+      {/* RIGHT UNDER - CHAT */}
       <button
-        onClick={onOpenChat}
-        className="pointer-events-auto flex items-center gap-1.5 bg-black/60 backdrop-blur border border-white/20 text-white text-[13px] px-4 py-2 rounded-full"
+        onClick={() => window.location.href = '/chat'}
+        style={{
+          background: '#7c3aed',
+          color: 'white',
+          border: 'none',
+          padding: '12px 28px',
+          borderRadius: '25px',
+          fontSize: '15px',
+          fontWeight: 'bold'
+        }}
       >
-        💬 Chat
+        Chat
       </button>
-
     </div>
   );
 }
