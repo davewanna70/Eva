@@ -143,14 +143,14 @@ export default function Page(){
       </div>
       <button onClick={()=>setShowAttach(false)} style={{width:"100%",marginTop:12,background:"#2a3942",border:"none",color:"#fff",borderRadius:20,padding:10}}>Close</button>
     </div>}
-    {/* BOTTOM BAR */}
+    {/* BOTTOM BAR - 💧 NOW INSIDE CHAT BOX */}
     <div style={{flexShrink:0,background:"#030014",padding:"10px 10px calc(18px + env(safe-area-inset-bottom))",paddingBottom:"max(18px, env(safe-area-inset-bottom))",overflow:"visible"}}>
       {showVoiceBar ? <div style={{display:"flex",alignItems:"center",gap:10,background:"#202c33",borderRadius:24,padding:"10px 12px"}}><button onClick={cancelVoice} style={{background:"none",border:"none",color:"#ff6b6b",fontSize:14}}>🗑️ Cancel</button><div style={{flex:1,textAlign:"center"}}><span style={{color:"#ff3b30",fontSize:20}}>●</span> <span style={{fontSize:15}}>{fmtDur(recTime)}</span> <span style={{fontSize:12,color:"#8696a0"}}> • Slide to cancel</span></div><button onClick={()=>stopVoiceRec(true)} style={{background:"#00a884",border:"none",color:"#fff",borderRadius:999,width:40,height:40,fontSize:18}}>➤</button></div> :
       <div style={{display:"flex",alignItems:"center",gap:8,overflow:"visible"}}>
         <button onClick={()=>setShowEmoji(!showEmoji)} style={{background:"none",border:"none",fontSize:26,flexShrink:0}}>😊</button>
-        <button onClick={()=>setShowAttach(!showAttach)} style={{background:"rgba(255,255,255,0.08)",border:"none",borderRadius:999,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,opacity:0.85}}>💧</button>
         <div style={{flex:1,background:"#2a3942",borderRadius:24,display:"flex",alignItems:"center",padding:"0 10px",minHeight:48}}>
           <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") askEVA(); }} placeholder="Message EVA" style={{flex:1,background:"transparent",border:"none",color:"#fff",outline:"none",fontSize:15,padding:"10px 4px",minWidth:0}} />
+          <button onClick={()=>setShowAttach(!showAttach)} style={{background:"rgba(255,255,255,0.08)",border:"none",borderRadius:999,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,opacity:0.85,marginLeft:6}}>💧</button>
         </div>
         {input.trim() ? <button onClick={()=>askEVA()} style={{width:48,height:48,borderRadius:999,background:"#00a884",border:"none",color:"white",fontSize:20,flexShrink:0,boxShadow:"0 2px 8px rgba(0,0,0,.4)",display:"flex",alignItems:"center",justifyContent:"center"}}>➤</button> : <button onClick={startVoice} style={{background:"transparent",border:"none",padding:0,flexShrink:0,width:48,height:48,display:"flex",alignItems:"center",justifyContent:"center",overflow:"visible"}}><WhatsAppMic /></button>}
       </div>}
