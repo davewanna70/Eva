@@ -9,7 +9,7 @@ export default function Discover() {
   const [playingMovie, setPlayingMovie] = useState(null);
   const [myList, setMyList] = useState([]);
 
-  // STEP 1 - 1 REAL TEST MOVIE
+  // STEP 1 - 1 REAL TEST MOVIE - FAST LINK
   const allMovies = [
     {
       id: 1,
@@ -18,9 +18,17 @@ export default function Discover() {
       year: "2024",
       dur: "10 mins",
       desc: "This na test movie to check if Play dey work.",
-      // Free sample video - no copyright wahala
-      video: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-      // Empty poster for now - we go use grey box
+      video: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+      img: "",
+    },
+    {
+      id: 2,
+      title: "Test Movie 2 - Flower",
+      cat: "Nature • Short",
+      year: "2024",
+      dur: "10 secs",
+      desc: "Second test movie - very fast, small file. If this one play, network na the problem before.",
+      video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
       img: "",
     },
   ];
@@ -61,7 +69,7 @@ export default function Discover() {
         </div>
       )}
 
-      {/* IF SEARCHING - SHOW RESULTS */}
+      {/* SEARCH RESULTS */}
       {isSearching ? (
         <div style={{ padding: "10px 16px" }}>
           <div style={{ fontSize: 13, color: "#aaa", marginBottom: 12 }}>Results for “{search}” — {filtered.length} found</div>
@@ -80,7 +88,7 @@ export default function Discover() {
         </div>
       ) : (
         <>
-          {/* HERO - NOW WITH REAL MOVIE */}
+          {/* HERO */}
           <div style={{ margin: "4px 16px 0", height: 240, background: "#1a1a1a", borderRadius: 16, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", paddingBottom: 16 }}>
             <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 60, opacity: 0.3 }}>🎬</div>
             <div style={{ position: "relative", textAlign: "center" }}>
@@ -93,7 +101,7 @@ export default function Discover() {
             </div>
           </div>
 
-          {/* ROW 1 - TRENDING */}
+          {/* TRENDING */}
           <h3 style={{ padding: "20px 16px 10px", margin: 0 }}>Trending Now in Nigeria</h3>
           <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "0 16px" }}>
             {allMovies.map((m) => (
@@ -103,12 +111,12 @@ export default function Discover() {
                 <span style={{ fontSize: 10, color: "#22c55e" }}>▶ Play</span>
               </div>
             ))}
-            {[2, 3, 4].map((i) => (
+            {[3, 4].map((i) => (
               <div key={i} style={{ minWidth: 110, height: 165, background: "#141414", border: "1px dashed #2a2a2a", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "#555", fontSize: 11 }}>Empty Slot</div>
             ))}
           </div>
 
-          {/* ROW 2 & 3 STILL EMPTY */}
+          {/* NOLLYWOOD / HOLLYWOOD EMPTY */}
           <h3 style={{ padding: "20px 16px 10px", margin: 0 }}>Nollywood Picks</h3>
           <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "0 16px" }}>
             {[1, 2, 3, 4, 5].map((i) => <div key={i} style={{ minWidth: 110, height: 165, background: "#141414", border: "1px dashed #2a2a2a", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "#555", fontSize: 11 }}>Empty Slot</div>)}
@@ -120,14 +128,14 @@ export default function Discover() {
         </>
       )}
 
-      {/* VIDEO PLAYER - REAL PLAYER */}
+      {/* VIDEO PLAYER - FIXED */}
       {playingMovie && (
         <div style={{ position: "fixed", inset: 0, background: "black", zIndex: 100, display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
             <b>{playingMovie.title}</b>
             <button onClick={() => setPlayingMovie(null)} style={{ background: "#222", border: "none", color: "white", borderRadius: 999, width: 36, height: 36, fontSize: 18 }}>✕</button>
           </div>
-          <video src={playingMovie.video} controls autoPlay style={{ width: "100%", flex: 1, background: "black" }} />
+          <video src={playingMovie.video} controls autoPlay playsInline preload="auto" style={{ width: "100%", flex: 1, background: "black" }} />
           <div style={{ padding: 16 }}>
             <div style={{ fontWeight: 800 }}>{playingMovie.title}</div>
             <div style={{ fontSize: 13, color: "#aaa", marginTop: 4 }}>{playingMovie.cat} • {playingMovie.dur}</div>
