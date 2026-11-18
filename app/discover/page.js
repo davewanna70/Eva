@@ -49,6 +49,16 @@ export default function DiscoverPage() {
   const [selectedSound, setSelectedSound] = useState(null); const [soundCat, setSoundCat] = useState("Trending"); const [showSoundPicker, setShowSoundPicker] = useState(false);
   const [whoCanSee, setWhoCanSee] = useState("Everyone"); const [allowComments, setAllowComments] = useState(true); const [allowDownload, setAllowDownload] = useState(true); const [uploadProgress, setUploadProgress] = useState(0);
   const [myUploads, setMyUploads] = useState([]);
+  // EVA STUDIO
+const [isEVA, setIsEVA] = useState(true);
+const [showEvaStudio, setShowEvaStudio] = useState(false);
+const [movieTitle, setMovieTitle] = useState("");
+const [movieCat, setMovieCat] = useState("Nollywood Drama");
+const [movieFile, setMovieFile] = useState(null);
+const [movieCover, setMovieCover] = useState(null);
+const [ownRights, setOwnRights] = useState(false);
+const [licenseType, setLicenseType] = useState("My Own Movie");
+const [creatorName, setCreatorName] = useState("");
   const pressTimer = useRef(null); const galleryRef = useRef(null); const uploadRef = useRef(null); const movieVideoRef = useRef(null); const lastTap = useRef(0);
   const cur = shorts[shortIdx] || shorts[0];
   const likeCount = cur ? cur.likes + (liked[cur.id] ? 1 : 0) : 0;
@@ -210,6 +220,59 @@ export default function DiscoverPage() {
       </div>
       {bottomNav}
       {uploadSheet}
+{isEVA && (
+  <button onClick={() => setShowEvaStudio(true)} style={{ position: "fixed", bottom: 90, right: 16, background: "#00a884", color: "#fff", border: "none", borderRadius: 999, padding: "12px 16px", fontWeight: 800, zIndex: 90, boxShadow: "0 4px 20px rgba(0,0,0,0.4)" }}>+ Upload Movie (EVA)</button>
+)}
+{showEvaStudio && (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 99, display: "flex", alignItems: "flex-end" }}>
+    <div style={{ background: "#1a1a1a", width: "100%", borderRadius: "20px 20px 0 0", padding: 16, maxHeight: "90vh", overflowY: "auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <div style={{ fontWeight: 800, fontSize: 18 }}>🎬 EVA Studio — Upload Movie</div>
+        <button onClick={() => setShowEvaStudio(false)} style={{ background: "#333", color: "#fff", border: "none", borderRadius: 999, padding: "6px 12px" }}>✕</button>
+      </div>
+
+      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>Only EVA fit upload movie. Legal only — no pirated film.</div>
+
+      <input value={movieTitle} onChange={e => setMovieTitle(e.target.value)} placeholder="Movie Title *" style={{ width: "100%", marginTop: 12, padding: 12, borderRadius: 10, border: "none", background: "#222", color: "#fff" }} />
+
+      <input value={creatorName} onChange={e => setCreatorName(e.target.value)} placeholder="Creator Name" style={{ width: "100%", marginTop: 10, padding: 12, borderRadius: 10, border: "none", background: "#222", color: "#fff" }} />
+
+      <select value={movieCat} onChange={e => setMovieCat(e.target.value)} style={{ width: "100%", marginTop: 10, padding: 12, borderRadius: 10, border: "none", background: "#222", color: "#fff" }}>
+        <option>Nollywood Drama</option>
+        <option>Thriller</option>
+        <option>Comedy</option>
+        <option>Family</option>
+        <option>Action</option>
+      </select>
+
+      <select value={licenseType} onChange={e => setLicenseType(e.target.value)} style={{ width: "100%", marginTop: 10, padding: 12, borderRadius: 10, border: "none", background: "#222", color: "#fff" }}>
+        <option>My Own Movie</option>
+        <option>I Have License</option>
+        <option>Public Domain</option>
+      </select>
+
+      <div style={{ marginTop: 12, fontSize: 13 }}>Movie File *</div>
+      <input type="file" accept="video/*" onChange={e => setMovieFile(e.target.files[0])} style={{ width: "100%", marginTop: 6, color: "#fff" }} />
+
+      <div style={{ marginTop: 12, fontSize: 13 }}>Cover Photo</div>
+      <input type="file" accept="image/*" onChange={e => setMovieCover(e.target.files[0])} style={{ width: "100%", marginTop: 6, color: "#fff" }} />
+
+      <label style={{ display: "flex", gap: 8, marginTop: 14, fontSize: 13 }}>
+        <input type="checkbox" checked={ownRights} onChange={e => setOwnRights(e.target.checked)} />
+        I own rights / I have license to post this movie
+      </label>
+
+      <button onClick={() => {
+        if (!movieTitle.trim()) return alert("Put movie title first, Boss");
+        if (!movieFile) return alert("Pick movie file first");
+        if (!ownRights) return alert("Tick I own rights first");
+        alert("Posted! Legal Movie Live — " + licenseType);
+        setShowEvaStudio(false);
+        setMovieTitle(""); setCreatorName(""); setOwnRights(false); setMovieFile(null); setMovieCover(null);
+      }} style={{ width: "100%", marginTop: 16, background: "#00a884", color: "#fff", border: "none", borderRadius: 999, padding: "12px", fontWeight: 800 }}>Post Movie</button>
+    </div>
+  </div>
+)}
     </div>
   );
 }
