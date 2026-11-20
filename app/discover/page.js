@@ -9,23 +9,24 @@ export default function Discover() {
   const [playingMovie, setPlayingMovie] = useState(null);
   const [myWatchlist, setMyWatchlist] = useState([]);
   const [uploadedMovies, setUploadedMovies] = useState([]);
-  const [uploadTarget, setUploadTarget] = useState("Trending");
-  const [pendingVideo, setPendingVideo] = useState(null);
   const [topTab, setTopTab] = useState("home");
   const [watchTab, setWatchTab] = useState("saved");
   const [hi, setHi] = useState(0);
   const [expandedCat, setExpandedCat] = useState(null);
-  const videoRef = useRef(null);
-  const coverRef = useRef(null);
-  const trailerRef = useRef(null);
   const touchX = useRef(0);
 
-  // STEP 1 - NEW
-  const [pendingTrailer, setPendingTrailer] = useState(null);
   const [showDetail, setShowDetail] = useState(null);
   const [showTrailer, setShowTrailer] = useState(false);
-  const [formTitle, setFormTitle] = useState("");
-  const [formDesc, setFormDesc] = useState("");
+
+  // ===== NEW UPLOAD - 5 OPTIONS + UPLOAD BUTTON =====
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadTarget, setUploadTarget] = useState("Trending");
+  const [upTitle, setUpTitle] = useState("");
+  const [upDesc, setUpDesc] = useState("");
+  const [upPosterFile, setUpPosterFile] = useState(null);
+  const [upTrailerFile, setUpTrailerFile] = useState(null);
+  const [upMovieFile, setUpMovieFile] = useState(null);
+  const [upPosterPreview, setUpPosterPreview] = useState("");
 
   const CATS = ["Nollywood","Hollywood","Comedy","Action","Horror","Romance","Drama","Thriller","Animation","Family","Crime","Documentary"];
 
@@ -41,7 +42,6 @@ export default function Discover() {
     return () => clearInterval(id);
   }, [heroList.length]);
 
-  // Phone Back closes detail window only
   useEffect(() => {
     if (showDetail) {
       try { history.pushState({ detail: true }, ''); } catch {}
@@ -66,96 +66,79 @@ export default function Discover() {
 
   const toggleWatchlist = (id) => {
     if (myWatchlist.includes(id)) setMyWatchlist(myWatchlist.filter((x) => x !== id));
-    else { setMyWatchlist([...myWatchlist, id]); alert("Added to My Watchlist ✅"); }
+    else setMyWatchlist([...myWatchlist, id]);
   };
 
   const makeHero = (m) => {
     setHeroList((prev) => [{ t: m.title, d: m.desc || m.title, img: m.img || "https://images.unsplash.com/photo-1543794327-59a91fb815d1?w=900&q=80", video: m.video }, ...prev].slice(0, 6));
-    alert("✅ " + m.title + " don enter Big Box! Only you fit see this control.");
   };
 
+  // ===== NEW UPLOAD LOGIC =====
   const openUploadFor = (section) => {
     setUploadTarget(section);
-    const title = prompt("Movie Title?");
-    if (title !== null) setFormTitle(title);
-    const desc = prompt("Movie Description?");
-    if (desc !== null) setFormDesc(desc);
-    setTimeout(() => videoRef.current?.click(), 50);
+    setUpTitle("");
+    setUpDesc("");
+    setUpPosterFile(null);
+    setUpTrailerFile(null);
+    setUpMovieFile(null);
+    setUpPosterPreview("");
+    setShowUpload(true);
   };
 
-  const handleVideoPick = (e) => {
-    const file = e.target.files[0]; if (!file) return; setPendingVideo(file); e.target.value = "";
-    setTimeout(() => {
-      if (confirm("✅ Video picked: " + file.name + "\n\nNow pick COVER PHOTO?\n\nOK = Pick Cover\nCancel = Eva go auto-make cover")) coverRef.current?.click();
-      else makeAutoCoverAndSave(file, null);
-    }, 100);
+  const closeUpload = () => {
+    setShowUpload(false);
+    setUpTitle("");
+    setUpDesc("");
+    setUpPosterFile(null);
+    setUpTrailerFile(null);
+    setUpMovieFile(null);
+    setUpPosterPreview("");
   };
 
-  const handleCoverPick = (e) => {
-    const coverFile = e.target.files[0]; e.target.value = ""; if (!pendingVideo) return;
-    if (coverFile) {
-      const coverURL = URL.createObjectURL(coverFile);
-      if (confirm("Add Trailer? OK = Pick Trailer, Cancel = No Trailer")) {
-        // Save cover temporarily, then pick trailer
-        window.__evaCover = coverURL;
-        trailerRef.current?.click();
-      } else {
-        saveMovie(pendingVideo, coverURL);
-        setPendingVideo(null);
-      }
-    } else {
-      makeAutoCoverAndSave(pendingVideo, null);
-    }
-  };
+  const canUpload = upTitle.trim() !== "" && upMovieFile !== null;
 
-  const handleTrailerPick = (e) => {
-    const f = e.target.files[0]; e.target.value = "";
-    if (f) setPendingTrailer(f);
-    // Use saved cover if exists, else auto cover
-    const coverURL = window.__evaCover || "";
-    if (pendingVideo) {
-      if (coverURL) {
-        // Need to keep trailer in state before save - set then save with timeout
-        setTimeout(() => {
-          const trailerURL = f ? URL.createObjectURL(f) : null;
-          const videoURL = URL.createObjectURL(pendingVideo);
-          const title = formTitle || pendingVideo.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
-          const newMovie = { id: Date.now(), title, cat: "My Upload • " + uploadTarget, year: "2026", dur: "Your Video", desc: formDesc || "Uploaded to " + uploadTarget, video: videoURL, trailer: trailerURL, img: coverURL, section: uploadTarget };
-          setUploadedMovies((prev) => [newMovie, ...prev]);
-          setFormTitle(""); setFormDesc(""); setPendingTrailer(null); setPendingVideo(null); window.__evaCover = null;
-          alert("✅ " + title + " don enter " + uploadTarget + " with trailer!");
-        }, 100);
-      } else {
-        makeAutoCoverAndSave(pendingVideo, null);
-      }
-    }
-  };
+  const doUpload = () => {
+    if (!canUpload) return;
+    const videoURL = URL.createObjectURL(upMovieFile);
+    const trailerURL = upTrailerFile ? URL.createObjectURL(upTrailerFile) : null;
+    const posterURL = upPosterFile ? URL.createObjectURL(upPosterFile) : "";
 
-  const makeAutoCoverAndSave = (videoFile) => {
-    const videoURL = URL.createObjectURL(videoFile);
-    const vid = document.createElement("video"); vid.src = videoURL; vid.muted = true; vid.playsInline = true; vid.currentTime = 1;
-    vid.onseeked = () => { try { const canvas = document.createElement("canvas"); canvas.width = vid.videoWidth || 300; canvas.height = vid.videoHeight || 450; const ctx = canvas.getContext("2d"); ctx.drawImage(vid, 0, 0, canvas.width, canvas.height); saveMovie(videoFile, canvas.toDataURL("image/jpeg", 0.7), videoURL); } catch { saveMovie(videoFile, "", videoURL); } };
-    vid.onerror = () => saveMovie(videoFile, "", videoURL);
-  };
-
-  const saveMovie = (videoFile, coverURL, existingVideoURL = null) => {
-    const videoURL = existingVideoURL || URL.createObjectURL(videoFile);
-    const title = formTitle || videoFile.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
-    const newMovie = {
-      id: Date.now(),
-      title: title,
-      cat: "My Upload • " + uploadTarget,
-      year: "2026",
-      dur: "Your Video",
-      desc: formDesc || "Uploaded to " + uploadTarget + ". File: " + videoFile.name,
-      video: videoURL,
-      trailer: pendingTrailer ? URL.createObjectURL(pendingTrailer) : null,
-      img: coverURL || "",
-      section: uploadTarget
+    const finishSave = (finalPoster) => {
+      const newMovie = {
+        id: Date.now(),
+        title: upTitle.trim(),
+        cat: "My Upload • " + uploadTarget,
+        year: "2026",
+        dur: "Your Video",
+        desc: upDesc.trim() || "Uploaded to " + uploadTarget,
+        video: videoURL,
+        trailer: trailerURL,
+        img: finalPoster || "",
+        section: uploadTarget
+      };
+      setUploadedMovies((prev) => [newMovie, ...prev]);
+      closeUpload();
     };
-    setUploadedMovies((prev) => [newMovie, ...prev]);
-    setFormTitle(""); setFormDesc(""); setPendingTrailer(null);
-    alert("✅ " + title + " don enter " + uploadTarget + " with cover! Only you dey see this.");
+
+    if (posterURL) {
+      finishSave(posterURL);
+      return;
+    }
+    // No poster - auto-make cover from movie, no popup
+    try {
+      const vid = document.createElement("video");
+      vid.src = videoURL; vid.muted = true; vid.playsInline = true; vid.currentTime = 1;
+      vid.onseeked = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = vid.videoWidth || 300; canvas.height = vid.videoHeight || 450;
+          const ctx = canvas.getContext("2d"); ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+          finishSave(canvas.toDataURL("image/jpeg", 0.7));
+        } catch { finishSave(""); }
+      };
+      vid.onerror = () => finishSave("");
+      setTimeout(() => finishSave(""), 2000);
+    } catch { finishSave(""); }
   };
 
   const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; };
@@ -199,6 +182,51 @@ export default function Discover() {
       </div>
     );
   };
+
+  // ===== UPLOAD WINDOW - ALL 6 OPTIONS TOGETHER =====
+  const UploadModal = () => {
+    if (!showUpload) return null;
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.92)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ background: "#1a1a1a", width: "100%", maxWidth: 480, borderRadius: 16, padding: 16, maxHeight: "90vh", overflowY: "auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <b style={{ fontSize: 18 }}>Upload to {uploadTarget}</b>
+            <button onClick={closeUpload} style={{ background: "#000", border: "none", color: "#fff", borderRadius: 999, width: 32, height: 32 }}>X</button>
+          </div>
+
+          <div style={{ marginTop: 14, fontSize: 13, color: "#aaa" }}>1. Title *</div>
+          <input value={upTitle} onChange={(e) => setUpTitle(e.target.value)} placeholder="e.g. Game" style={{ width: "100%", boxSizing: "border-box", marginTop: 6, background: "#222", border: "1px solid #333", color: "#fff", padding: 12, borderRadius: 10, outline: "none" }} />
+
+          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>2. Description</div>
+          <textarea value={upDesc} onChange={(e) => setUpDesc(e.target.value)} placeholder="Wetin this movie talk about..." rows={3} style={{ width: "100%", boxSizing: "border-box", marginTop: 6, background: "#222", border: "1px solid #333", color: "#fff", padding: 12, borderRadius: 10, outline: "none" }} />
+
+          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>3. Poster</div>
+          <label style={{ display: "block", marginTop: 6, background: upPosterFile ? "#22D464" : "#222", color: upPosterFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
+            {upPosterFile ? "✓ Poster Picked - " + upPosterFile.name : "+ Pick Poster"}
+            <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) { setUpPosterFile(f); setUpPosterPreview(URL.createObjectURL(f)); } }} />
+          </label>
+          {upPosterPreview && <img src={upPosterPreview} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 10, marginTop: 8 }} />}
+
+          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>4. Trailer</div>
+          <label style={{ display: "block", marginTop: 6, background: upTrailerFile ? "#22D464" : "#222", color: upTrailerFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
+            {upTrailerFile ? "✓ Trailer Picked - " + upTrailerFile.name : "+ Pick Trailer"}
+            <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setUpTrailerFile(f); }} />
+          </label>
+
+          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>5. Movie *</div>
+          <label style={{ display: "block", marginTop: 6, background: upMovieFile ? "#22D464" : "#222", color: upMovieFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
+            {upMovieFile ? "✓ Movie Picked - " + upMovieFile.name : "+ Pick Movie"}
+            <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setUpMovieFile(f); }} />
+          </label>
+
+          <button onClick={doUpload} disabled={!canUpload} style={{ width: "100%", marginTop: 16, background: canUpload ? "#22D464" : "#333", color: canUpload ? "#000" : "#888", border: "none", padding: 14, borderRadius: 10, fontWeight: 800, fontSize: 15 }}>
+            {canUpload ? "✅ Upload Movie" : "Fill Title + Movie to Upload"}
+          </button>
+          <div style={{ textAlign: "center", fontSize: 11, color: "#888", marginTop: 8 }}>Title + Movie na must. Poster, Trailer, Description fit empty.</div>
+        </div>
+      </div>
+    );
+  };
   if (expandedCat) {
     const list = getCatMovies(expandedCat);
     return (
@@ -211,6 +239,8 @@ export default function Discover() {
           {list.map((m) => <div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 165, borderRadius: 12, overflow: "hidden", background: m.img ? `url(${m.img}) center/cover` : "#222", display: "flex", alignItems: "flex-end", padding: 8 }}><b style={{ fontSize: 11 }}>{m.title}</b></div>)}
           {Array.from({ length: 9 }).map((_, i) => <div key={"e"+i} onClick={() => openUploadFor(expandedCat)} style={{ height: 165, borderRadius: 12, background: "#141414", border: "1px dashed #2a2a2a", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 42, height: 42, background: "#22c55e", borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900 }}>+</div></div>)}
         </div>
+
+        <UploadModal />
 
         {showDetail && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -252,9 +282,6 @@ export default function Discover() {
 
   return (
     <div style={{ background: "black", color: "white", minHeight: "100vh", paddingBottom: 120, fontFamily: "system-ui", overflowX: "hidden" }}>
-      <input type="file" accept="video/*" ref={videoRef} onChange={handleVideoPick} style={{ display: "none" }} />
-      <input type="file" accept="image/*" ref={coverRef} onChange={handleCoverPick} style={{ display: "none" }} />
-      <input type="file" accept="video/*" ref={trailerRef} onChange={handleTrailerPick} style={{ display: "none" }} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px 8px", position: "sticky", top: 0, background: "black", zIndex: 10 }}>
         <h1 style={{ color: "#22c55e", fontSize: 38, fontWeight: 900, margin: 0, letterSpacing: -2, whiteSpace: "nowrap" }}>✦ EVA <span style={{ fontSize: 14, color: "#A8FFC6", verticalAlign: "top" }}>✦</span></h1>
         <button onClick={() => setShowSearch(!showSearch)} style={{ background: "#1a1a1a", border: "1px solid #333", color: "white", borderRadius: 999, width: 38, height: 38, fontSize: 16 }}>🔍</button>
@@ -327,6 +354,8 @@ export default function Discover() {
           {CATS.map((c) => <CatRow key={c} cat={c} />)}
         </>
       )}
+
+      <UploadModal />
 
       {showDetail && !expandedCat && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
