@@ -2,6 +2,49 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
+function UploadModal({ open, target, title, setTitle, desc, setDesc, posterFile, setPosterFile, posterPreview, setPosterPreview, trailerFile, setTrailerFile, movieFile, setMovieFile, onClose, onUpload, canUpload }) {
+  if (!open) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.92)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#1a1a1a", width: "100%", maxWidth: 480, borderRadius: 16, padding: 16, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <b style={{ fontSize: 18 }}>Upload to {target}</b>
+          <button onClick={onClose} style={{ background: "#000", border: "none", color: "#fff", borderRadius: 999, width: 32, height: 32 }}>X</button>
+        </div>
+
+        <div style={{ marginTop: 14, fontSize: 13, color: "#aaa" }}>Title</div>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" style={{ width: "100%", boxSizing: "border-box", marginTop: 6, background: "#222", border: "1px solid #333", color: "#fff", padding: 12, borderRadius: 10, outline: "none" }} />
+
+        <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>Description</div>
+        <textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description" rows={3} style={{ width: "100%", boxSizing: "border-box", marginTop: 6, background: "#222", border: "1px solid #333", color: "#fff", padding: 12, borderRadius: 10, outline: "none" }} />
+
+        <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>Poster</div>
+        <label style={{ display: "block", marginTop: 6, background: posterFile ? "#22D464" : "#222", color: posterFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
+          {posterFile ? posterFile.name : "Select Poster"}
+          <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) { setPosterFile(f); setPosterPreview(URL.createObjectURL(f)); } }} />
+        </label>
+        {posterPreview && <img src={posterPreview} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 10, marginTop: 8 }} />}
+
+        <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>Trailer</div>
+        <label style={{ display: "block", marginTop: 6, background: trailerFile ? "#22D464" : "#222", color: trailerFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
+          {trailerFile ? trailerFile.name : "Select Trailer"}
+          <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setTrailerFile(f); }} />
+        </label>
+
+        <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>Movie</div>
+        <label style={{ display: "block", marginTop: 6, background: movieFile ? "#22D464" : "#222", color: movieFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
+          {movieFile ? movieFile.name : "Select Movie"}
+          <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setMovieFile(f); }} />
+        </label>
+
+        <button onClick={onUpload} disabled={!canUpload} style={{ width: "100%", marginTop: 16, background: canUpload ? "#22D464" : "#333", color: canUpload ? "#000" : "#888", border: "none", padding: 14, borderRadius: 10, fontWeight: 800, fontSize: 15 }}>
+          Upload
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Discover() {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -18,7 +61,7 @@ export default function Discover() {
   const [showDetail, setShowDetail] = useState(null);
   const [showTrailer, setShowTrailer] = useState(false);
 
-  // ===== NEW UPLOAD - 5 OPTIONS + UPLOAD BUTTON =====
+  // Upload state
   const [showUpload, setShowUpload] = useState(false);
   const [uploadTarget, setUploadTarget] = useState("Trending");
   const [upTitle, setUpTitle] = useState("");
@@ -38,9 +81,10 @@ export default function Discover() {
   ]);
 
   useEffect(() => {
+    if (showUpload) return;
     const id = setInterval(() => setHi((p) => (p + 1) % heroList.length), 4000);
     return () => clearInterval(id);
-  }, [heroList.length]);
+  }, [heroList.length, showUpload]);
 
   useEffect(() => {
     if (showDetail) {
@@ -52,7 +96,7 @@ export default function Discover() {
   }, [showDetail]);
 
   const baseMovies = [
-    { id: 1, title: "Test Movie - Big Buck", cat: "Animation • Family", year: "2024", dur: "10 mins", desc: "This na test movie to check if Play dey work.", video: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", img: "", section: "Trending", trailer: null },
+    { id: 1, title: "Test Movie - Big Buck", cat: "Animation • Family", year: "2024", dur: "10 mins", desc: "This is a test movie to check if Play works.", video: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", img: "", section: "Trending", trailer: null },
     { id: 2, title: "Test Movie 2 - Flower", cat: "Nature • Short", year: "2024", dur: "10 secs", desc: "Second test movie - very fast, small file.", video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4", img: "", section: "Trending", trailer: null },
   ];
 
@@ -73,7 +117,6 @@ export default function Discover() {
     setHeroList((prev) => [{ t: m.title, d: m.desc || m.title, img: m.img || "https://images.unsplash.com/photo-1543794327-59a91fb815d1?w=900&q=80", video: m.video }, ...prev].slice(0, 6));
   };
 
-  // ===== NEW UPLOAD LOGIC =====
   const openUploadFor = (section) => {
     setUploadTarget(section);
     setUpTitle("");
@@ -109,7 +152,7 @@ export default function Discover() {
         title: upTitle.trim(),
         cat: "My Upload • " + uploadTarget,
         year: "2026",
-        dur: "Your Video",
+        dur: "Uploaded Video",
         desc: upDesc.trim() || "Uploaded to " + uploadTarget,
         video: videoURL,
         trailer: trailerURL,
@@ -124,7 +167,6 @@ export default function Discover() {
       finishSave(posterURL);
       return;
     }
-    // No poster - auto-make cover from movie, no popup
     try {
       const vid = document.createElement("video");
       vid.src = videoURL; vid.muted = true; vid.playsInline = true; vid.currentTime = 1;
@@ -183,49 +225,24 @@ export default function Discover() {
     );
   };
 
-  // ===== UPLOAD WINDOW - ALL 6 OPTIONS TOGETHER =====
-  const UploadModal = () => {
-    if (!showUpload) return null;
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.92)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-        <div style={{ background: "#1a1a1a", width: "100%", maxWidth: 480, borderRadius: 16, padding: 16, maxHeight: "90vh", overflowY: "auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <b style={{ fontSize: 18 }}>Upload to {uploadTarget}</b>
-            <button onClick={closeUpload} style={{ background: "#000", border: "none", color: "#fff", borderRadius: 999, width: 32, height: 32 }}>X</button>
-          </div>
-
-          <div style={{ marginTop: 14, fontSize: 13, color: "#aaa" }}>1. Title *</div>
-          <input value={upTitle} onChange={(e) => setUpTitle(e.target.value)} placeholder="e.g. Game" style={{ width: "100%", boxSizing: "border-box", marginTop: 6, background: "#222", border: "1px solid #333", color: "#fff", padding: 12, borderRadius: 10, outline: "none" }} />
-
-          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>2. Description</div>
-          <textarea value={upDesc} onChange={(e) => setUpDesc(e.target.value)} placeholder="Wetin this movie talk about..." rows={3} style={{ width: "100%", boxSizing: "border-box", marginTop: 6, background: "#222", border: "1px solid #333", color: "#fff", padding: 12, borderRadius: 10, outline: "none" }} />
-
-          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>3. Poster</div>
-          <label style={{ display: "block", marginTop: 6, background: upPosterFile ? "#22D464" : "#222", color: upPosterFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
-            {upPosterFile ? "✓ Poster Picked - " + upPosterFile.name : "+ Pick Poster"}
-            <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) { setUpPosterFile(f); setUpPosterPreview(URL.createObjectURL(f)); } }} />
-          </label>
-          {upPosterPreview && <img src={upPosterPreview} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 10, marginTop: 8 }} />}
-
-          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>4. Trailer</div>
-          <label style={{ display: "block", marginTop: 6, background: upTrailerFile ? "#22D464" : "#222", color: upTrailerFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
-            {upTrailerFile ? "✓ Trailer Picked - " + upTrailerFile.name : "+ Pick Trailer"}
-            <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setUpTrailerFile(f); }} />
-          </label>
-
-          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>5. Movie *</div>
-          <label style={{ display: "block", marginTop: 6, background: upMovieFile ? "#22D464" : "#222", color: upMovieFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
-            {upMovieFile ? "✓ Movie Picked - " + upMovieFile.name : "+ Pick Movie"}
-            <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setUpMovieFile(f); }} />
-          </label>
-
-          <button onClick={doUpload} disabled={!canUpload} style={{ width: "100%", marginTop: 16, background: canUpload ? "#22D464" : "#333", color: canUpload ? "#000" : "#888", border: "none", padding: 14, borderRadius: 10, fontWeight: 800, fontSize: 15 }}>
-            {canUpload ? "✅ Upload Movie" : "Fill Title + Movie to Upload"}
-          </button>
-          <div style={{ textAlign: "center", fontSize: 11, color: "#888", marginTop: 8 }}>Title + Movie na must. Poster, Trailer, Description fit empty.</div>
-        </div>
-      </div>
-    );
+  const uploadProps = {
+    open: showUpload,
+    target: uploadTarget,
+    title: upTitle,
+    setTitle: setUpTitle,
+    desc: upDesc,
+    setDesc: setUpDesc,
+    posterFile: upPosterFile,
+    setPosterFile: setUpPosterFile,
+    posterPreview: upPosterPreview,
+    setPosterPreview: setUpPosterPreview,
+    trailerFile: upTrailerFile,
+    setTrailerFile: setUpTrailerFile,
+    movieFile: upMovieFile,
+    setMovieFile: setUpMovieFile,
+    onClose: closeUpload,
+    onUpload: doUpload,
+    canUpload: canUpload,
   };
   if (expandedCat) {
     const list = getCatMovies(expandedCat);
@@ -240,7 +257,7 @@ export default function Discover() {
           {Array.from({ length: 9 }).map((_, i) => <div key={"e"+i} onClick={() => openUploadFor(expandedCat)} style={{ height: 165, borderRadius: 12, background: "#141414", border: "1px dashed #2a2a2a", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 42, height: 42, background: "#22c55e", borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900 }}>+</div></div>)}
         </div>
 
-        <UploadModal />
+        <UploadModal {...uploadProps} />
 
         {showDetail && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -263,7 +280,7 @@ export default function Discover() {
                 <p style={{ fontSize: 13, color: "#ccc", margin: "0 0 8px" }}>{showDetail.desc}</p>
                 <p style={{ fontSize: 12, color: "#aaa", margin: "0 0 12px" }}>{showDetail.cat} • {showDetail.year} • {showDetail.dur}</p>
                 <button onClick={() => { setPlayingMovie(showDetail); setShowDetail(null); }} style={{ width: "100%", background: "#22D464", border: "none", padding: 13, borderRadius: 8, fontWeight: 800, fontSize: 15 }}>▶ Play Movie</button>
-                <p style={{ fontSize: 11, color: "#888", marginTop: 8, textAlign: "center" }}>Center ▶️ = Trailer (if e get) • Down Play = Full Movie</p>
+                <p style={{ fontSize: 11, color: "#888", marginTop: 8, textAlign: "center" }}>Center play button is the trailer. Play Movie is the full movie.</p>
               </div>
             </div>
           </div>
@@ -273,7 +290,7 @@ export default function Discover() {
           <div style={{ position: "fixed", inset: 0, background: "black", zIndex: 300, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px" }}><b>{playingMovie.title}</b><button onClick={() => setPlayingMovie(null)} style={{ background: "#222", border: "none", color: "white", borderRadius: 999, width: 36, height: 36 }}>✕</button></div>
             <video src={playingMovie.video} controls autoPlay playsInline style={{ width: "100%", flex: 1, background: "black" }} />
-            <div style={{ padding: 16 }}><div style={{ fontWeight: 800 }}>{playingMovie.title}</div><div style={{ fontSize: 13, color: "#aaa", marginTop: 4 }}>{playingMovie.cat}</div><button onClick={() => makeHero(playingMovie)} style={{ marginTop: 12, background: "#22D464", border: "none", padding: "10px 16px", borderRadius: 8, fontWeight: 800 }}>★ Make am Big Box (Only You)</button></div>
+            <div style={{ padding: 16 }}><div style={{ fontWeight: 800 }}>{playingMovie.title}</div><div style={{ fontSize: 13, color: "#aaa", marginTop: 4 }}>{playingMovie.cat}</div><button onClick={() => makeHero(playingMovie)} style={{ marginTop: 12, background: "#22D464", border: "none", padding: "10px 16px", borderRadius: 8, fontWeight: 800 }}>Make Featured (Admin Only)</button></div>
           </div>
         )}
       </div>
@@ -312,12 +329,12 @@ export default function Discover() {
         </div>
       ) : topTab === "watchlist" ? (
         <div style={{ padding: "10px 16px" }}>
-          <h1 style={{ fontSize: 26, margin: 0 }}>My Watchlist</h1><p style={{ color: "#999", fontSize: 13 }}>One place — Saved + Downloaded inside Eva only</p>
+          <h1 style={{ fontSize: 26, margin: 0 }}>My Watchlist</h1><p style={{ color: "#999", fontSize: 13 }}>One place — Saved and Downloaded inside EVA only</p>
           <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
             <button onClick={() => setWatchTab("saved")} style={{ flex: 1, padding: 11, borderRadius: 20, border: "1px solid #333", background: watchTab === "saved" ? "#22D464" : "#1A1A1A", color: watchTab === "saved" ? "#000" : "#fff", fontWeight: 700, fontSize: 12 }}>Saved ({savedList.length})</button>
             <button onClick={() => setWatchTab("down")} style={{ flex: 1, padding: 11, borderRadius: 20, border: "1px solid #333", background: watchTab === "down" ? "#22D464" : "#1A1A1A", color: watchTab === "down" ? "#000" : "#fff", fontWeight: 700, fontSize: 12 }}>Downloaded • Offline</button>
           </div>
-          {watchTab === "saved" ? (savedList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: "#888" }}>No saved yet.<br />Tap + Watchlist on any movie.</div> : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>{savedList.map((m) => (<div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 170, borderRadius: 12, padding: 10, display: "flex", flexDirection: "column", justifyContent: "flex-end", background: m.img ? `url(${m.img}) center/cover` : "#222" }}><b style={{ fontSize: 13 }}>{m.title}</b><span style={{ fontSize: 11, color: "#CCC" }}>{m.cat}</span></div>))}</div>) : (<div style={{ textAlign: "center", padding: 30, color: "#888" }}>Downloaded go show here.<br />For now, Saved movies na the one we get.</div>)}
+          {watchTab === "saved" ? (savedList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: "#888" }}>No saved yet.<br />Tap Add to Watchlist on any movie.</div> : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>{savedList.map((m) => (<div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 170, borderRadius: 12, padding: 10, display: "flex", flexDirection: "column", justifyContent: "flex-end", background: m.img ? `url(${m.img}) center/cover` : "#222" }}><b style={{ fontSize: 13 }}>{m.title}</b><span style={{ fontSize: 11, color: "#CCC" }}>{m.cat}</span></div>))}</div>) : (<div style={{ textAlign: "center", padding: 30, color: "#888" }}>Downloaded movies will appear here.<br />For now, saved movies are available.</div>)}
         </div>
       ) : topTab === "movies" ? (
         <div style={{ padding: "10px 16px" }}>
@@ -355,7 +372,7 @@ export default function Discover() {
         </>
       )}
 
-      <UploadModal />
+      <UploadModal {...uploadProps} />
 
       {showDetail && !expandedCat && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -396,7 +413,7 @@ export default function Discover() {
             <div style={{ fontSize: 13, color: "#aaa", marginTop: 4 }}>{playingMovie.cat} • {playingMovie.dur}</div>
             <div style={{ fontSize: 13, marginTop: 6 }}>{playingMovie.desc}</div>
             <button onClick={() => toggleWatchlist(playingMovie.id)} style={{ marginTop: 12, background: myWatchlist.includes(playingMovie.id) ? "#22D464" : "transparent", border: "1px solid white", color: "white", padding: "10px 16px", borderRadius: 8, fontWeight: 700, marginRight: 8 }}>{myWatchlist.includes(playingMovie.id) ? "✓ In Watchlist" : "+ Watchlist"}</button>
-            <button onClick={() => makeHero(playingMovie)} style={{ marginTop: 12, background: "#22D464", border: "none", color: "black", padding: "10px 16px", borderRadius: 8, fontWeight: 800 }}>★ Make am Big Box (Only You)</button>
+            <button onClick={() => makeHero(playingMovie)} style={{ marginTop: 12, background: "#22D464", border: "none", color: "black", padding: "10px 16px", borderRadius: 8, fontWeight: 800 }}>Make Featured (Admin Only)</button>
           </div>
         </div>
       )}
