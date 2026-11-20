@@ -206,7 +206,6 @@ export default function Discover() {
   const MovieCard = ({ m }) => (
     <div onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ minWidth: 110, height: 165, background: "#1a1a1a", borderRadius: 12, overflow: "hidden", position: "relative", cursor: "pointer", flexShrink: 0 }}>
       {m.img ? <img src={m.img} alt={m.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6 }}><span style={{ fontSize: 28 }}>🎬</span><span style={{ fontSize: 11, padding: "0 8px", textAlign: "center" }}>{m.title}</span></div>}
-      {m.img && <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent, rgba(0,0,0,0.9))", padding: "20px 8px 8px" }}><div style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.2 }}>{m.title}</div><div style={{ fontSize: 10, color: "#22c55e" }}>▶ Details</div></div>}
     </div>
   );
 
@@ -253,7 +252,7 @@ export default function Discover() {
           <h2 style={{ margin: 0, fontSize: 20 }}>{expandedCat} — All Movies</h2>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, padding: "0 16px" }}>
-          {list.map((m) => <div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 165, borderRadius: 12, overflow: "hidden", background: m.img ? `url(${m.img}) center/cover` : "#222", display: "flex", alignItems: "flex-end", padding: 8 }}><b style={{ fontSize: 11 }}>{m.title}</b></div>)}
+          {list.map((m) => <div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 165, borderRadius: 12, overflow: "hidden", background: m.img ? `url(${m.img}) center/cover` : "#222", display: "flex", alignItems: "flex-end", padding: 8 }}></div>)}
           {Array.from({ length: 9 }).map((_, i) => <div key={"e"+i} onClick={() => openUploadFor(expandedCat)} style={{ height: 165, borderRadius: 12, background: "#141414", border: "1px dashed #2a2a2a", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 42, height: 42, background: "#22c55e", borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900 }}>+</div></div>)}
         </div>
 
@@ -334,7 +333,7 @@ export default function Discover() {
             <button onClick={() => setWatchTab("saved")} style={{ flex: 1, padding: 11, borderRadius: 20, border: "1px solid #333", background: watchTab === "saved" ? "#22D464" : "#1A1A1A", color: watchTab === "saved" ? "#000" : "#fff", fontWeight: 700, fontSize: 12 }}>Saved ({savedList.length})</button>
             <button onClick={() => setWatchTab("down")} style={{ flex: 1, padding: 11, borderRadius: 20, border: "1px solid #333", background: watchTab === "down" ? "#22D464" : "#1A1A1A", color: watchTab === "down" ? "#000" : "#fff", fontWeight: 700, fontSize: 12 }}>Downloaded • Offline</button>
           </div>
-          {watchTab === "saved" ? (savedList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: "#888" }}>No saved yet.<br />Tap Add to Watchlist on any movie.</div> : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>{savedList.map((m) => (<div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 170, borderRadius: 12, padding: 10, display: "flex", flexDirection: "column", justifyContent: "flex-end", background: m.img ? `url(${m.img}) center/cover` : "#222" }}><b style={{ fontSize: 13 }}>{m.title}</b><span style={{ fontSize: 11, color: "#CCC" }}>{m.cat}</span></div>))}</div>) : (<div style={{ textAlign: "center", padding: 30, color: "#888" }}>Downloaded movies will appear here.<br />For now, saved movies are available.</div>)}
+          {watchTab === "saved" ? (savedList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: "#888" }}>No saved yet.<br />Tap Add to Watchlist on any movie.</div> : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>{savedList.map((m) => (<div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 170, borderRadius: 12, padding: 10, display: "flex", flexDirection: "column", justifyContent: "flex-end", background: m.img ? `url(${m.img}) center/cover` : "#222" }}></div>))}</div>) : (<div style={{ textAlign: "center", padding: 30, color: "#888" }}>Downloaded movies will appear here.<br />For now, saved movies are available.</div>)}
         </div>
       ) : topTab === "movies" ? (
         <div style={{ padding: "10px 16px" }}>
