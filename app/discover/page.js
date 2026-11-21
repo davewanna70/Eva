@@ -267,7 +267,7 @@ export default function Discover() {
                   <video src={showDetail.trailer} controls autoPlay playsInline style={{ width: "100%", height: 270, objectFit: "cover" }} />
                 ) : (
                   <>
-                    {showDetail.img ? <img src={showDetail.img} style={{ width: "100%", height: 270, objectFit: "cover" }} /> : <div style={{ height: 270, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🎬</div>}
+                    {showDetail.img ? <img src={showDetail.img} style={{ width: "100%", height: 380, objectFit: "contain", background: "#000" }} /> : <div style={{ height: 380, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🎬</div>}
                     {showDetail.trailer && (
                       <div onClick={() => setShowTrailer(true)} style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: 64, height: 64, borderRadius: 999, background: "rgba(0,0,0,.6)", border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, cursor: "pointer" }}>▶️</div>
                     )}
@@ -382,7 +382,7 @@ export default function Discover() {
                 <video src={showDetail.trailer} controls autoPlay playsInline style={{ width: "100%", height: 270, objectFit: "cover" }} />
               ) : (
                 <>
-                  {showDetail.img ? <img src={showDetail.img} style={{ width: "100%", height: 270, objectFit: "cover" }} /> : <div style={{ height: 270, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🎬</div>}
+                  {showDetail.img ? <img src={showDetail.img} style={{ width: "100%", height: 380, objectFit: "contain", background: "#000" }} /> : <div style={{ height: 380, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🎬</div>}
                   {showDetail.trailer && (
                     <div onClick={() => setShowTrailer(true)} style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: 64, height: 64, borderRadius: 999, background: "rgba(0,0,0,.6)", border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, cursor: "pointer" }}>▶️</div>
                   )}
