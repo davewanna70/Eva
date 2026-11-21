@@ -160,10 +160,7 @@ export default function Discover() {
     return () => clearTimeout(t);
   }, [gestureInfo]);
 
-  const baseMovies = [
-    { id: 1, title: "Test Movie - Big Buck", cat: "Animation • Family", year: "2024", dur: "10 mins", desc: "This is a test movie to check if Play works.", video: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", img: "", section: "Trending", trailer: null },
-    { id: 2, title: "Test Movie 2 - Flower", cat: "Nature • Short", year: "2024", dur: "10 secs", desc: "Second test movie - very fast, small file.", video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4", img: "", section: "Trending", trailer: null },
-  ];
+  const baseMovies = [];
 
   const allMovies = [...uploadedMovies, ...baseMovies];
   const trendingMovies = [...uploadedMovies.filter((m) => m.section === "Trending"), ...baseMovies];
@@ -172,6 +169,15 @@ export default function Discover() {
   const isSearching = showSearch && search.trim() !== "";
   const featured = allMovies[0];
   const savedList = allMovies.filter((m) => myWatchlist.includes(m.id));
+
+  const isAdmin = true;
+
+  const deleteMovie = (id) => {
+    setUploadedMovies((prev) => prev.filter((m) => m.id !== id));
+    setMyWatchlist((prev) => prev.filter((x) => x !== id));
+    setShowDetail(null);
+    setShowTrailer(false);
+  };
 
   const toggleWatchlist = (id) => {
     if (myWatchlist.includes(id)) setMyWatchlist(myWatchlist.filter((x) => x !== id));
@@ -278,7 +284,7 @@ export default function Discover() {
     }
   };
   const onVideoTouchEnd = () => { gestureRef.current.active = false; };
-    const EmptySlot = ({ section }) => (
+      const EmptySlot = ({ section }) => (
     <div onClick={() => openUploadFor(section)} style={{ minWidth: 110, height: 165, ...GLASS, border: "1px dashed rgba(255,255,255,0.4)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
       <div style={{ width: 42, height: 42, background: "#22c55e", borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900, color: "white" }}>+</div>
     </div>
@@ -368,6 +374,7 @@ export default function Discover() {
                 <p style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", margin: "0 0 8px" }}>{showDetail.desc}</p>
                 <p style={{ fontSize: 12, color: SOFT_TEXT, margin: "0 0 12px" }}>{showDetail.cat} • {showDetail.year} • {showDetail.dur}</p>
                 <button onClick={() => { setPlayingMovie(showDetail); setShowDetail(null); }} style={{ width: "100%", background: "#22D464", border: "none", padding: 13, borderRadius: 8, fontWeight: 800, fontSize: 15 }}>▶ Play Movie</button>
+                {isAdmin && <button onClick={() => deleteMovie(showDetail.id)} style={{ width: "100%", marginTop: 8, background: "#ef4444", border: "none", padding: 13, borderRadius: 8, fontWeight: 800, fontSize: 15, color: "#fff" }}>X Delete Movie</button>}
               </div>
             </div>
           </div>
@@ -484,6 +491,7 @@ export default function Discover() {
               <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", marginTop: 6 }}>{showDetail.desc}</div>
               <div style={{ fontSize: 12, color: SOFT_TEXT, marginTop: 6 }}>{showDetail.cat} • {showDetail.year} • {showDetail.dur}</div>
               <button onClick={() => { setPlayingMovie(showDetail); setShowDetail(null); }} style={{ width: "100%", marginTop: 12, background: "#22D464", border: "none", padding: 13, borderRadius: 8, fontWeight: 800, fontSize: 15 }}>▶ Play Movie</button>
+              {isAdmin && <button onClick={() => deleteMovie(showDetail.id)} style={{ width: "100%", marginTop: 8, background: "#ef4444", border: "none", padding: 13, borderRadius: 8, fontWeight: 800, fontSize: 15, color: "#fff" }}>X Delete Movie</button>}
               <button onClick={() => toggleWatchlist(showDetail.id)} style={{ width: "100%", marginTop: 8, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.8)", color: "white", padding: 10, borderRadius: 8, fontWeight: 700 }}>{myWatchlist.includes(showDetail.id) ? "✓ In Watchlist" : "+ Watchlist"}</button>
             </div>
           </div>
