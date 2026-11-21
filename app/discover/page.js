@@ -61,6 +61,13 @@ export default function Discover() {
   const [showDetail, setShowDetail] = useState(null);
   const [showTrailer, setShowTrailer] = useState(false);
 
+  // Volume + Brightness gesture state
+  const [vol, setVol] = useState(1);
+  const [bright, setBright] = useState(1);
+  const [gestureInfo, setGestureInfo] = useState(null);
+  const gestureRef = useRef({ startY: 0, startVol: 1, startBright: 1, side: "right", active: false });
+  const videoRef = useRef(null);
+
   // Upload state
   const [showUpload, setShowUpload] = useState(false);
   const [uploadTarget, setUploadTarget] = useState("Trending");
@@ -94,6 +101,16 @@ export default function Discover() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, [showDetail]);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.volume = vol;
+  }, [vol, playingMovie]);
+
+  useEffect(() => {
+    if (!gestureInfo) return;
+    const t = setTimeout(() => setGestureInfo(null), 800);
+    return () => clearTimeout(t);
+  }, [gestureInfo]);
 
   const baseMovies = [
     { id: 1, title: "Test Movie - Big Buck", cat: "Animation • Family", year: "2024", dur: "10 mins", desc: "This is a test movie to check if Play works.", video: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", img: "", section: "Trending", trailer: null },
@@ -190,6 +207,30 @@ export default function Discover() {
     if (dx > 50) setHi((p) => (p - 1 + heroList.length) % heroList.length);
   };
 
+  // Gesture handlers for full player - right = volume, left = brightness
+  const onVideoTouchStart = (e) => {
+    const touch = e.touches[0];
+    const rect = e.currentTarget.getBoundingClientRect();
+    const side = touch.clientX - rect.left > rect.width / 2 ? "right" : "left";
+    gestureRef.current = { startY: touch.clientY, startVol: vol, startBright: bright, side, active: true };
+  };
+  const onVideoTouchMove = (e) => {
+    if (!gestureRef.current.active) return;
+    const touch = e.touches[0];
+    const dy = gestureRef.current.startY - touch.clientY;
+    const change = dy / 200;
+    if (gestureRef.current.side === "right") {
+      const nv = Math.max(0, Math.min(1, gestureRef.current.startVol + change));
+      setVol(nv);
+      setGestureInfo({ icon: nv === 0 ? "🔇" : "🔊", label: "Volume", value: Math.round(nv * 100) + "%" });
+    } else {
+      const nb = Math.max(0.3, Math.min(1.8, gestureRef.current.startBright + change));
+      setBright(nb);
+      setGestureInfo({ icon: "☀️", label: "Brightness", value: Math.round(((nb - 0.3) / 1.5) * 100) + "%" });
+    }
+  };
+  const onVideoTouchEnd = () => { gestureRef.current.active = false; };
+
   const EmptySlot = ({ section }) => (
     <div onClick={() => openUploadFor(section)} style={{ minWidth: 110, height: 165, background: "#141414", border: "1px dashed #2a2a2a", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
       <div style={{ width: 42, height: 42, background: "#22c55e", borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900, color: "white" }}>+</div>
@@ -279,7 +320,6 @@ export default function Discover() {
                 <p style={{ fontSize: 13, color: "#ccc", margin: "0 0 8px" }}>{showDetail.desc}</p>
                 <p style={{ fontSize: 12, color: "#aaa", margin: "0 0 12px" }}>{showDetail.cat} • {showDetail.year} • {showDetail.dur}</p>
                 <button onClick={() => { setPlayingMovie(showDetail); setShowDetail(null); }} style={{ width: "100%", background: "#22D464", border: "none", padding: 13, borderRadius: 8, fontWeight: 800, fontSize: 15 }}>▶ Play Movie</button>
-                <p style={{ fontSize: 11, color: "#888", marginTop: 8, textAlign: "center" }}>Center play button is the trailer. Play Movie is the full movie.</p>
               </div>
             </div>
           </div>
@@ -288,7 +328,10 @@ export default function Discover() {
         {playingMovie && (
           <div style={{ position: "fixed", inset: 0, background: "black", zIndex: 300, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px" }}><b>{playingMovie.title}</b><button onClick={() => setPlayingMovie(null)} style={{ background: "#222", border: "none", color: "white", borderRadius: 999, width: 36, height: 36 }}>✕</button></div>
-            <video src={playingMovie.video} controls autoPlay playsInline style={{ width: "100%", flex: 1, background: "black" }} />
+            <div onTouchStart={onVideoTouchStart} onTouchMove={onVideoTouchMove} onTouchEnd={onVideoTouchEnd} style={{ position: "relative", flex: 1, display: "flex", alignItems: "center", background: "black" }}>
+              <video ref={videoRef} src={playingMovie.video} controls autoPlay playsInline style={{ width: "100%", height: "100%", background: "black", filter: `brightness(${bright})` }} />
+              {gestureInfo && <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", background: "rgba(0,0,0,.75)", padding: "14px 20px", borderRadius: 12, textAlign: "center", pointerEvents: "none" }}><div style={{ fontSize: 30 }}>{gestureInfo.icon}</div><div style={{ fontSize: 12, color: "#aaa", marginTop: 4 }}>{gestureInfo.label}</div><div style={{ fontSize: 18, fontWeight: 800 }}>{gestureInfo.value}</div></div>}
+            </div>
             <div style={{ padding: 16 }}><div style={{ fontWeight: 800 }}>{playingMovie.title}</div><div style={{ fontSize: 13, color: "#aaa", marginTop: 4 }}>{playingMovie.cat}</div><button onClick={() => makeHero(playingMovie)} style={{ marginTop: 12, background: "#22D464", border: "none", padding: "10px 16px", borderRadius: 8, fontWeight: 800 }}>Make Featured (Admin Only)</button></div>
           </div>
         )}
@@ -322,18 +365,18 @@ export default function Discover() {
           {filtered.map((m) => (
             <div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ display: "flex", gap: 12, background: "#111", borderRadius: 12, padding: 10, marginBottom: 10 }}>
               {m.img ? <img src={m.img} style={{ width: 70, height: 100, objectFit: "cover", borderRadius: 8 }} /> : <div style={{ width: 70, height: 100, background: "#222", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎬</div>}
-              <div><div style={{ fontWeight: 800 }}>{m.title}</div><div style={{ fontSize: 12, color: "#aaa", marginTop: 4 }}>{m.cat} • {m.dur}</div><div style={{ fontSize: 12, color: "#22c55e", marginTop: 6 }}>▶ Tap for Details</div></div>
+              <div><div style={{ fontWeight: 800 }}>{m.title}</div><div style={{ fontSize: 12, color: "#aaa", marginTop: 4 }}>{m.cat} • {m.dur}</div></div>
             </div>
           ))}
         </div>
       ) : topTab === "watchlist" ? (
         <div style={{ padding: "10px 16px" }}>
-          <h1 style={{ fontSize: 26, margin: 0 }}>My Watchlist</h1><p style={{ color: "#999", fontSize: 13 }}>One place — Saved and Downloaded inside EVA only</p>
+          <h1 style={{ fontSize: 26, margin: 0 }}>My Watchlist</h1>
           <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
             <button onClick={() => setWatchTab("saved")} style={{ flex: 1, padding: 11, borderRadius: 20, border: "1px solid #333", background: watchTab === "saved" ? "#22D464" : "#1A1A1A", color: watchTab === "saved" ? "#000" : "#fff", fontWeight: 700, fontSize: 12 }}>Saved ({savedList.length})</button>
             <button onClick={() => setWatchTab("down")} style={{ flex: 1, padding: 11, borderRadius: 20, border: "1px solid #333", background: watchTab === "down" ? "#22D464" : "#1A1A1A", color: watchTab === "down" ? "#000" : "#fff", fontWeight: 700, fontSize: 12 }}>Downloaded • Offline</button>
           </div>
-          {watchTab === "saved" ? (savedList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: "#888" }}>No saved yet.<br />Tap Add to Watchlist on any movie.</div> : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>{savedList.map((m) => (<div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 170, borderRadius: 12, padding: 10, display: "flex", flexDirection: "column", justifyContent: "flex-end", background: m.img ? `url(${m.img}) center/cover` : "#222" }}></div>))}</div>) : (<div style={{ textAlign: "center", padding: 30, color: "#888" }}>Downloaded movies will appear here.<br />For now, saved movies are available.</div>)}
+          {watchTab === "saved" ? (savedList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: "#888" }}>No saved yet.</div> : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>{savedList.map((m) => (<div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 170, borderRadius: 12, padding: 10, display: "flex", flexDirection: "column", justifyContent: "flex-end", background: m.img ? `url(${m.img}) center/cover` : "#222" }}></div>))}</div>) : (<div style={{ textAlign: "center", padding: 30, color: "#888" }}>Downloaded movies will appear here.</div>)}
         </div>
       ) : topTab === "movies" ? (
         <div style={{ padding: "10px 16px" }}>
@@ -341,7 +384,7 @@ export default function Discover() {
           {allMovies.map((m) => (
             <div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ display: "flex", gap: 12, background: "#111", borderRadius: 12, padding: 10, marginBottom: 10 }}>
               {m.img ? <img src={m.img} style={{ width: 70, height: 100, objectFit: "cover", borderRadius: 8 }} /> : <div style={{ width: 70, height: 100, background: "#222", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎬</div>}
-              <div><div style={{ fontWeight: 800 }}>{m.title}</div><div style={{ fontSize: 12, color: "#aaa", marginTop: 4 }}>{m.cat} • {m.dur}</div><div style={{ fontSize: 12, color: "#22c55e", marginTop: 6 }}>▶ Tap for Details</div></div>
+              <div><div style={{ fontWeight: 800 }}>{m.title}</div><div style={{ fontSize: 12, color: "#aaa", marginTop: 4 }}>{m.cat} • {m.dur}</div></div>
             </div>
           ))}
         </div>
@@ -356,7 +399,6 @@ export default function Discover() {
                   <button onClick={() => heroList[hi].video && setPlayingMovie({ title: heroList[hi].t, cat: "Hero", dur: "", desc: heroList[hi].d, video: heroList[hi].video, img: heroList[hi].img })} style={{ flex: 1.1, background: "#22D464", border: "none", color: "black", padding: "13px 6px", borderRadius: 8, fontWeight: 800, fontSize: 15 }}>▶ Play</button>
                   <button onClick={() => featured && toggleWatchlist(featured.id)} style={{ flex: 1.4, background: "transparent", border: "1.5px solid white", color: "white", padding: "11px 6px", borderRadius: 8, fontWeight: 700, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}> <span>{featured && myWatchlist.includes(featured.id) ? "✓ Watchlist" : "+ Watchlist"}</span><span>⬇</span></button>
                 </div>
-                <div style={{ fontSize: 10, color: "#aaa", marginTop: 6 }}>← Swipe to change →</div>
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "center", gap: 6, margin: "10px 0 8px" }}>{heroList.map((_, i) => <span key={i} onClick={() => setHi(i)} style={{ width: i === hi ? 7 : 6, height: i === hi ? 7 : 6, borderRadius: 50, background: i === hi ? "#22D464" : "#555", cursor: "pointer" }} />)}</div>
@@ -406,7 +448,10 @@ export default function Discover() {
             <b>{playingMovie.title}</b>
             <button onClick={() => setPlayingMovie(null)} style={{ background: "#222", border: "none", color: "white", borderRadius: 999, width: 36, height: 36, fontSize: 18 }}>✕</button>
           </div>
-          <video src={playingMovie.video} controls autoPlay playsInline preload="auto" style={{ width: "100%", flex: 1, background: "black", objectFit: "contain" }} />
+          <div onTouchStart={onVideoTouchStart} onTouchMove={onVideoTouchMove} onTouchEnd={onVideoTouchEnd} style={{ position: "relative", flex: 1, display: "flex", alignItems: "center", background: "black" }}>
+            <video ref={videoRef} src={playingMovie.video} controls autoPlay playsInline preload="auto" style={{ width: "100%", height: "100%", background: "black", objectFit: "contain", filter: `brightness(${bright})` }} />
+            {gestureInfo && <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", background: "rgba(0,0,0,.75)", padding: "14px 20px", borderRadius: 12, textAlign: "center", pointerEvents: "none" }}><div style={{ fontSize: 30 }}>{gestureInfo.icon}</div><div style={{ fontSize: 12, color: "#aaa", marginTop: 4 }}>{gestureInfo.label}</div><div style={{ fontSize: 18, fontWeight: 800 }}>{gestureInfo.value}</div></div>}
+          </div>
           <div style={{ padding: 16 }}>
             <div style={{ fontWeight: 800 }}>{playingMovie.title}</div>
             <div style={{ fontSize: 13, color: "#aaa", marginTop: 4 }}>{playingMovie.cat} • {playingMovie.dur}</div>
