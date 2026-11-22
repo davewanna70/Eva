@@ -8,6 +8,29 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+// ===== BUNNY SETTINGS =====
+const BUNNY_LIBRARY_ID = "817737";
+const getBunnyEmbedUrl = (idOrUrl) => {
+  if (!idOrUrl) return "";
+  const v = String(idOrUrl).trim();
+  if (v.includes("mediadelivery.net")) return v;
+  if (v.includes("http")) {
+    const m = v.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (m) return `https://player.mediadelivery.net/embed/${BUNNY_LIBRARY_ID}/${m[0]}`;
+    return v;
+  }
+  return `https://player.mediadelivery.net/embed/${BUNNY_LIBRARY_ID}/${v}`;
+};
+const isBunnyVideo = (url) => !!url && String(url).includes("mediadelivery.net");
+const extractBunnyId = (input) => {
+  if (!input) return "";
+  const v = String(input).trim();
+  const m = v.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (m) return m[0];
+  if (v.includes("mediadelivery.net")) return v;
+  return v;
+};
+
 // ===== WATER GLASS STYLE (Discover only) =====
 const WATER_BG = "radial-gradient(circle at 15% 8%, rgba(20,184,166,0.75) 0, transparent 45%), radial-gradient(circle at 90% 35%, rgba(37,99,235,0.65) 0, transparent 48%), radial-gradient(circle at 25% 95%, rgba(34,197,94,0.6) 0, transparent 52%), #06222b";
 const GLASS = {
@@ -69,7 +92,7 @@ const BgLayer = () => (
   <div style={{ position: "fixed", inset: 0, zIndex: -1, background: WATER_BG, pointerEvents: "none" }} />
 );
 
-function UploadModal({ open, target, title, setTitle, desc, setDesc, posterFile, setPosterFile, posterPreview, setPosterPreview, trailerFile, setTrailerFile, movieFile, setMovieFile, onClose, onUpload, canUpload, uploading }) {
+function UploadModal({ open, target, title, setTitle, desc, setDesc, posterFile, setPosterFile, posterPreview, setPosterPreview, trailerFile, setTrailerFile, bunnyId, setBunnyId, onClose, onUpload, canUpload, uploading }) {
   if (!open) return null;
   return (
     <div style={{ position: "fixed", inset: 0, ...OVERLAY, zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -90,16 +113,15 @@ function UploadModal({ open, target, title, setTitle, desc, setDesc, posterFile,
         {posterPreview && <img src={posterPreview} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 10, marginTop: 8 }} />}
         <div style={{ marginTop: 12, fontSize: 13, color: SOFT_TEXT }}>Trailer</div>
         <label style={{ display: "block", marginTop: 6, background: trailerFile ? "#22D464" : "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)", color: trailerFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
-          {trailerFile ? trailerFile.name : "Select Trailer"}
+          {trailerFile ? trailerFile.name : "Select Trailer (Optional)"}
           <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setTrailerFile(f); }} />
         </label>
-        <div style={{ marginTop: 12, fontSize: 13, color: SOFT_TEXT }}>Movie</div>
-        <label style={{ display: "block", marginTop: 6, background: movieFile ? "#22D464" : "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)", color: movieFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
-          {movieFile ? movieFile.name : "Select Movie"}
-          <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setMovieFile(f); }} />
-        </label>
+        <div style={{ marginTop: 12, fontSize: 13, color: SOFT_TEXT }}>Movie - Bunny Video ID</div>
+        <input value={bunnyId} onChange={(e) => setBunnyId(e.target.value)} placeholder="Paste Bunny Video ID or Embed Link" style={{ width: "100%", boxSizing: "border-box", marginTop: 6, ...GLASS_FIELD, color: "#fff", padding: 12, borderRadius: 10, outline: "none" }} />
+        <div style={{ fontSize: 11, color: SOFT_TEXT, marginTop: 6 }}>1. Upload movie to Bunny Stream first. 2. Copy Video ID or Embed Link. 3. Paste here.</div>
+        {bunnyId && <div style={{ fontSize: 11, color: "#A8FFC6", marginTop: 6, wordBreak: "break-all" }}>Will play from: {getBunnyEmbedUrl(extractBunnyId(bunnyId))}</div>}
         <button onClick={onUpload} disabled={!canUpload || uploading} style={{ width: "100%", marginTop: 16, background: canUpload && !uploading ? "#22D464" : "rgba(255,255,255,0.15)", color: canUpload && !uploading ? "#000" : "rgba(255,255,255,0.55)", border: "none", padding: 14, borderRadius: 10, fontWeight: 800, fontSize: 15 }}>
-          {uploading ? "Uploading to Supabase..." : "Upload"}
+          {uploading ? "Saving to EVA..." : "Upload"}
         </button>
       </div>
     </div>
@@ -131,7 +153,7 @@ export default function Discover() {
   const [upDesc, setUpDesc] = useState("");
   const [upPosterFile, setUpPosterFile] = useState(null);
   const [upTrailerFile, setUpTrailerFile] = useState(null);
-  const [upMovieFile, setUpMovieFile] = useState(null);
+  const [upBunnyId, setUpBunnyId] = useState("");
   const [upPosterPreview, setUpPosterPreview] = useState("");
   const [uploading, setUploading] = useState(false);
   const [loadingMovies, setLoadingMovies] = useState(true);
@@ -188,6 +210,7 @@ export default function Discover() {
         trailer: row.trailer_url,
         img: row.poster_url || "",
         section: row.section,
+        bunnyId: row.bunny_video_id || extractBunnyId(row.video_url || ""),
       }));
       setUploadedMovies(mapped);
       setLoadingMovies(false);
@@ -220,7 +243,7 @@ export default function Discover() {
     setUpDesc("");
     setUpPosterFile(null);
     setUpTrailerFile(null);
-    setUpMovieFile(null);
+    setUpBunnyId("");
     setUpPosterPreview("");
     setShowUpload(true);
   };
@@ -231,14 +254,14 @@ export default function Discover() {
     setUpDesc("");
     setUpPosterFile(null);
     setUpTrailerFile(null);
-    setUpMovieFile(null);
+    setUpBunnyId("");
     setUpPosterPreview("");
     setUploading(false);
   };
 
-  const canUpload = upTitle.trim() !== "" && upMovieFile !== null;
+  const canUpload = upTitle.trim() !== "" && extractBunnyId(upBunnyId).trim() !== "";
 
-  // DELETE FROM BOTH SIDES - TABLE + STORAGE
+  // DELETE FROM BOTH SIDES - TABLE + STORAGE (Poster/Trailer only, Bunny video stays in Bunny until you delete it there)
   const deleteMovie = async (id) => {
     const movie = uploadedMovies.find((m) => m.id === id);
     if (movie) {
@@ -246,7 +269,7 @@ export default function Discover() {
         if (!url || !url.includes("/movies/")) return null;
         return url.split("/movies/")[1];
       };
-      const filesToDelete = [movie.video, movie.trailer, movie.img].map(getFileName).filter(Boolean);
+      const filesToDelete = [movie.trailer, movie.img].map(getFileName).filter(Boolean);
       if (filesToDelete.length > 0) {
         await supabase.storage.from("movies").remove(filesToDelete);
       }
@@ -258,7 +281,7 @@ export default function Discover() {
     setShowTrailer(false);
   };
 
-  // UPLOAD TO SUPABASE - PERMANENT SAVE FOR ALL 5 FIELDS
+  // UPLOAD TO SUPABASE + BUNNY LINK - PERMANENT SAVE
   const doUpload = async () => {
     if (!canUpload || uploading) return;
     setUploading(true);
@@ -272,11 +295,12 @@ export default function Discover() {
         return data.publicUrl;
       };
 
-      const videoURL = await uploadFile(upMovieFile, "movie");
+      const cleanBunnyId = extractBunnyId(upBunnyId);
+      const videoURL = getBunnyEmbedUrl(cleanBunnyId);
       const trailerURL = upTrailerFile ? await uploadFile(upTrailerFile, "trailer") : null;
       const posterURL = upPosterFile ? await uploadFile(upPosterFile, "poster") : "";
 
-      const { data, error } = await supabase.from("movies").insert({
+      const insertData = {
         title: upTitle.trim(),
         description: upDesc.trim() || "Uploaded to " + uploadTarget,
         section: uploadTarget,
@@ -284,7 +308,15 @@ export default function Discover() {
         video_url: videoURL,
         trailer_url: trailerURL,
         poster_url: posterURL,
-      }).select().single();
+      };
+      let data, error;
+      const res1 = await supabase.from("movies").insert({ ...insertData, bunny_video_id: cleanBunnyId }).select().single();
+      if (res1.error && String(res1.error.message).includes("bunny_video_id")) {
+        const res2 = await supabase.from("movies").insert(insertData).select().single();
+        data = res2.data; error = res2.error;
+      } else {
+        data = res1.data; error = res1.error;
+      }
 
       if (error) throw error;
 
@@ -299,6 +331,7 @@ export default function Discover() {
         trailer: data.trailer_url,
         img: data.poster_url || "",
         section: data.section,
+        bunnyId: cleanBunnyId,
       };
       setUploadedMovies((prev) => [newMovie, ...prev]);
       closeUpload();
@@ -380,12 +413,18 @@ export default function Discover() {
     setPosterPreview: setUpPosterPreview,
     trailerFile: upTrailerFile,
     setTrailerFile: setUpTrailerFile,
-    movieFile: upMovieFile,
-    setMovieFile: setUpMovieFile,
+    bunnyId: upBunnyId,
+    setBunnyId: setUpBunnyId,
     onClose: closeUpload,
     onUpload: doUpload,
     canUpload: canUpload,
     uploading: uploading,
+  };
+  const BunnyPlayer = ({ movie }) => {
+    if (isBunnyVideo(movie.video)) {
+      return <iframe src={movie.video} title={movie.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ width: "100%", height: "100%", border: "none", background: "black" }} />;
+    }
+    return <video ref={videoRef} src={movie.video} controls autoPlay playsInline preload="auto" style={{ width: "100%", height: "100%", background: "black", objectFit: "contain", filter: `brightness(${bright})` }} />;
   };
   if (expandedCat) {
     const list = getCatMovies(expandedCat);
@@ -431,7 +470,7 @@ export default function Discover() {
           <div style={{ position: "fixed", inset: 0, background: "rgba(4,20,28,0.9)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", zIndex: 300, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px" }}><b>{playingMovie.title}</b><button onClick={() => setPlayingMovie(null)} style={{ ...GLASS, color: "white", borderRadius: 999, width: 36, height: 36 }}>✕</button></div>
             <div onTouchStart={onVideoTouchStart} onTouchMove={onVideoTouchMove} onTouchEnd={onVideoTouchEnd} style={{ position: "relative", flex: 1, display: "flex", alignItems: "center", background: "transparent" }}>
-              <video ref={videoRef} src={playingMovie.video} controls autoPlay playsInline style={{ width: "100%", height: "100%", background: "black", filter: `brightness(${bright})` }} />
+              <BunnyPlayer movie={playingMovie} />
               {gestureInfo && <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", ...GLASS_POP, padding: "14px 20px", borderRadius: 12, textAlign: "center", pointerEvents: "none" }}><div style={{ fontSize: 30 }}>{gestureInfo.icon}</div><div style={{ fontSize: 12, color: SOFT_TEXT, marginTop: 4 }}>{gestureInfo.label}</div><div style={{ fontSize: 18, fontWeight: 800 }}>{gestureInfo.value}</div></div>}
             </div>
             <div style={{ padding: 16 }}><div style={{ fontWeight: 800 }}>{playingMovie.title}</div><div style={{ fontSize: 13, color: SOFT_TEXT, marginTop: 4 }}>{playingMovie.cat}</div><button onClick={() => makeHero(playingMovie)} style={{ marginTop: 12, background: "#22D464", border: "none", padding: "10px 16px", borderRadius: 8, fontWeight: 800 }}>Make Featured (Admin Only)</button></div>
@@ -550,7 +589,7 @@ export default function Discover() {
             <button onClick={() => setPlayingMovie(null)} style={{ ...GLASS, color: "white", borderRadius: 999, width: 36, height: 36, fontSize: 18 }}>✕</button>
           </div>
           <div onTouchStart={onVideoTouchStart} onTouchMove={onVideoTouchMove} onTouchEnd={onVideoTouchEnd} style={{ position: "relative", flex: 1, display: "flex", alignItems: "center", background: "transparent" }}>
-            <video ref={videoRef} src={playingMovie.video} controls autoPlay playsInline preload="auto" style={{ width: "100%", height: "100%", background: "black", objectFit: "contain", filter: `brightness(${bright})` }} />
+            <BunnyPlayer movie={playingMovie} />
             {gestureInfo && <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", ...GLASS_POP, padding: "14px 20px", borderRadius: 12, textAlign: "center", pointerEvents: "none" }}><div style={{ fontSize: 30 }}>{gestureInfo.icon}</div><div style={{ fontSize: 12, color: SOFT_TEXT, marginTop: 4 }}>{gestureInfo.label}</div><div style={{ fontSize: 18, fontWeight: 800 }}>{gestureInfo.value}</div></div>}
           </div>
           <div style={{ padding: 16 }}>
