@@ -1,6 +1,12 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 // ===== WATER GLASS STYLE (Discover only) =====
 const WATER_BG = "radial-gradient(circle at 15% 8%, rgba(20,184,166,0.75) 0, transparent 45%), radial-gradient(circle at 90% 35%, rgba(37,99,235,0.65) 0, transparent 48%), radial-gradient(circle at 25% 95%, rgba(34,197,94,0.6) 0, transparent 52%), #06222b";
@@ -46,11 +52,25 @@ const OVERLAY = {
 };
 const SOFT_TEXT = "rgba(255,255,255,0.78)";
 
+// NO BOUNCE STYLE FOR HORIZONTAL ROWS - STAYS WHERE YOU LEFT IT
+const ROW_STYLE = {
+  display: "flex",
+  gap: 10,
+  overflowX: "auto",
+  overflowY: "hidden",
+  padding: "0 16px 4px",
+  overscrollBehaviorX: "contain",
+  overscrollBehaviorY: "none",
+  WebkitOverflowScrolling: "touch",
+  touchAction: "pan-x",
+  scrollBehavior: "auto",
+};
+
 const BgLayer = () => (
   <div style={{ position: "fixed", inset: 0, zIndex: -1, background: WATER_BG, pointerEvents: "none" }} />
 );
 
-function UploadModal({ open, target, title, setTitle, desc, setDesc, posterFile, setPosterFile, posterPreview, setPosterPreview, trailerFile, setTrailerFile, movieFile, setMovieFile, onClose, onUpload, canUpload }) {
+function UploadModal({ open, target, title, setTitle, desc, setDesc, posterFile, setPosterFile, posterPreview, setPosterPreview, trailerFile, setTrailerFile, movieFile, setMovieFile, onClose, onUpload, canUpload, uploading }) {
   if (!open) return null;
   return (
     <div style={{ position: "fixed", inset: 0, ...OVERLAY, zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -59,34 +79,28 @@ function UploadModal({ open, target, title, setTitle, desc, setDesc, posterFile,
           <b style={{ fontSize: 18 }}>Upload to {target}</b>
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: 999, width: 32, height: 32 }}>X</button>
         </div>
-
         <div style={{ marginTop: 14, fontSize: 13, color: SOFT_TEXT }}>Title</div>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" style={{ width: "100%", boxSizing: "border-box", marginTop: 6, ...GLASS_FIELD, color: "#fff", padding: 12, borderRadius: 10, outline: "none" }} />
-
         <div style={{ marginTop: 12, fontSize: 13, color: SOFT_TEXT }}>Description</div>
         <textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description" rows={3} style={{ width: "100%", boxSizing: "border-box", marginTop: 6, ...GLASS_FIELD, color: "#fff", padding: 12, borderRadius: 10, outline: "none" }} />
-
         <div style={{ marginTop: 12, fontSize: 13, color: SOFT_TEXT }}>Poster</div>
         <label style={{ display: "block", marginTop: 6, background: posterFile ? "#22D464" : "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)", color: posterFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
           {posterFile ? posterFile.name : "Select Poster"}
           <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) { setPosterFile(f); setPosterPreview(URL.createObjectURL(f)); } }} />
         </label>
         {posterPreview && <img src={posterPreview} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 10, marginTop: 8 }} />}
-
         <div style={{ marginTop: 12, fontSize: 13, color: SOFT_TEXT }}>Trailer</div>
         <label style={{ display: "block", marginTop: 6, background: trailerFile ? "#22D464" : "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)", color: trailerFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
           {trailerFile ? trailerFile.name : "Select Trailer"}
           <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setTrailerFile(f); }} />
         </label>
-
         <div style={{ marginTop: 12, fontSize: 13, color: SOFT_TEXT }}>Movie</div>
         <label style={{ display: "block", marginTop: 6, background: movieFile ? "#22D464" : "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)", color: movieFile ? "#000" : "#fff", textAlign: "center", padding: 12, borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
           {movieFile ? movieFile.name : "Select Movie"}
           <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) setMovieFile(f); }} />
         </label>
-
-        <button onClick={onUpload} disabled={!canUpload} style={{ width: "100%", marginTop: 16, background: canUpload ? "#22D464" : "rgba(255,255,255,0.15)", color: canUpload ? "#000" : "rgba(255,255,255,0.55)", border: "none", padding: 14, borderRadius: 10, fontWeight: 800, fontSize: 15 }}>
-          Upload
+        <button onClick={onUpload} disabled={!canUpload || uploading} style={{ width: "100%", marginTop: 16, background: canUpload && !uploading ? "#22D464" : "rgba(255,255,255,0.15)", color: canUpload && !uploading ? "#000" : "rgba(255,255,255,0.55)", border: "none", padding: 14, borderRadius: 10, fontWeight: 800, fontSize: 15 }}>
+          {uploading ? "Uploading to Supabase..." : "Upload"}
         </button>
       </div>
     </div>
@@ -105,18 +119,13 @@ export default function Discover() {
   const [hi, setHi] = useState(0);
   const [expandedCat, setExpandedCat] = useState(null);
   const touchX = useRef(0);
-
   const [showDetail, setShowDetail] = useState(null);
   const [showTrailer, setShowTrailer] = useState(false);
-
-  // Volume + Brightness gesture state
   const [vol, setVol] = useState(1);
   const [bright, setBright] = useState(1);
   const [gestureInfo, setGestureInfo] = useState(null);
   const gestureRef = useRef({ startY: 0, startVol: 1, startBright: 1, side: "right", active: false });
   const videoRef = useRef(null);
-
-  // Upload state
   const [showUpload, setShowUpload] = useState(false);
   const [uploadTarget, setUploadTarget] = useState("Trending");
   const [upTitle, setUpTitle] = useState("");
@@ -125,17 +134,16 @@ export default function Discover() {
   const [upTrailerFile, setUpTrailerFile] = useState(null);
   const [upMovieFile, setUpMovieFile] = useState(null);
   const [upPosterPreview, setUpPosterPreview] = useState("");
-
+  const [uploading, setUploading] = useState(false);
+  const [loadingMovies, setLoadingMovies] = useState(true);
   const CATS = ["Nollywood","Hollywood","Comedy","Action","Horror","Romance","Drama","Thriller","Animation","Family","Crime","Documentary"];
-
   const [heroList, setHeroList] = useState([
     { t: "LAGOS HEIST", d: "A rogue detective and undercover agent must pull off the city's boldest heist before dawn strikes. Loyalty. Cash. Chaos.", img: "https://images.unsplash.com/photo-1543794327-59a91fb815d1?w=900&q=80" },
     { t: "OYO CODE", d: "A hacker and a police officer must crack the code before the city shuts down. One code. One night.", img: "https://images.unsplash.com/photo-1543794327-59a91fb815d1?w=900&q=80" },
     { t: "MOTHERLAND", d: "She left Lagos for London. Now she must return home to save her family. Home is calling.", img: "https://images.unsplash.com/photo-1543794327-59a91fb815d1?w=900&q=80" },
     { t: "WARRI BLOODLINE", d: "Two brothers. One throne. Warri will never be the same again.", img: "https://images.unsplash.com/photo-1543794327-59a91fb815d1?w=900&q=80" },
   ]);
-
-  useEffect(() => {
+    useEffect(() => {
     if (showUpload) return;
     const id = setInterval(() => setHi((p) => (p + 1) % heroList.length), 4000);
     return () => clearInterval(id);
@@ -160,8 +168,35 @@ export default function Discover() {
     return () => clearTimeout(t);
   }, [gestureInfo]);
 
-  const baseMovies = [];
+  // LOAD MOVIES FROM SUPABASE - PERMANENT
+  useEffect(() => {
+    const loadMovies = async () => {
+      setLoadingMovies(true);
+      const { data, error } = await supabase.from("movies").select("*").order("created_at", { ascending: false });
+      if (error) {
+        console.log("Load error:", error);
+        setLoadingMovies(false);
+        return;
+      }
+      const mapped = (data || []).map((row) => ({
+        id: row.id,
+        title: row.title,
+        cat: row.category || "My Upload • " + row.section,
+        year: "2026",
+        dur: "Uploaded Video",
+        desc: row.description || "",
+        video: row.video_url,
+        trailer: row.trailer_url,
+        img: row.poster_url || "",
+        section: row.section,
+      }));
+      setUploadedMovies(mapped);
+      setLoadingMovies(false);
+    };
+    loadMovies();
+  }, []);
 
+  const baseMovies = [];
   const allMovies = [...uploadedMovies, ...baseMovies];
   const trendingMovies = [...uploadedMovies.filter((m) => m.section === "Trending"), ...baseMovies];
   const getCatMovies = (c) => uploadedMovies.filter((m) => m.section === c);
@@ -169,15 +204,7 @@ export default function Discover() {
   const isSearching = showSearch && search.trim() !== "";
   const featured = allMovies[0];
   const savedList = allMovies.filter((m) => myWatchlist.includes(m.id));
-
   const isAdmin = true;
-
-  const deleteMovie = (id) => {
-    setUploadedMovies((prev) => prev.filter((m) => m.id !== id));
-    setMyWatchlist((prev) => prev.filter((x) => x !== id));
-    setShowDetail(null);
-    setShowTrailer(false);
-  };
 
   const toggleWatchlist = (id) => {
     if (myWatchlist.includes(id)) setMyWatchlist(myWatchlist.filter((x) => x !== id));
@@ -207,51 +234,79 @@ export default function Discover() {
     setUpTrailerFile(null);
     setUpMovieFile(null);
     setUpPosterPreview("");
+    setUploading(false);
   };
 
   const canUpload = upTitle.trim() !== "" && upMovieFile !== null;
 
-  const doUpload = () => {
-    if (!canUpload) return;
-    const videoURL = URL.createObjectURL(upMovieFile);
-    const trailerURL = upTrailerFile ? URL.createObjectURL(upTrailerFile) : null;
-    const posterURL = upPosterFile ? URL.createObjectURL(upPosterFile) : "";
+  // DELETE FROM BOTH SIDES - TABLE + STORAGE
+  const deleteMovie = async (id) => {
+    const movie = uploadedMovies.find((m) => m.id === id);
+    if (movie) {
+      const getFileName = (url) => {
+        if (!url || !url.includes("/movies/")) return null;
+        return url.split("/movies/")[1];
+      };
+      const filesToDelete = [movie.video, movie.trailer, movie.img].map(getFileName).filter(Boolean);
+      if (filesToDelete.length > 0) {
+        await supabase.storage.from("movies").remove(filesToDelete);
+      }
+    }
+    await supabase.from("movies").delete().eq("id", id);
+    setUploadedMovies((prev) => prev.filter((m) => m.id !== id));
+    setMyWatchlist((prev) => prev.filter((x) => x !== id));
+    setShowDetail(null);
+    setShowTrailer(false);
+  };
 
-    const finishSave = (finalPoster) => {
-      const newMovie = {
-        id: Date.now(),
+  // UPLOAD TO SUPABASE - PERMANENT SAVE FOR ALL 5 FIELDS
+  const doUpload = async () => {
+    if (!canUpload || uploading) return;
+    setUploading(true);
+    try {
+      const uploadFile = async (file, prefix) => {
+        const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+        const fileName = `${prefix}_${Date.now()}_${cleanName}`;
+        const { error } = await supabase.storage.from("movies").upload(fileName, file);
+        if (error) throw error;
+        const { data } = supabase.storage.from("movies").getPublicUrl(fileName);
+        return data.publicUrl;
+      };
+
+      const videoURL = await uploadFile(upMovieFile, "movie");
+      const trailerURL = upTrailerFile ? await uploadFile(upTrailerFile, "trailer") : null;
+      const posterURL = upPosterFile ? await uploadFile(upPosterFile, "poster") : "";
+
+      const { data, error } = await supabase.from("movies").insert({
         title: upTitle.trim(),
-        cat: "My Upload • " + uploadTarget,
+        description: upDesc.trim() || "Uploaded to " + uploadTarget,
+        section: uploadTarget,
+        category: "My Upload • " + uploadTarget,
+        video_url: videoURL,
+        trailer_url: trailerURL,
+        poster_url: posterURL,
+      }).select().single();
+
+      if (error) throw error;
+
+      const newMovie = {
+        id: data.id,
+        title: data.title,
+        cat: data.category,
         year: "2026",
         dur: "Uploaded Video",
-        desc: upDesc.trim() || "Uploaded to " + uploadTarget,
-        video: videoURL,
-        trailer: trailerURL,
-        img: finalPoster || "",
-        section: uploadTarget
+        desc: data.description,
+        video: data.video_url,
+        trailer: data.trailer_url,
+        img: data.poster_url || "",
+        section: data.section,
       };
       setUploadedMovies((prev) => [newMovie, ...prev]);
       closeUpload();
-    };
-
-    if (posterURL) {
-      finishSave(posterURL);
-      return;
+    } catch (e) {
+      alert("Upload failed: " + (e.message || "Unknown error"));
+      setUploading(false);
     }
-    try {
-      const vid = document.createElement("video");
-      vid.src = videoURL; vid.muted = true; vid.playsInline = true; vid.currentTime = 1;
-      vid.onseeked = () => {
-        try {
-          const canvas = document.createElement("canvas");
-          canvas.width = vid.videoWidth || 300; canvas.height = vid.videoHeight || 450;
-          const ctx = canvas.getContext("2d"); ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
-          finishSave(canvas.toDataURL("image/jpeg", 0.7));
-        } catch { finishSave(""); }
-      };
-      vid.onerror = () => finishSave("");
-      setTimeout(() => finishSave(""), 2000);
-    } catch { finishSave(""); }
   };
 
   const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; };
@@ -260,8 +315,6 @@ export default function Discover() {
     if (dx < -50) setHi((p) => (p + 1) % heroList.length);
     if (dx > 50) setHi((p) => (p - 1 + heroList.length) % heroList.length);
   };
-
-  // Gesture handlers for full player - right = volume, left = brightness
   const onVideoTouchStart = (e) => {
     const touch = e.touches[0];
     const rect = e.currentTarget.getBoundingClientRect();
@@ -284,32 +337,30 @@ export default function Discover() {
     }
   };
   const onVideoTouchEnd = () => { gestureRef.current.active = false; };
-      const EmptySlot = ({ section }) => (
+
+  const EmptySlot = ({ section }) => (
     <div onClick={() => openUploadFor(section)} style={{ minWidth: 110, height: 165, ...GLASS, border: "1px dashed rgba(255,255,255,0.4)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
       <div style={{ width: 42, height: 42, background: "#22c55e", borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900, color: "white" }}>+</div>
     </div>
   );
-
   const MoreSlot = ({ section }) => (
     <div onClick={() => setExpandedCat(section)} style={{ minWidth: 110, height: 165, ...GLASS, borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", flexShrink: 0 }}>
       <div style={{ fontSize: 22, fontWeight: 800 }}>→</div>
       <div style={{ fontSize: 12, fontWeight: 700 }}>More</div>
     </div>
   );
-
   const MovieCard = ({ m }) => (
     <div onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ minWidth: 110, height: 165, ...GLASS, borderRadius: 12, overflow: "hidden", position: "relative", cursor: "pointer", flexShrink: 0 }}>
       {m.img ? <img src={m.img} alt={m.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6 }}><span style={{ fontSize: 28 }}>🎬</span><span style={{ fontSize: 11, padding: "0 8px", textAlign: "center" }}>{m.title}</span></div>}
     </div>
   );
-
   const CatRow = ({ cat }) => {
     const list = getCatMovies(cat);
     const slotsNeeded = Math.max(0, 9 - list.length);
     return (
       <div>
         <h3 style={{ padding: "20px 16px 10px", margin: 0 }}>{cat} Picks</h3>
-        <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "0 16px" }}>
+        <div style={{ ...ROW_STYLE }}>
           {list.slice(0, 9).map((m) => <MovieCard key={m.id} m={m} />)}
           {Array.from({ length: slotsNeeded }).map((_, i) => <EmptySlot key={i} section={cat} />)}
           <MoreSlot section={cat} />
@@ -317,7 +368,6 @@ export default function Discover() {
       </div>
     );
   };
-
   const uploadProps = {
     open: showUpload,
     target: uploadTarget,
@@ -336,11 +386,12 @@ export default function Discover() {
     onClose: closeUpload,
     onUpload: doUpload,
     canUpload: canUpload,
+    uploading: uploading,
   };
   if (expandedCat) {
     const list = getCatMovies(expandedCat);
     return (
-      <div style={{ background: "#06222b", position: "relative", zIndex: 0, color: "white", minHeight: "100vh", paddingBottom: 120, fontFamily: "system-ui" }}>
+      <div style={{ background: "#06222b", position: "relative", zIndex: 0, color: "white", minHeight: "100vh", paddingBottom: 120, fontFamily: "system-ui", overscrollBehavior: "contain" }}>
         <BgLayer />
         <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={() => setExpandedCat(null)} style={{ ...GLASS, color: "white", borderRadius: 999, width: 36, height: 36 }}>←</button>
@@ -350,9 +401,7 @@ export default function Discover() {
           {list.map((m) => <div key={m.id} onClick={() => { setShowDetail(m); setShowTrailer(false); }} style={{ height: 165, borderRadius: 12, overflow: "hidden", background: m.img ? `url(${m.img}) center/cover` : "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)", display: "flex", alignItems: "flex-end", padding: 8 }}></div>)}
           {Array.from({ length: 9 }).map((_, i) => <div key={"e"+i} onClick={() => openUploadFor(expandedCat)} style={{ height: 165, borderRadius: 12, ...GLASS, border: "1px dashed rgba(255,255,255,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 42, height: 42, background: "#22c55e", borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900 }}>+</div></div>)}
         </div>
-
         <UploadModal {...uploadProps} />
-
         {showDetail && (
           <div style={{ position: "fixed", inset: 0, ...OVERLAY, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
             <div style={{ ...GLASS_POP, width: "100%", maxWidth: 480, borderRadius: 14, overflow: "hidden", position: "relative" }}>
@@ -379,7 +428,6 @@ export default function Discover() {
             </div>
           </div>
         )}
-
         {playingMovie && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(4,20,28,0.9)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", zIndex: 300, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px" }}><b>{playingMovie.title}</b><button onClick={() => setPlayingMovie(null)} style={{ ...GLASS, color: "white", borderRadius: 999, width: 36, height: 36 }}>✕</button></div>
@@ -394,7 +442,7 @@ export default function Discover() {
     );
   }
   return (
-    <div style={{ background: "#06222b", position: "relative", zIndex: 0, color: "white", minHeight: "100vh", paddingBottom: 120, fontFamily: "system-ui", overflowX: "hidden" }}>
+    <div style={{ background: "#06222b", position: "relative", zIndex: 0, color: "white", minHeight: "100vh", paddingBottom: 120, fontFamily: "system-ui", overflowX: "hidden", overscrollBehavior: "contain" }}>
       <BgLayer />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px 8px", position: "sticky", top: 0, ...GLASS_TOP, zIndex: 10 }}>
         <h1 style={{ color: "#22c55e", fontSize: 38, fontWeight: 900, margin: 0, letterSpacing: -2, whiteSpace: "nowrap" }}>✦ EVA <span style={{ fontSize: 14, color: "#A8FFC6", verticalAlign: "top" }}>✦</span></h1>
@@ -414,6 +462,7 @@ export default function Discover() {
           </div>
         </div>
       )}
+      {loadingMovies && <div style={{ textAlign: "center", padding: 20, color: SOFT_TEXT }}>Loading movies from Supabase...</div>}
       {isSearching ? (
         <div style={{ padding: "10px 16px" }}>
           <div style={{ fontSize: 13, color: SOFT_TEXT, marginBottom: 12 }}>Results for “{search}” — {filtered.length} found</div>
@@ -445,7 +494,7 @@ export default function Discover() {
         </div>
       ) : (
         <>
-          <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{ margin: "4px 12px 0", borderRadius: 16, overflow: "hidden", ...GLASS_BLUR }}>
+          <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{ margin: "4px 12px 0", borderRadius: 16, overflow: "hidden", ...GLASS_BLUR, overscrollBehavior: "contain" }}>
             <div style={{ height: 280, background: `linear-gradient(180deg, transparent 30%, rgba(4,28,36,.7) 75%, rgba(4,28,36,.92) 100%), url('${heroList[hi].img}') center/cover`, position: "relative" }}>
               <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "0 12px 12px", textAlign: "center" }}>
                 <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 0.95, wordBreak: "break-word" }}>{heroList[hi].t}</div>
@@ -459,17 +508,15 @@ export default function Discover() {
             <div style={{ display: "flex", justifyContent: "center", gap: 6, margin: "10px 0 8px" }}>{heroList.map((_, i) => <span key={i} onClick={() => setHi(i)} style={{ width: i === hi ? 7 : 6, height: i === hi ? 7 : 6, borderRadius: 50, background: i === hi ? "#22D464" : "rgba(255,255,255,0.45)", cursor: "pointer" }} />)}</div>
           </div>
           <h3 style={{ padding: "20px 16px 10px", margin: 0 }}>Trending Now in Nigeria</h3>
-          <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "0 16px" }}>
-            {trendingMovies.map((m) => <MovieCard key={m.id} m={m} />)}
-            <EmptySlot section="Trending" />
+          <div style={{ ...ROW_STYLE }}>
+            {trendingMovies.slice(0, 9).map((m) => <MovieCard key={m.id} m={m} />)}
+            {Array.from({ length: Math.max(0, 9 - trendingMovies.length) }).map((_, i) => <EmptySlot key={i} section="Trending" />)}
             <MoreSlot section="Trending" />
           </div>
           {CATS.map((c) => <CatRow key={c} cat={c} />)}
         </>
       )}
-
       <UploadModal {...uploadProps} />
-
       {showDetail && !expandedCat && (
         <div style={{ position: "fixed", inset: 0, ...OVERLAY, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...GLASS_POP, width: "100%", maxWidth: 480, borderRadius: 14, overflow: "hidden", position: "relative" }}>
@@ -497,7 +544,6 @@ export default function Discover() {
           </div>
         </div>
       )}
-
       {playingMovie && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(4,20,28,0.9)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", zIndex: 100, display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
