@@ -494,7 +494,7 @@ export default function Discover() {
         </div>
       ) : (
         <>
-          <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{ margin: "4px 12px 0", borderRadius: 16, overflow: "hidden", ...GLASS_BLUR, overscrollBehavior: "contain" }}>
+          <div style={{ margin: "4px 12px 0", borderRadius: 16, overflow: "hidden", ...GLASS_BLUR, overscrollBehavior: "contain" }}>
             <div style={{ height: 280, background: `linear-gradient(180deg, transparent 30%, rgba(4,28,36,.7) 75%, rgba(4,28,36,.92) 100%), url('${heroList[hi].img}') center/cover`, position: "relative" }}>
               <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "0 12px 12px", textAlign: "center" }}>
                 <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 0.95, wordBreak: "break-word" }}>{heroList[hi].t}</div>
