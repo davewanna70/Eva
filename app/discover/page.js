@@ -60,7 +60,6 @@ const ROW_STYLE = {
   overflowY: "hidden",
   padding: "0 16px 4px",
   overscrollBehaviorX: "contain",
-
   WebkitOverflowScrolling: "touch",
   touchAction: "pan-x pan-y",
   scrollBehavior: "auto",
@@ -391,7 +390,7 @@ export default function Discover() {
   if (expandedCat) {
     const list = getCatMovies(expandedCat);
     return (
-      <div style={{ background: "#06222b", position: "relative", zIndex: 0, color: "white", minHeight: "100vh", paddingBottom: 120, fontFamily: "system-ui", overscrollBehavior: "contain" }}>
+      <div style={{ background: "#06222b", position: "relative", zIndex: 0, color: "white", minHeight: "100dvh", height: "100dvh", overflowY: "auto", overflowX: "hidden", paddingBottom: 120, fontFamily: "system-ui", WebkitOverflowScrolling: "touch" }}>
         <BgLayer />
         <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={() => setExpandedCat(null)} style={{ ...GLASS, color: "white", borderRadius: 999, width: 36, height: 36 }}>←</button>
@@ -442,7 +441,7 @@ export default function Discover() {
     );
   }
   return (
-    <div style={{ background: "#06222b", position: "relative", zIndex: 0, color: "white", minHeight: "100vh", paddingBottom: 120, fontFamily: "system-ui", overflowX: "hidden", overscrollBehavior: "contain" }}>
+    <div style={{ background: "#06222b", position: "relative", zIndex: 0, color: "white", minHeight: "100dvh", height: "100dvh", overflowY: "auto", overflowX: "hidden", paddingBottom: 120, fontFamily: "system-ui", WebkitOverflowScrolling: "touch" }}>
       <BgLayer />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px 8px", position: "sticky", top: 0, ...GLASS_TOP, zIndex: 10 }}>
         <h1 style={{ color: "#22c55e", fontSize: 38, fontWeight: 900, margin: 0, letterSpacing: -2, whiteSpace: "nowrap" }}>✦ EVA <span style={{ fontSize: 14, color: "#A8FFC6", verticalAlign: "top" }}>✦</span></h1>
@@ -494,7 +493,7 @@ export default function Discover() {
         </div>
       ) : (
         <>
-          <div style={{ margin: "4px 12px 0", borderRadius: 16, overflow: "hidden", ...GLASS_BLUR, overscrollBehavior: "contain" }}>
+          <div style={{ margin: "4px 12px 0", borderRadius: 16, overflow: "hidden", ...GLASS_BLUR }}>
             <div style={{ height: 280, background: `linear-gradient(180deg, transparent 30%, rgba(4,28,36,.7) 75%, rgba(4,28,36,.92) 100%), url('${heroList[hi].img}') center/cover`, position: "relative" }}>
               <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "0 12px 12px", textAlign: "center" }}>
                 <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 0.95, wordBreak: "break-word" }}>{heroList[hi].t}</div>
@@ -567,7 +566,7 @@ export default function Discover() {
         <button onClick={() => router.push("/")} style={{ background: "none", border: "none", color: "#22c55e", fontSize: 12 }}>🏠<br />Home</button>
         <button style={{ background: "none", border: "none", color: "white", fontSize: 12 }}>✨<br />Discover</button>
         <button onClick={() => openUploadFor("Trending")} style={{ background: "#22c55e", border: "none", color: "white", width: 48, height: 48, borderRadius: 999, fontSize: 24, marginTop: -22 }}>+</button>
-        <button style={{ background: "none", border: "none", color: SOFT_TEXT, fontSize: 12 }}>🎬<br />Short</button>
+        <button style={{ background: "none", border: "none", color: "SOFT_TEXT", fontSize: 12 }}>🎬<br />Short</button>
         <button style={{ background: "none", border: "none", color: SOFT_TEXT, fontSize: 12 }}>👤<br />Me</button>
       </div>
     </div>
