@@ -62,7 +62,7 @@ const ROW_STYLE = {
   overscrollBehaviorX: "contain",
   overscrollBehaviorY: "none",
   WebkitOverflowScrolling: "touch",
-  touchAction: "pan-x",
+  touchAction: "pan-x pan-y",
   scrollBehavior: "auto",
 };
 
