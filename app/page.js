@@ -164,7 +164,7 @@ export default function Page(){
       </div>}
       {!showVoiceBar && !showEmoji && !keyboardOpen && <div style={{display:"flex",justifyContent:"space-between",marginTop:8}}>
         <button onClick={()=>router.push("/discover")} style={{background:"rgba(40,40,60,.8)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:999,padding:"10px 22px",fontSize:15}}>✨ Discover</button>
-        <button onClick={()=>{const el=listRef.current; if(el) el.scrollTop=el.scrollHeight; inputRef.current?.focus();}} style={{background:"rgba(40,40,60,.8)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:999,padding:"10px 22px",fontSize:15}}>💬 Chat</button>
+        <button onClick={()=>router.push("/chat/")} style={{background:"rgba(40,40,60,.8)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:999,padding:"10px 22px",fontSize:15}}>💬 Chat</button>
       </div>}
     </div>
     </form>
