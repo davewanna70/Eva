@@ -205,6 +205,7 @@ export default function ChatPage() {
         .fullAction.plus{background:linear-gradient(90deg,#ff2f6d,#8a2be2);color:#fff;font-weight:700}
         .plusMenu{background:#0e1230;border:1px solid #23284f;border-radius:16px;padding:10px;width:210px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
         .plusMenu button{display:block;width:100%;background:#171c46;border:0;color:#fff;padding:12px;border-radius:10px;font-size:15px;margin-bottom:8px;text-align:left}
+        .sideBtn{background:#171c46;border:1px solid #2a2f5c;color:#fff;border-radius:20px;padding:7px 11px;font-size:12px;cursor:pointer;white-space:nowrap}
       `}</style>
 
       {!openChat && <header style={{ padding: '16px 18px', fontSize: 22, fontWeight: 700, background: '#080b1c' }}>EVA Chat</header>}
@@ -263,36 +264,50 @@ export default function ChatPage() {
         </nav>
       )}
 
-      {/* FULL VIEW - Tap droplet */}
+      {/* FULL VIEW - Tap droplet - WHATSAPP SIZE WINDOW, NOT FULLSCREEN */}
       {fullView && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.92)', zIndex: 50, display: 'flex', flexDirection: 'column' }} onClick={closeFull}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '16px 16px 0' }} onClick={e => e.stopPropagation()}>
-            <button className="fullTopBtn" onClick={(e) => { e.stopPropagation(); setShowPlusMenu(!showPlusMenu) }}>+</button>
-            <button className="fullTopBtn" onClick={(e) => { e.stopPropagation(); setFullMuted(!fullMuted) }}>{fullMuted ? '🔇' : '🔊'}</button>
-          </div>
-          {showPlusMenu && (
-            <div style={{ padding: '10px 16px 0' }} onClick={e => e.stopPropagation()}>
-              <div className="plusMenu">
-                <button onClick={() => { if (me.type === 'live') return showToast('Remove live sticker first'); photoRef.current?.click(); setShowPlusMenu(false) }}>🖼️ Add photo</button>
-                <button onClick={() => { setMe({ type: 'none' }); setShowPlusMenu(false); setFullView(null); showToast('Photo removed') }}>🗑️ Remove photo</button>
-                <button onClick={() => { setShowPlusMenu(false); setOverlay('upload') }}>⬆️ Upload Live</button>
-                <button onClick={() => { setShowPlusMenu(false); startRecord() }}>🎬 Record</button>
-              </div>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={closeFull}>
+          <div style={{ width: 340, maxWidth: '100%', background: '#0e1230', border: '1px solid #23284f', borderRadius: 22, padding: '16px 12px 14px', position: 'relative', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.6)' }} onClick={e => e.stopPropagation()}>
+
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{fullView.name}</div>
+
+            {/* DROPLET INSIDE ONLY - A LITTLE BIGGER: 180 instead of 280 / 150. Window stays 340 */}
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <div style={{ width: 180 }}><Droplet o={{ ...fullView, ring: 'none' }} w={180} muted={fullMuted} /></div>
             </div>
-          )}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }} onClick={e => e.stopPropagation()}>
-            <div style={{ width: 280 }}><Droplet o={{ ...fullView, ring: 'none' }} w={280} muted={true} /></div>
-            <div style={{ fontWeight: 700, fontSize: 18 }}>{fullView.name}</div>
-            <div className="small">{fullView.type === 'live' ? 'Live sticker (7 sec loop)' : fullView.type === 'photo' ? 'Photo profile' : ''} {fullView.type === 'live' ? (fullMuted ? '• Muted - tap 🔇 for sound' : '• Sound ON') : ''}</div>
+
+            {/* LEFT SIDE - Add photo + Remove ONLY - same features, only position changed */}
+            <div style={{ position: 'absolute', left: 10, top: 70, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+              <button className="sideBtn" onClick={(e) => { e.stopPropagation(); if (me.type === 'live' && isMeFull) return showToast('Remove live sticker first'); photoRef.current?.click(); }}>🖼️ Add photo</button>
+              <button className="sideBtn" onClick={(e) => { e.stopPropagation(); setMe({ type: 'none' }); setFullView(null); showToast('Photo removed') }}>🗑️ Remove</button>
+            </div>
+
+            {/* RIGHT SIDE - Mute ALONE - not together with the other 2. Off by default */}
+            <div style={{ position: 'absolute', right: 10, top: 70 }}>
+              <button className="sideBtn" onClick={(e) => { e.stopPropagation(); setFullMuted(!fullMuted) }}>{fullMuted ? '🔇 Mute' : '🔊 Sound'}</button>
+            </div>
+
+            <div className="small" style={{ marginTop: 10 }}>{fullView.type === 'live' ? 'Live sticker (7 sec loop)' : fullView.type === 'photo' ? 'Photo profile' : ''} {fullView.type === 'live' ? (fullMuted ? ' • Muted - tap 🔇 for sound' : ' • Sound ON') : ''}</div>
             {fullView.type === 'live' && fullView.src && <video ref={fullVideoRef} src={fullView.src} muted={fullMuted} playsInline autoPlay style={{ display: 'none' }} />}
-          </div>
-          <div style={{ padding: '0 16px 18px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 11, color: '#8a8fb0', textAlign: 'center', marginBottom: 10 }}>Tap anywhere outside = Close</div>
-            <div className="icons" style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 320, margin: '0 auto' }}>
-              <button className="fullAction" onClick={() => { closeFull(); if (fullView.name === 'You') showToast('This is you'); else setOpenChat(fullView as Chat) }}>💬</button>
-              <button className="fullAction" onClick={() => showToast('Voice call ' + fullView.name)}>📞</button>
-              <button className="fullAction plus" onClick={() => setShowPlusMenu(!showPlusMenu)}>+</button>
-              <button className="fullAction" onClick={() => showToast('Video call ' + fullView.name)}>🎥</button>
+
+            {/* Plus menu - now only Upload / Record, Add/Remove don move to left side */}
+            {showPlusMenu && (
+              <div style={{ padding: '10px 0 0', display: 'flex', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
+                <div className="plusMenu">
+                  <button onClick={() => { setShowPlusMenu(false); setOverlay('upload') }}>⬆️ Upload Live</button>
+                  <button onClick={() => { setShowPlusMenu(false); startRecord() }}>🎬 Record</button>
+                </div>
+              </div>
+            )}
+
+            <div style={{ padding: '12px 4px 4px' }} onClick={e => e.stopPropagation()}>
+              <div style={{ fontSize: 11, color: '#8a8fb0', textAlign: 'center', marginBottom: 10 }}>Tap anywhere outside = Close</div>
+              <div className="icons" style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 320, margin: '0 auto' }}>
+                <button className="fullAction" onClick={() => { closeFull(); if (fullView.name === 'You') showToast('This is you'); else setOpenChat(fullView as Chat) }}>💬</button>
+                <button className="fullAction" onClick={() => showToast('Voice call ' + fullView.name)}>📞</button>
+                <button className="fullAction plus" onClick={() => setShowPlusMenu(!showPlusMenu)}>+</button>
+                <button className="fullAction" onClick={() => showToast('Video call ' + fullView.name)}>🎥</button>
+              </div>
             </div>
           </div>
         </div>
