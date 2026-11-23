@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EVA Chat</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="top">EVA Chat</header>
+<main id="screen"></main>
+
+<nav id="nav">
+  <button data-tab="chat" class="on"><span>💬</span>Chat</button>
+  <button data-tab="check"><span>✔</span>Check</button>
+  <button data-tab="call"><span>📞</span>Call</button>
+</nav>
+
+<div id="overlay" class="hidden"></div>
+<div id="toast" class="hidden"></div>
+<input type="file" id="galleryInput" accept="video/*" hidden>
+<input type="file" id="photoInput" accept="image/*" hidden>
+
+<script src="script.js"></script>
+</body>
+</html>
