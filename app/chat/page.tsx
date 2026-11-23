@@ -18,14 +18,15 @@ const STICKERS = [
   { name: 'Pawpaw', src: 'stickers/pawpaw.mp4', e: '🐶' },
 ]
 
-let uid = 0
-function Droplet({ o, w = 46, onClick }: { o: Chat | Me & { name?: string; ring?: string }; w?: number; onClick?: (e: any) => void }) {
-  const n = ++uid
-  // use stable id per render - we use useRef style id via n, for React we need unique per instance, this is ok for static list
-  const ring = (o as any).ring === 'new' ? 'ring-unwatched' : (o as any).ring === 'seen' ? 'ring-watched' : ''
-  const type = (o as any).type || 'none'
-  const src = (o as any).src
-  const start = (o as any).start || 0
+let uidCounter = 0
+function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onClick?: (e: any) => void; muted?: boolean }) {
+  const idRef = useRef(0)
+  if (idRef.current === 0) { uidCounter += 1; idRef.current = uidCounter }
+  const n = idRef.current
+  const ring = o.ring === 'new' ? 'ring-unwatched' : o.ring === 'seen' ? 'ring-watched' : ''
+  const type = o.type || 'none'
+  const src = o.src
+  const start = o.start || 0
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
@@ -45,6 +46,11 @@ function Droplet({ o, w = 46, onClick }: { o: Chat | Me & { name?: string; ring?
     return () => { cancelAnimationFrame(raf); v.removeEventListener('loadedmetadata', onMeta) }
   }, [src, type, start])
 
+  useEffect(() => {
+    const v = videoRef.current
+    if (v) v.muted = muted
+  }, [muted])
+
   return (
     <span style={{ display: 'block', width: w }} onClick={onClick}>
       <svg className="drop" viewBox="-6 -4 112 218" style={{ width: '100%', display: 'block', overflow: 'visible' }}>
@@ -53,13 +59,13 @@ function Droplet({ o, w = 46, onClick }: { o: Chat | Me & { name?: string; ring?
           <radialGradient id={`gl${n}`} cx=".4" cy=".6" r=".7"><stop offset="0" stopColor="#6aa0ff" stopOpacity=".06" /><stop offset=".75" stopColor="#143070" stopOpacity=".10" /><stop offset="1" stopColor="#9fd0ff" stopOpacity=".40" /></radialGradient>
           <clipPath id={`c${n}`}><path d={P} /></clipPath>
         </defs>
-        {ring && <path className={ring} d={P} fill="none" strokeWidth={(o as any).ring === 'new' ? 4.5 : 3} stroke={ (o as any).ring === 'new' ? `url(#rg${n})` : undefined} style={ring === 'ring-unwatched' ? { filter: 'drop-shadow(0 0 5px #ff2f6d) drop-shadow(0 0 10px #8a2be2)' } : ring === 'ring-watched' ? { stroke: '#7a5560', opacity: .55 } : {}} />}
+        {ring && <path d={P} fill="none" strokeWidth={o.ring === 'new' ? 4.5 : 3} stroke={o.ring === 'new' ? `url(#rg${n})` : '#7a5560'} opacity={o.ring === 'seen' ? .55 : 1} style={o.ring === 'new' ? { filter: 'drop-shadow(0 0 5px #ff2f6d) drop-shadow(0 0 10px #8a2be2)' } : {}} />}
         <g transform={T}>
           <g clipPath={`url(#c${n})`}>
             {type === 'photo' && src && <image href={src} x={0} y={0} width={100} height={210} preserveAspectRatio="xMidYMid slice" />}
             {type === 'live' && src && (
               <foreignObject x="0" y="0" width="100" height="210">
-                <video ref={videoRef} muted playsInline autoPlay src={src} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <video ref={videoRef} muted={muted} playsInline autoPlay src={src} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               </foreignObject>
             )}
             {type === 'none' && <rect x="0" y="0" width="100" height="210" fill="#1a1f4a" />}
@@ -83,22 +89,71 @@ export default function ChatPage() {
   const [openChat, setOpenChat] = useState<Chat | null>(null)
   const [toast, setToast] = useState('')
   const [trimUrl, setTrimUrl] = useState(''); const [trimDur, setTrimDur] = useState(0); const [trimStart, setTrimStart] = useState(0)
+  const [fullView, setFullView] = useState<any | null>(null)
+  const [fullMuted, setFullMuted] = useState(true)
+  const [showPlusMenu, setShowPlusMenu] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [recordUrl, setRecordUrl] = useState('')
   const galleryRef = useRef<HTMLInputElement>(null); const photoRef = useRef<HTMLInputElement>(null)
+  const fullVideoRef = useRef<HTMLVideoElement>(null)
+
   const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(''), 2200) }
-  const close = () => setOverlay(null)
-  const setLive = (src: string, start: number) => { setMe({ type: 'live', src, start }); close(); setTab('chat'); showToast('Live sticker set ✔') }
+  const close = () => { setOverlay(null); setShowPlusMenu(false) }
+  const setLive = (src: string, start: number) => { setMe({ type: 'live', src, start }); close(); setTab('chat'); setFullView(null); showToast('Live sticker set ✔') }
+
+  // Full view 7 sec loop + mute control
+  useEffect(() => {
+    const v = fullVideoRef.current
+    if (!v || !fullView || fullView.type !== 'live') return
+    let raf = 0
+    const start = fullView.start || 0
+    const go = () => {
+      if (!v.isConnected) return
+      const end = Math.min(start + 7, v.duration || start + 7)
+      if (v.currentTime >= end - 0.04 || v.currentTime < start - 0.1) v.currentTime = start
+      if (v.paused) v.play().catch(() => {})
+      raf = requestAnimationFrame(go)
+    }
+    const onMeta = () => { v.currentTime = start }
+    v.addEventListener('loadedmetadata', onMeta)
+    raf = requestAnimationFrame(go)
+    return () => { cancelAnimationFrame(raf); v.removeEventListener('loadedmetadata', onMeta) }
+  }, [fullView])
+
+  useEffect(() => { if (fullVideoRef.current) fullVideoRef.current.muted = fullMuted }, [fullMuted, fullView])
+
+  const openFull = (obj: any) => { setFullView(obj); setFullMuted(true); setShowPlusMenu(false); setOverlay(null) }
+  const closeFull = () => { setFullView(null); setFullMuted(true); setShowPlusMenu(false) }
 
   const handleGallery = (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
     const url = URL.createObjectURL(f)
     const t = document.createElement('video'); t.src = url; t.preload = 'metadata'
-    t.onloadedmetadata = () => { if (t.duration <= 7.05) setLive(url, 0); else { setTrimUrl(url); setTrimDur(t.duration); setTrimStart(0); setOverlay('trim') } }
+    t.onloadedmetadata = () => { if (t.duration <= 7.05) setLive(url, 0); else { setTrimUrl(url); setTrimDur(t.duration); setTrimStart(0); setOverlay('trim'); setFullView(null) } }
     e.target.value = ''
   }
   const handlePhoto = (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
-    setMe({ type: 'photo', src: URL.createObjectURL(f) }); e.target.value = ''
+    setMe({ type: 'photo', src: URL.createObjectURL(f) }); e.target.value = ''; setFullView(null); showToast('Photo set ✔')
   }
+
+  const startRecord = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
+      const chunks: Blob[] = []
+      const mr = new MediaRecorder(stream)
+      mr.ondataavailable = e => chunks.push(e.data)
+      mr.onstop = () => {
+        const url = URL.createObjectURL(new Blob(chunks, { type: mr.mimeType }))
+        setRecordUrl(url); stream.getTracks().forEach(t => t.stop())
+      }
+      mr.start(); setRecording(true)
+      setTimeout(() => { mr.stop(); setRecording(false) }, 7000)
+      setOverlay('record')
+    } catch { showToast('Camera not allowed') }
+  }
+
+  const isMeFull = fullView && fullView.isMe
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial' }}>
@@ -111,9 +166,6 @@ export default function ChatPage() {
         #nav button.on{color:#ff3b6b}
         .drop{display:block;overflow:visible;background:none}
         .hero{display:flex;flex-direction:column;align-items:center;padding:14px 0 6px}
-        .hero-btns{display:flex;gap:10px;margin-top:8px}
-        .hero-btns button{background:#14183a;color:#cfd3ff;border:1px solid #2a2f5c;border-radius:20px;padding:7px 14px;font-size:13px}
-        .hero-label{font-size:12px;color:#8a8fb0;margin-top:6px}
         .row{display:flex;align-items:center;gap:14px;padding:10px 18px}
         .row .info{flex:1;min-width:0;cursor:pointer}
         .row .name{font-weight:600;font-size:16px}
@@ -148,6 +200,11 @@ export default function ChatPage() {
         .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#0b0e24}
         .bar input{flex:1;background:#171c46;border:0;border-radius:22px;padding:11px 14px;color:#fff;font-size:15px}
         .bar button{background:none;border:0;font-size:22px;color:#cfd3ff}
+        .fullTopBtn{width:44px;height:44px;border-radius:50%;background:rgba(20,24,58,.85);border:1px solid #2a2f5c;color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+        .fullAction{width:56px;height:56px;border-radius:50%;background:#171c46;border:0;color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+        .fullAction.plus{background:linear-gradient(90deg,#ff2f6d,#8a2be2);color:#fff;font-weight:700}
+        .plusMenu{background:#0e1230;border:1px solid #23284f;border-radius:16px;padding:10px;width:210px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+        .plusMenu button{display:block;width:100%;background:#171c46;border:0;color:#fff;padding:12px;border-radius:10px;font-size:15px;margin-bottom:8px;text-align:left}
       `}</style>
 
       {!openChat && <header style={{ padding: '16px 18px', fontSize: 22, fontWeight: 700, background: '#080b1c' }}>EVA Chat</header>}
@@ -169,16 +226,11 @@ export default function ChatPage() {
         ) : tab === 'chat' ? (
           <>
             <div className="hero">
-              <div style={{ width: 150 }}><Droplet o={{ ...me, name: 'You', ring: 'none' } as any} w={150} onClick={() => { setSelected({ name: 'You', msg: '', time: '', ring: 'none', type: me.type, src: me.src } as any); setOverlay('popup') }} /></div>
-              <div className="hero-label">{me.type === 'none' ? 'Empty droplet' : me.type === 'photo' ? 'Photo profile (stays still)' : 'Live sticker (7 sec loop)'}</div>
-              <div className="hero-btns">
-                <button onClick={() => { if (me.type === 'live') return showToast('Remove live sticker first'); photoRef.current?.click() }}>Add photo</button>
-                <button onClick={() => setMe({ type: 'none' })}>Remove</button>
-              </div>
+              <div style={{ width: 150 }}><Droplet o={{ ...me, name: 'You', ring: 'none' }} w={150} onClick={() => openFull({ ...me, name: 'You', isMe: true })} /></div>
             </div>
             {chats.map((c, i) => (
               <div key={i} className="row">
-                <Droplet o={c} w={46} onClick={(e) => { e.stopPropagation(); setSelected(c); setOverlay('popup') }} />
+                <Droplet o={c} w={46} onClick={(e) => { e.stopPropagation(); openFull({ ...c, isMe: false }) }} />
                 <div className="info" onClick={() => setOpenChat(c)}><div className="name">{c.name}</div><div className="sub">{c.msg}</div></div>
                 <div className="time">{c.time}</div>
               </div>
@@ -211,29 +263,42 @@ export default function ChatPage() {
         </nav>
       )}
 
-      {overlay === 'popup' && selected && (
-        <div id="overlay" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
-          <div className="popup">
-            <div style={{ display: 'flex', justifyContent: 'center' }}><Droplet o={{ ...selected, ring: 'none' }} w={90} /></div>
-            <div className="pname">{selected.name}</div>
-            <div className="icons">
-              <button onClick={() => { close(); if (selected.name === 'You') showToast('This is you'); else setOpenChat(selected as Chat) }}>💬</button>
-              <button onClick={() => { close(); showToast('Voice call ' + selected.name) }}>📞</button>
-              <button className="plus" onClick={() => setOverlay('plus')}>＋</button>
-              <button onClick={() => { close(); showToast('Video call ' + selected.name) }}>🎥</button>
+      {/* FULL VIEW - Tap droplet */}
+      {fullView && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.92)', zIndex: 50, display: 'flex', flexDirection: 'column' }} onClick={closeFull}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '16px 16px 0' }} onClick={e => e.stopPropagation()}>
+            <button className="fullTopBtn" onClick={(e) => { e.stopPropagation(); setShowPlusMenu(!showPlusMenu) }}>+</button>
+            <button className="fullTopBtn" onClick={(e) => { e.stopPropagation(); setFullMuted(!fullMuted) }}>{fullMuted ? '🔇' : '🔊'}</button>
+          </div>
+          {showPlusMenu && (
+            <div style={{ padding: '10px 16px 0' }} onClick={e => e.stopPropagation()}>
+              <div className="plusMenu">
+                <button onClick={() => { if (me.type === 'live') return showToast('Remove live sticker first'); photoRef.current?.click(); setShowPlusMenu(false) }}>🖼️ Add photo</button>
+                <button onClick={() => { setMe({ type: 'none' }); setShowPlusMenu(false); setFullView(null); showToast('Photo removed') }}>🗑️ Remove photo</button>
+                <button onClick={() => { setShowPlusMenu(false); setOverlay('upload') }}>⬆️ Upload Live</button>
+                <button onClick={() => { setShowPlusMenu(false); startRecord() }}>🎬 Record</button>
+              </div>
+            </div>
+          )}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: 280 }}><Droplet o={{ ...fullView, ring: 'none' }} w={280} muted={true} /></div>
+            <div style={{ fontWeight: 700, fontSize: 18 }}>{fullView.name}</div>
+            <div className="small">{fullView.type === 'live' ? 'Live sticker (7 sec loop)' : fullView.type === 'photo' ? 'Photo profile' : ''} {fullView.type === 'live' ? (fullMuted ? '• Muted - tap 🔇 for sound' : '• Sound ON') : ''}</div>
+            {fullView.type === 'live' && fullView.src && <video ref={fullVideoRef} src={fullView.src} muted={fullMuted} playsInline autoPlay style={{ display: 'none' }} />}
+          </div>
+          <div style={{ padding: '0 16px 18px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 11, color: '#8a8fb0', textAlign: 'center', marginBottom: 10 }}>Tap anywhere outside = Close</div>
+            <div className="icons" style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 320, margin: '0 auto' }}>
+              <button className="fullAction" onClick={() => { closeFull(); if (fullView.name === 'You') showToast('This is you'); else setOpenChat(fullView as Chat) }}>💬</button>
+              <button className="fullAction" onClick={() => showToast('Voice call ' + fullView.name)}>📞</button>
+              <button className="fullAction plus" onClick={() => setShowPlusMenu(!showPlusMenu)}>+</button>
+              <button className="fullAction" onClick={() => showToast('Video call ' + fullView.name)}>🎥</button>
             </div>
           </div>
         </div>
       )}
 
-      {overlay === 'plus' && (
-        <div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
-          <div className="sheetbox"><h3>EVA Live Profile</h3>
-            <button className="big" onClick={() => setOverlay('upload')}>⬆️ Upload</button>
-            <button className="big" onClick={() => showToast('Record coming - use Upload for now')}>🎬 Record</button>
-          </div>
-        </div>
-      )}
+      {/* OLD POPUP REMOVED - Full view replaces it, but keep upload sheets */}
       {overlay === 'upload' && (
         <div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
           <div className="sheetbox"><h3>Upload</h3>
@@ -263,6 +328,16 @@ export default function ChatPage() {
             <div className="small">00:{String(Math.floor(trimStart)).padStart(2, '0')} - 00:{String(Math.floor(trimStart + 7)).padStart(2, '0')}</div>
             <input className="range" type="range" min="0" max={Math.max(0, trimDur - 7)} step="0.1" value={trimStart} onChange={e => setTrimStart(+e.target.value)} />
             <button className="big pri" onClick={() => setLive(trimUrl, trimStart)}>Upload</button>
+          </div>
+        </div>
+      )}
+      {overlay === 'record' && (
+        <div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
+          <div className="sheetbox"><h3>Record (max 7 sec)</h3>
+            <p className="small">{recording ? 'Recording… 7 sec' : recordUrl ? 'Done (7 sec)' : 'Recording...'}</p>
+            {recordUrl && <video className="vid" muted playsInline autoPlay loop src={recordUrl} />}
+            {recordUrl && <button className="big pri" onClick={() => setLive(recordUrl, 0)}>Upload</button>}
+            <button className="big" onClick={close}>Cancel</button>
           </div>
         </div>
       )}
