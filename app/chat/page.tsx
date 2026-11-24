@@ -230,22 +230,19 @@ export default function ChatPage() {
 
       {!openChat && !searching && (
         <header style={{ padding: '14px 16px 10px', background: '#080b1c' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>EVA Chat</div>
-            <div style={{ display: 'flex', gap: 16, fontSize: 20 }}><span>📷</span><span>⋮</span></div>
-          </div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>EVA Chat</div>
           <div className="waSearchBar" style={{ marginTop: 12 }} onClick={() => setSearching(true)}>
-            <span>🔍</span><span>Ask Meta AI or Search</span>
+            <span>🔍</span><span>Search</span>
           </div>
         </header>
       )}
 
-      {/* SEARCH - WhatsApp style: back arrow INSIDE the bar, left, no X */}
+      {/* SEARCH - back arrow INSIDE the bar, left, no X, no Meta AI */}
       {!openChat && searching && (
         <header style={{ padding: '12px 12px 10px', background: '#080b1c' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#1a1f4a', borderRadius: 22, padding: '6px 6px 6px 2px' }}>
             <button onClick={closeSearch} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22, padding: '6px 8px', cursor: 'pointer' }}>←</button>
-            <input ref={searchInputRef} value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Ask Meta AI or Search" style={{ flex: 1, background: 'none', border: 0, outline: 'none', color: '#fff', fontSize: 15, padding: '6px 6px 6px 0' }} />
+            <input ref={searchInputRef} value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Search" style={{ flex: 1, background: 'none', border: 0, outline: 'none', color: '#fff', fontSize: 15, padding: '6px 6px 6px 0' }} />
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
             <button className={`waChip ${searchFilter === 'all' ? 'on' : ''}`} onClick={() => setSearchFilter('all')}>All</button>
