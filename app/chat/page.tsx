@@ -134,7 +134,11 @@ export default function ChatPage() {
   }
   const handlePhoto = (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
-    setMe({ type: 'photo', src: URL.createObjectURL(f) }); e.target.value = ''; setFullView(null); showToast('Photo set ✔')
+    const url = URL.createObjectURL(f)
+    setMe({ type: 'photo', src: url }); e.target.value = ''
+    // Keep popup open so you see the photo in the same big droplet
+    if (fullView && fullView.isMe) setFullView({ ...fullView, type: 'photo', src: url })
+    showToast('Photo set ✔')
   }
 
   const startRecord = async () => {
@@ -264,35 +268,34 @@ export default function ChatPage() {
         </nav>
       )}
 
-      {/* FULL VIEW - Tap droplet - WHATSAPP SIZE WINDOW, NOT FULLSCREEN */}
+      {/* FULL VIEW - WhatsApp size, fixed - droplet stays big 180 */}
       {fullView && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={closeFull}>
-          <div style={{ width: 340, maxWidth: '100%', background: '#0e1230', border: '1px solid #23284f', borderRadius: 22, padding: '16px 12px 14px', position: 'relative', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.6)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ width: 340, maxWidth: '100%', height: 460, maxHeight: '88dvh', background: '#0e1230', border: '1px solid #23284f', borderRadius: 22, position: 'relative', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.6)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
 
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{fullView.name}</div>
+            {/* You / Name - floating on top, shows whose profile this is */}
+            <div style={{ position: 'absolute', top: 12, left: 0, right: 0, fontWeight: 700, fontSize: 15, zIndex: 3 }}>{fullView.name}</div>
 
-            {/* DROPLET INSIDE ONLY - A LITTLE BIGGER: 180 instead of 280 / 150. Window stays 340 */}
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <div style={{ width: 180 }}><Droplet o={{ ...fullView, ring: 'none' }} w={180} muted={fullMuted} /></div>
-            </div>
-
-            {/* LEFT SIDE - Add photo + Remove ONLY - same features, only position changed */}
-            <div style={{ position: 'absolute', left: 10, top: 70, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+            {/* LEFT - Add photo + Remove */}
+            <div style={{ position: 'absolute', left: 10, top: 52, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start', zIndex: 3 }}>
               <button className="sideBtn" onClick={(e) => { e.stopPropagation(); if (me.type === 'live' && isMeFull) return showToast('Remove live sticker first'); photoRef.current?.click(); }}>🖼️ Add photo</button>
-              <button className="sideBtn" onClick={(e) => { e.stopPropagation(); setMe({ type: 'none' }); setFullView(null); showToast('Photo removed') }}>🗑️ Remove</button>
+              <button className="sideBtn" onClick={(e) => { e.stopPropagation(); setMe({ type: 'none' }); if (isMeFull) setFullView({ ...fullView, type: 'none', src: undefined }); showToast('Photo removed') }}>🗑️ Remove</button>
             </div>
 
-            {/* RIGHT SIDE - Mute ALONE - not together with the other 2. Off by default */}
-            <div style={{ position: 'absolute', right: 10, top: 70 }}>
+            {/* RIGHT - Mute ALONE */}
+            <div style={{ position: 'absolute', right: 10, top: 52, zIndex: 3 }}>
               <button className="sideBtn" onClick={(e) => { e.stopPropagation(); setFullMuted(!fullMuted) }}>{fullMuted ? '🔇 Mute' : '🔊 Sound'}</button>
             </div>
 
-            <div className="small" style={{ marginTop: 10 }}>{fullView.type === 'live' ? 'Live sticker (7 sec loop)' : fullView.type === 'photo' ? 'Photo profile' : ''} {fullView.type === 'live' ? (fullMuted ? ' • Muted - tap 🔇 for sound' : ' • Sound ON') : ''}</div>
+            {/* DROPLET - SAME BIG SIZE 180, centered, does not push window bigger */}
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 180 }}><Droplet o={{ ...fullView, ring: 'none' }} w={180} muted={fullMuted} /></div>
+            </div>
             {fullView.type === 'live' && fullView.src && <video ref={fullVideoRef} src={fullView.src} muted={fullMuted} playsInline autoPlay style={{ display: 'none' }} />}
 
-            {/* Plus menu - now only Upload / Record, Add/Remove don move to left side */}
+            {/* Plus menu - Upload / Record - floating above bottom buttons, does not grow window */}
             {showPlusMenu && (
-              <div style={{ padding: '10px 0 0', display: 'flex', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
+              <div style={{ position: 'absolute', left: 0, right: 0, bottom: 82, display: 'flex', justifyContent: 'center', zIndex: 4 }} onClick={e => e.stopPropagation()}>
                 <div className="plusMenu">
                   <button onClick={() => { setShowPlusMenu(false); setOverlay('upload') }}>⬆️ Upload Live</button>
                   <button onClick={() => { setShowPlusMenu(false); startRecord() }}>🎬 Record</button>
@@ -300,8 +303,8 @@ export default function ChatPage() {
               </div>
             )}
 
-            <div style={{ padding: '12px 4px 4px' }} onClick={e => e.stopPropagation()}>
-              <div style={{ fontSize: 11, color: '#8a8fb0', textAlign: 'center', marginBottom: 10 }}>Tap anywhere outside = Close</div>
+            {/* BOTTOM - floating */}
+            <div style={{ position: 'absolute', left: 12, right: 12, bottom: 12, zIndex: 3 }} onClick={e => e.stopPropagation()}>
               <div className="icons" style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 320, margin: '0 auto' }}>
                 <button className="fullAction" onClick={() => { closeFull(); if (fullView.name === 'You') showToast('This is you'); else setOpenChat(fullView as Chat) }}>💬</button>
                 <button className="fullAction" onClick={() => showToast('Voice call ' + fullView.name)}>📞</button>
@@ -313,7 +316,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* OLD POPUP REMOVED - Full view replaces it, but keep upload sheets */}
+      {/* Upload sheets - Plus flow unchanged */}
       {overlay === 'upload' && (
         <div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
           <div className="sheetbox"><h3>Upload</h3>
