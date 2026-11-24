@@ -87,6 +87,11 @@ export default function ChatPage() {
   const [overlay, setOverlay] = useState<string | null>(null)
   const [selected, setSelected] = useState<Chat | null>(null)
   const [openChat, setOpenChat] = useState<Chat | null>(null)
+  const [openSelf, setOpenSelf] = useState(false)
+  const [selfMsgs, setSelfMsgs] = useState<{ text: string; time: string }[]>([
+    { text: 'This is your space. Save notes, links, code, anything here.', time: '11:38' },
+  ])
+  const [selfInput, setSelfInput] = useState('')
   const [toast, setToast] = useState('')
   const [trimUrl, setTrimUrl] = useState(''); const [trimDur, setTrimDur] = useState(0); const [trimStart, setTrimStart] = useState(0)
   const [fullView, setFullView] = useState<any | null>(null)
@@ -131,6 +136,13 @@ export default function ChatPage() {
   const closeFull = () => { setFullView(null); setFullMuted(true); setShowPlusMenu(false) }
   const closeSearch = () => { setSearching(false); setSearchText(''); setSearchFilter('all') }
 
+  const sendSelf = () => {
+    const t = selfInput.trim(); if (!t) return
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    setSelfMsgs(prev => [...prev, { text: t, time }])
+    setSelfInput('')
+  }
+
   const handleGallery = (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
     const url = URL.createObjectURL(f)
@@ -171,8 +183,8 @@ export default function ChatPage() {
     if (!q) return true
     return c.name.toLowerCase().includes(q) || c.msg.toLowerCase().includes(q) || c.time.toLowerCase().includes(q)
   })
-  // Show You row in search too if e match "you" or no search text
   const showYouRow = !searching || !q || 'you'.includes(q) || 'my profile'.includes(q)
+  const selfLast = selfMsgs[selfMsgs.length - 1]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial' }}>
@@ -229,7 +241,7 @@ export default function ChatPage() {
         .waChip.on{background:#ff2f6d;border-color:#ff2f6d;color:#fff}
       `}</style>
 
-      {!openChat && !searching && (
+      {!openChat && !openSelf && !searching && (
         <header style={{ padding: '14px 16px 10px', background: '#080b1c' }}>
           <div style={{ fontSize: 22, fontWeight: 700 }}>EVA Chat</div>
           <div className="waSearchBar" style={{ marginTop: 12 }} onClick={() => setSearching(true)}>
@@ -238,7 +250,7 @@ export default function ChatPage() {
         </header>
       )}
 
-      {!openChat && searching && (
+      {!openChat && !openSelf && searching && (
         <header style={{ padding: '12px 12px 10px', background: '#080b1c' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#1a1f4a', borderRadius: 22, padding: '6px 6px 6px 2px' }}>
             <button onClick={closeSearch} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22, padding: '6px 8px', cursor: 'pointer' }}>←</button>
@@ -254,7 +266,26 @@ export default function ChatPage() {
       )}
 
       <main id="screen" style={{ flex: 1, overflowY: 'auto' }}>
-        {openChat ? (
+        {openSelf ? (
+          <>
+            <div className="chathead">
+              <button className="back" onClick={() => setOpenSelf(false)}>←</button>
+              <Droplet o={{ ...me, ring: 'none' }} w={36} onClick={() => openFull({ ...me, name: 'You', isMe: true })} />
+              <div><b>You</b><div style={{ fontSize: 12, color: '#8a8fb0' }}>Message yourself</div></div>
+            </div>
+            <div className="msgs">
+              {selfMsgs.map((m, i) => (
+                <div key={i} className="b out">{m.text}<small>{m.time} ✓✓</small></div>
+              ))}
+            </div>
+            <div className="bar">
+              <button>😊</button>
+              <input placeholder="Message yourself..." value={selfInput} onChange={e => setSelfInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendSelf() }} />
+              <button>📎</button><button>📷</button>
+              <button onClick={sendSelf} style={{ color: '#ff3b6b' }}>➤</button>
+            </div>
+          </>
+        ) : openChat ? (
           <>
             <div className="chathead">
               <button className="back" onClick={() => setOpenChat(null)}>←</button>
@@ -270,12 +301,12 @@ export default function ChatPage() {
           </>
         ) : tab === 'chat' ? (
           <>
-            {/* YOU - like WhatsApp "My Glo Second Line (You)" - small row, not big hero */}
+            {/* YOU - droplet = profile, name/msg = your own chat like WhatsApp */}
             {showYouRow && (
-              <div className="row" onClick={() => openFull({ ...me, name: 'You', isMe: true })}>
+              <div className="row">
                 <Droplet o={{ ...me, ring: 'none' }} w={46} onClick={(e) => { e.stopPropagation(); openFull({ ...me, name: 'You', isMe: true }) }} />
-                <div className="info"><div className="name">You</div><div className="sub">{me.type === 'none' ? 'Tap to add your profile' : me.type === 'photo' ? 'Your photo' : 'Your live sticker'}</div></div>
-                <div className="time">You</div>
+                <div className="info" onClick={() => { closeSearch(); setOpenSelf(true) }}><div className="name">You</div><div className="sub">{selfLast ? selfLast.text : 'Message yourself'}</div></div>
+                <div className="time">{selfLast ? selfLast.time : 'You'}</div>
               </div>
             )}
             {searching && (q || searchFilter !== 'all') && (
@@ -315,7 +346,7 @@ export default function ChatPage() {
         )}
       </main>
 
-      {!openChat && (
+      {!openChat && !openSelf && (
         <nav id="nav">
           <button className={tab === 'chat' ? 'on' : ''} onClick={() => { setTab('chat'); closeSearch() }}><span>💬</span>Chat</button>
           <button className={tab === 'check' ? 'on' : ''} onClick={() => { setTab('check'); closeSearch() }}><span>✔</span>Check</button>
@@ -348,7 +379,7 @@ export default function ChatPage() {
             )}
             <div style={{ position: 'absolute', left: 12, right: 12, bottom: 10, zIndex: 3 }} onClick={e => e.stopPropagation()}>
               <div className="icons" style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 320, margin: '0 auto' }}>
-                <button className="fullAction" onClick={() => { closeFull(); if (fullView.name === 'You') showToast('This is you'); else setOpenChat(fullView as Chat) }}>💬</button>
+                <button className="fullAction" onClick={() => { closeFull(); if (fullView.name === 'You') setOpenSelf(true); else setOpenChat(fullView as Chat) }}>💬</button>
                 <button className="fullAction" onClick={() => showToast('Voice call ' + fullView.name)}>📞</button>
                 <button className="fullAction plus" onClick={() => setShowPlusMenu(!showPlusMenu)}>+</button>
                 <button className="fullAction" onClick={() => showToast('Video call ' + fullView.name)}>🎥</button>
