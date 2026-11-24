@@ -243,7 +243,7 @@ export default function ChatPage() {
 
       {!openChat && !openSelf && !searching && (
         <header style={{ padding: '14px 16px 10px', background: '#080b1c' }}>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>EVA Chat</div>
+          <div style={{ fontSize: 22, fontWeight: 700, textAlign: 'right' }}>EVA Chat</div>
           <div className="waSearchBar" style={{ marginTop: 12 }} onClick={() => setSearching(true)}>
             <span>🔍</span><span>Search</span>
           </div>
@@ -301,7 +301,6 @@ export default function ChatPage() {
           </>
         ) : tab === 'chat' ? (
           <>
-            {/* YOU - droplet = profile, name/msg = your own chat like WhatsApp */}
             {showYouRow && (
               <div className="row">
                 <Droplet o={{ ...me, ring: 'none' }} w={46} onClick={(e) => { e.stopPropagation(); openFull({ ...me, name: 'You', isMe: true }) }} />
