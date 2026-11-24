@@ -171,6 +171,8 @@ export default function ChatPage() {
     if (!q) return true
     return c.name.toLowerCase().includes(q) || c.msg.toLowerCase().includes(q) || c.time.toLowerCase().includes(q)
   })
+  // Show You row in search too if e match "you" or no search text
+  const showYouRow = !searching || !q || 'you'.includes(q) || 'my profile'.includes(q)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial' }}>
@@ -182,7 +184,6 @@ export default function ChatPage() {
         #nav button span{display:block;font-size:22px}
         #nav button.on{color:#ff3b6b}
         .drop{display:block;overflow:visible;background:none}
-        .hero{display:flex;flex-direction:column;align-items:center;padding:14px 0 6px}
         .row{display:flex;align-items:center;gap:14px;padding:10px 18px}
         .row .info{flex:1;min-width:0;cursor:pointer}
         .row .name{font-weight:600;font-size:16px}
@@ -237,7 +238,6 @@ export default function ChatPage() {
         </header>
       )}
 
-      {/* SEARCH - back arrow INSIDE the bar, left, no X, no Meta AI */}
       {!openChat && searching && (
         <header style={{ padding: '12px 12px 10px', background: '#080b1c' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#1a1f4a', borderRadius: 22, padding: '6px 6px 6px 2px' }}>
@@ -270,13 +270,16 @@ export default function ChatPage() {
           </>
         ) : tab === 'chat' ? (
           <>
-            {!searching && (
-              <div className="hero">
-                <div style={{ width: 150 }}><Droplet o={{ ...me, name: 'You', ring: 'none' }} w={150} onClick={() => openFull({ ...me, name: 'You', isMe: true })} /></div>
+            {/* YOU - like WhatsApp "My Glo Second Line (You)" - small row, not big hero */}
+            {showYouRow && (
+              <div className="row" onClick={() => openFull({ ...me, name: 'You', isMe: true })}>
+                <Droplet o={{ ...me, ring: 'none' }} w={46} onClick={(e) => { e.stopPropagation(); openFull({ ...me, name: 'You', isMe: true }) }} />
+                <div className="info"><div className="name">You</div><div className="sub">{me.type === 'none' ? 'Tap to add your profile' : me.type === 'photo' ? 'Your photo' : 'Your live sticker'}</div></div>
+                <div className="time">You</div>
               </div>
             )}
             {searching && (q || searchFilter !== 'all') && (
-              <div className="section">{filteredChats.length} result{filteredChats.length === 1 ? '' : 's'} for “{searchText || searchFilter}”</div>
+              <div className="section">{filteredChats.length} result{filteredChats.length === 1 ? '' : 's'}</div>
             )}
             {filteredChats.map((c, i) => (
               <div key={i} className="row">
@@ -285,7 +288,7 @@ export default function ChatPage() {
                 <div className="time">{c.time}</div>
               </div>
             ))}
-            {searching && filteredChats.length === 0 && (
+            {searching && !showYouRow && filteredChats.length === 0 && (
               <div style={{ textAlign: 'center', padding: '40px 20px', color: '#8a8fb0' }}>
                 <div style={{ fontSize: 40, marginBottom: 10 }}>🔍</div>
                 <b style={{ color: '#fff' }}>No results found</b>
