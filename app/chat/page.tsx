@@ -97,6 +97,11 @@ export default function ChatPage() {
   const galleryRef = useRef<HTMLInputElement>(null); const photoRef = useRef<HTMLInputElement>(null)
   const fullVideoRef = useRef<HTMLVideoElement>(null)
 
+  const [searching, setSearching] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [searchFilter, setSearchFilter] = useState<'all' | 'unread' | 'photo' | 'live'>('all')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
   const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(''), 2200) }
   const close = () => { setOverlay(null); setShowPlusMenu(false) }
   const setLive = (src: string, start: number) => { setMe({ type: 'live', src, start }); close(); setTab('chat'); setFullView(null); showToast('Live sticker set ✔') }
@@ -120,9 +125,11 @@ export default function ChatPage() {
   }, [fullView])
 
   useEffect(() => { if (fullVideoRef.current) fullVideoRef.current.muted = fullMuted }, [fullMuted, fullView])
+  useEffect(() => { if (searching) setTimeout(() => searchInputRef.current?.focus(), 50) }, [searching])
 
   const openFull = (obj: any) => { setFullView(obj); setFullMuted(true); setShowPlusMenu(false); setOverlay(null) }
   const closeFull = () => { setFullView(null); setFullMuted(true); setShowPlusMenu(false) }
+  const closeSearch = () => { setSearching(false); setSearchText(''); setSearchFilter('all') }
 
   const handleGallery = (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
@@ -156,6 +163,14 @@ export default function ChatPage() {
   }
 
   const isMeFull = fullView && fullView.isMe
+  const q = searchText.trim().toLowerCase()
+  const filteredChats = chats.filter(c => {
+    if (searchFilter === 'unread' && c.ring !== 'new') return false
+    if (searchFilter === 'photo' && c.type !== 'photo') return false
+    if (searchFilter === 'live' && c.type !== 'live') return false
+    if (!q) return true
+    return c.name.toLowerCase().includes(q) || c.msg.toLowerCase().includes(q) || c.time.toLowerCase().includes(q)
+  })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial' }}>
@@ -208,9 +223,39 @@ export default function ChatPage() {
         .plusMenu{background:#0e1230;border:1px solid #23284f;border-radius:16px;padding:10px;width:210px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
         .plusMenu button{display:block;width:100%;background:#171c46;border:0;color:#fff;padding:12px;border-radius:10px;font-size:15px;margin-bottom:8px;text-align:left}
         .sideBtn{background:#171c46;border:1px solid #2a2f5c;color:#fff;border-radius:20px;padding:7px 11px;font-size:12px;cursor:pointer;white-space:nowrap}
+        .waSearchBar{display:flex;align-items:center;gap:10px;background:#1a1f4a;border-radius:22px;padding:11px 14px;color:#8a8fb0;font-size:15px;cursor:text}
+        .waChip{background:#1a1f4a;border:1px solid #2a2f5c;color:#cfd3ff;border-radius:20px;padding:7px 12px;font-size:13px;white-space:nowrap;cursor:pointer}
+        .waChip.on{background:#ff2f6d;border-color:#ff2f6d;color:#fff}
       `}</style>
 
-      {!openChat && <header style={{ padding: '16px 18px', fontSize: 22, fontWeight: 700, background: '#080b1c' }}>EVA Chat</header>}
+      {!openChat && !searching && (
+        <header style={{ padding: '14px 16px 10px', background: '#080b1c' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>EVA Chat</div>
+            <div style={{ display: 'flex', gap: 16, fontSize: 20 }}><span>📷</span><span>⋮</span></div>
+          </div>
+          <div className="waSearchBar" style={{ marginTop: 12 }} onClick={() => setSearching(true)}>
+            <span>🔍</span><span>Ask Meta AI or Search</span>
+          </div>
+        </header>
+      )}
+
+      {/* SEARCH - WhatsApp style: back arrow INSIDE the bar, left, no X */}
+      {!openChat && searching && (
+        <header style={{ padding: '12px 12px 10px', background: '#080b1c' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#1a1f4a', borderRadius: 22, padding: '6px 6px 6px 2px' }}>
+            <button onClick={closeSearch} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22, padding: '6px 8px', cursor: 'pointer' }}>←</button>
+            <input ref={searchInputRef} value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Ask Meta AI or Search" style={{ flex: 1, background: 'none', border: 0, outline: 'none', color: '#fff', fontSize: 15, padding: '6px 6px 6px 0' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
+            <button className={`waChip ${searchFilter === 'all' ? 'on' : ''}`} onClick={() => setSearchFilter('all')}>All</button>
+            <button className={`waChip ${searchFilter === 'unread' ? 'on' : ''}`} onClick={() => setSearchFilter('unread')}>☑ Unread</button>
+            <button className={`waChip ${searchFilter === 'photo' ? 'on' : ''}`} onClick={() => setSearchFilter('photo')}>🖼️ Photos</button>
+            <button className={`waChip ${searchFilter === 'live' ? 'on' : ''}`} onClick={() => setSearchFilter('live')}>🎬 Videos</button>
+          </div>
+        </header>
+      )}
+
       <main id="screen" style={{ flex: 1, overflowY: 'auto' }}>
         {openChat ? (
           <>
@@ -228,16 +273,28 @@ export default function ChatPage() {
           </>
         ) : tab === 'chat' ? (
           <>
-            <div className="hero">
-              <div style={{ width: 150 }}><Droplet o={{ ...me, name: 'You', ring: 'none' }} w={150} onClick={() => openFull({ ...me, name: 'You', isMe: true })} /></div>
-            </div>
-            {chats.map((c, i) => (
+            {!searching && (
+              <div className="hero">
+                <div style={{ width: 150 }}><Droplet o={{ ...me, name: 'You', ring: 'none' }} w={150} onClick={() => openFull({ ...me, name: 'You', isMe: true })} /></div>
+              </div>
+            )}
+            {searching && (q || searchFilter !== 'all') && (
+              <div className="section">{filteredChats.length} result{filteredChats.length === 1 ? '' : 's'} for “{searchText || searchFilter}”</div>
+            )}
+            {filteredChats.map((c, i) => (
               <div key={i} className="row">
                 <Droplet o={c} w={46} onClick={(e) => { e.stopPropagation(); openFull({ ...c, isMe: false }) }} />
-                <div className="info" onClick={() => setOpenChat(c)}><div className="name">{c.name}</div><div className="sub">{c.msg}</div></div>
+                <div className="info" onClick={() => { closeSearch(); setOpenChat(c) }}><div className="name">{c.name}</div><div className="sub">{c.msg}</div></div>
                 <div className="time">{c.time}</div>
               </div>
             ))}
+            {searching && filteredChats.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#8a8fb0' }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🔍</div>
+                <b style={{ color: '#fff' }}>No results found</b>
+                <div style={{ fontSize: 13, marginTop: 6 }}>Try a different name or message</div>
+              </div>
+            )}
           </>
         ) : tab === 'check' ? (
           <>
@@ -260,33 +317,27 @@ export default function ChatPage() {
 
       {!openChat && (
         <nav id="nav">
-          <button className={tab === 'chat' ? 'on' : ''} onClick={() => setTab('chat')}><span>💬</span>Chat</button>
-          <button className={tab === 'check' ? 'on' : ''} onClick={() => setTab('check')}><span>✔</span>Check</button>
-          <button className={tab === 'call' ? 'on' : ''} onClick={() => setTab('call')}><span>📞</span>Call</button>
+          <button className={tab === 'chat' ? 'on' : ''} onClick={() => { setTab('chat'); closeSearch() }}><span>💬</span>Chat</button>
+          <button className={tab === 'check' ? 'on' : ''} onClick={() => { setTab('check'); closeSearch() }}><span>✔</span>Check</button>
+          <button className={tab === 'call' ? 'on' : ''} onClick={() => { setTab('call'); closeSearch() }}><span>📞</span>Call</button>
         </nav>
       )}
 
-      {/* FULL VIEW - WhatsApp exact size - droplet up near You */}
       {fullView && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={closeFull}>
           <div style={{ width: 340, maxWidth: '100%', height: 410, maxHeight: '88dvh', background: '#0e1230', border: '1px solid #23284f', borderRadius: 22, position: 'relative', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.6)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
-
             <div style={{ position: 'absolute', top: 10, left: 0, right: 0, fontWeight: 700, fontSize: 15, zIndex: 3 }}>{fullView.name}</div>
-
             <div style={{ position: 'absolute', left: 10, top: 46, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start', zIndex: 3 }}>
               <button className="sideBtn" onClick={(e) => { e.stopPropagation(); if (me.type === 'live' && isMeFull) return showToast('Remove live sticker first'); photoRef.current?.click(); }}>🖼️ Add photo</button>
               <button className="sideBtn" onClick={(e) => { e.stopPropagation(); setMe({ type: 'none' }); if (isMeFull) setFullView({ ...fullView, type: 'none', src: undefined }); showToast('Photo removed') }}>🗑️ Remove</button>
             </div>
-
             <div style={{ position: 'absolute', right: 10, top: 46, zIndex: 3 }}>
               <button className="sideBtn" onClick={(e) => { e.stopPropagation(); setFullMuted(!fullMuted) }}>{fullMuted ? '🔇 Mute' : '🔊 Sound'}</button>
             </div>
-
             <div style={{ position: 'absolute', inset: 0, top: -24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <div style={{ width: 180 }}><Droplet o={{ ...fullView, ring: 'none' }} w={180} muted={fullMuted} /></div>
             </div>
             {fullView.type === 'live' && fullView.src && <video ref={fullVideoRef} src={fullView.src} muted={fullMuted} playsInline autoPlay style={{ display: 'none' }} />}
-
             {showPlusMenu && (
               <div style={{ position: 'absolute', left: 0, right: 0, bottom: 74, display: 'flex', justifyContent: 'center', zIndex: 4 }} onClick={e => e.stopPropagation()}>
                 <div className="plusMenu">
@@ -295,7 +346,6 @@ export default function ChatPage() {
                 </div>
               </div>
             )}
-
             <div style={{ position: 'absolute', left: 12, right: 12, bottom: 10, zIndex: 3 }} onClick={e => e.stopPropagation()}>
               <div className="icons" style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 320, margin: '0 auto' }}>
                 <button className="fullAction" onClick={() => { closeFull(); if (fullView.name === 'You') showToast('This is you'); else setOpenChat(fullView as Chat) }}>💬</button>
