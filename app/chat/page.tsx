@@ -1,23 +1,25 @@
 "use client"
 import { useState, useEffect, useRef } from "react"
+import { createClient } from "@supabase/supabase-js"
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 const P = 'M50,0 C70,40 100,90 100,140 C100,180 80,210 50,210 C20,210 0,180 0,140 C0,90 30,40 50,0 Z'
 const T = 'translate(5,10.5) scale(.9)'
 
-type Chat = { name: string; msg: string; time: string; ring: 'new' | 'seen' | 'none'; type: 'none' | 'photo' | 'live'; src?: string; start?: number }
+type Chat = { name: string; msg: string; time: string; ring: 'new' | 'seen' | 'none'; type: 'none' | 'photo' | 'live'; src?: string; start?: number; phone?: string }
 type Me = { type: 'none' | 'photo' | 'live'; src?: string; start?: number }
 type Msg = { text?: string; time: string; audioUrl?: string; kind?: 'text' | 'voice' }
 
-// REAL - NO FAKE CHATS
 const INITIAL_CHATS: Chat[] = []
-const STICKERS = [
-  { name: 'Aki', src: 'stickers/aki.mp4', e: '😎' },
-  { name: 'Pawpaw', src: 'stickers/pawpaw.mp4', e: '🐶' },
-]
+const STICKERS = [{ name: 'Aki', src: 'stickers/aki.mp4', e: '😎' }, { name: 'Pawpaw', src: 'stickers/pawpaw.mp4', e: '🐶' }]
+const TEST_CODE = "123456" // TEST ONLY - later we replace with Twilio real SMS
 
-// EVA EMOJI PICKER - same categories as EVA video
 const EMOJI_CATS: Record<string, string[]> = {
-  Faces: ['😂','❤️','😍','🔥','😭','😎','🥰','😅','👏','😉','💯','😁','🤣','😘','😊','🙂','😉','😋','🤔','😴'],
+  Faces: ['😂','❤️','😍','🔥','😭','😎','🥰','😅','👏','😉','💯','😁','🤣','😘','😊','🙂','😋','🤔','😴'],
   Hands: ['👍','🙏','👏','✌️','🤞','👌','🤲','🖐️','👋','💪','🫶','👊'],
   People: ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰'],
   Animals: ['🐶','🐱','🦁','🐯','🐵','🐷','🐥','🦋','🐢','🦄','🐝','🦊'],
@@ -29,13 +31,10 @@ function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onC
   if (idRef.current === 0) { uidCounter += 1; idRef.current = uidCounter }
   const n = idRef.current
   const ring = o.ring === 'new' ? 'ring-unwatched' : o.ring === 'seen' ? 'ring-watched' : ''
-  const type = o.type || 'none'
-  const src = o.src
-  const start = o.start || 0
+  const type = o.type || 'none'; const src = o.src; const start = o.start || 0
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
-    const v = videoRef.current
-    if (!v || type !== 'live' || !src) return
+    const v = videoRef.current; if (!v || type !== 'live' || !src) return
     let raf = 0
     const go = () => {
       if (!v.isConnected) return
@@ -45,8 +44,7 @@ function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onC
       raf = requestAnimationFrame(go)
     }
     const onMeta = () => { v.currentTime = start }
-    v.addEventListener('loadedmetadata', onMeta)
-    raf = requestAnimationFrame(go)
+    v.addEventListener('loadedmetadata', onMeta); raf = requestAnimationFrame(go)
     return () => { cancelAnimationFrame(raf); v.removeEventListener('loadedmetadata', onMeta) }
   }, [src, type, start])
   useEffect(() => { const v = videoRef.current; if (v) v.muted = muted }, [muted])
@@ -63,9 +61,7 @@ function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onC
           <g clipPath={`url(#c${n})`}>
             {type === 'photo' && src && <image href={src} x={0} y={0} width={100} height={210} preserveAspectRatio="xMidYMid slice" />}
             {type === 'live' && src && (
-              <foreignObject x="0" y="0" width="100" height="210">
-                <video ref={videoRef} muted={muted} playsInline autoPlay src={src} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-              </foreignObject>
+              <foreignObject x="0" y="0" width="100" height="210"><video ref={videoRef} muted={muted} playsInline autoPlay src={src} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></foreignObject>
             )}
             {type === 'none' && <rect x="0" y="0" width="100" height="210" fill="#1a1f4a" />}
           </g>
@@ -80,6 +76,14 @@ function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onC
 }
 
 export default function ChatPage() {
+  // ===== STEP 1 - REAL NUMBER =====
+  const [myPhone, setMyPhone] = useState('')
+  const [isVerified, setIsVerified] = useState(false)
+  const [phoneInput, setPhoneInput] = useState('')
+  const [otpInput, setOtpInput] = useState('')
+  const [codeSent, setCodeSent] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+
   const [me, setMe] = useState<Me>({ type: 'none' })
   const [chats, setChats] = useState<Chat[]>(INITIAL_CHATS)
   const [tab, setTab] = useState<'chat' | 'check' | 'call'>('chat')
@@ -118,7 +122,18 @@ export default function ChatPage() {
   const setLive = (src: string, start: number) => { setMe({ type: 'live', src, start }); close(); setTab('chat'); setFullView(null); showToast('Live sticker set ✔') }
   const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
+  const formatPhone = (raw: string) => {
+    let p = raw.replace(/\D/g, '')
+    if (p.startsWith('0')) p = '234' + p.slice(1)
+    if (!p.startsWith('234')) p = '234' + p
+    return '+' + p
+  }
+
+  // Load verified number on start
   useEffect(() => {
+    const saved = localStorage.getItem('eva-my-phone')
+    const verified = localStorage.getItem('eva-phone-verified')
+    if (saved && verified === 'true') { setMyPhone(saved); setIsVerified(true) }
     try {
       const s = localStorage.getItem('eva-self-msgs'); if (s) setSelfMsgs(JSON.parse(s))
       const c = localStorage.getItem('eva-chat-msgs'); if (c) setChatMsgs(JSON.parse(c))
@@ -130,9 +145,38 @@ export default function ChatPage() {
   useEffect(() => { try { localStorage.setItem('eva-me-droplet', JSON.stringify(me)) } catch {} }, [me])
   useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs, openChat, openSelf])
 
+  const sendCode = () => {
+    const formatted = formatPhone(phoneInput)
+    if (formatted.length < 13) return showToast('Enter a valid number, e.g. 8031234567')
+    setMyPhone(formatted); setCodeSent(true)
+    showToast('Test code: 123456 - Real SMS with Twilio comes later')
+  }
+
+  const verifyCode = async () => {
+    if (otpInput.trim() !== TEST_CODE) return showToast('Wrong code. For test use 123456')
+    setVerifying(true)
+    // Save REAL to Supabase chat_profiles
+    try {
+      const userId = localStorage.getItem('eva-user-id') || crypto.randomUUID()
+      localStorage.setItem('eva-user-id', userId)
+      // Make sure profile exists first
+      await supabase.from('profiles').upsert({ id: userId, name: 'You' }, { onConflict: 'id' })
+      const { error } = await supabase.from('chat_profiles').upsert({
+        user_id: userId,
+        phone_number: myPhone,
+        phone_verified: true,
+        verified_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      if (error) console.log('Supabase save:', error.message)
+    } catch (e) { console.log('Supabase offline, saved locally') }
+    localStorage.setItem('eva-my-phone', myPhone)
+    localStorage.setItem('eva-phone-verified', 'true')
+    setIsVerified(true); setVerifying(false)
+    showToast('Number verified ✔ Welcome to EVA Chat')
+  }
+
   useEffect(() => {
-    const v = fullVideoRef.current
-    if (!v || !fullView || fullView.type !== 'live') return
+    const v = fullVideoRef.current; if (!v || !fullView || fullView.type !== 'live') return
     let raf = 0; const start = fullView.start || 0
     const go = () => {
       if (!v.isConnected) return
@@ -151,21 +195,14 @@ export default function ChatPage() {
   const openFull = (obj: any) => { setFullView(obj); setFullMuted(true); setShowPlusMenu(false); setOverlay(null) }
   const closeFull = () => { setFullView(null); setFullMuted(true); setShowPlusMenu(false) }
   const closeSearch = () => { setSearching(false); setSearchText(''); setSearchFilter('all') }
-
-  const sendSelf = () => {
-    const t = selfInput.trim(); if (!t) return
-    setSelfMsgs(prev => [...prev, { text: t, time: nowTime(), kind: 'text' }])
-    setSelfInput(''); setShowEmoji(false); setShowAttach(false)
-  }
+  const sendSelf = () => { const t = selfInput.trim(); if (!t) return; setSelfMsgs(prev => [...prev, { text: t, time: nowTime(), kind: 'text' }]); setSelfInput(''); setShowEmoji(false); setShowAttach(false) }
   const sendChat = () => {
     const t = chatInput.trim(); if (!t || !openChat) return
-    const msg: Msg = { text: t, time: nowTime(), kind: 'text' }
-    setChatMsgs(prev => ({ ...prev, [openChat.name]: [...(prev[openChat.name] || []), msg] }))
+    setChatMsgs(prev => ({ ...prev, [openChat.name]: [...(prev[openChat.name] || []), { text: t, time: nowTime(), kind: 'text' }] }))
     setChats(prev => prev.map(c => c.name === openChat.name ? { ...c, msg: t, time: nowTime() } : c))
     setChatInput(''); setShowEmoji(false); setShowAttach(false)
   }
   const addEmoji = (e: string, isSelf: boolean) => { if (isSelf) setSelfInput(p => p + e); else setChatInput(p => p + e) }
-
   const toggleVoice = async (isSelf: boolean) => {
     if (isRecordingVoice) { voiceRecorderRef.current?.stop(); setIsRecordingVoice(false); return }
     try {
@@ -182,11 +219,9 @@ export default function ChatPage() {
       mr.start(); voiceRecorderRef.current = mr; setIsRecordingVoice(true); showToast('Recording... tap mic again to stop')
     } catch { showToast('Mic not allowed') }
   }
-
   const handleGallery = (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
-    const url = URL.createObjectURL(f)
-    const t = document.createElement('video'); t.src = url; t.preload = 'metadata'
+    const url = URL.createObjectURL(f); const t = document.createElement('video'); t.src = url; t.preload = 'metadata'
     t.onloadedmetadata = () => { if (t.duration <= 7.05) setLive(url, 0); else { setTrimUrl(url); setTrimDur(t.duration); setTrimStart(0); setOverlay('trim'); setFullView(null) } }
     e.target.value = ''; setShowAttach(false)
   }
@@ -197,7 +232,6 @@ export default function ChatPage() {
     showToast('Photo set ✔'); setShowAttach(false)
   }
   const handleAttach = (e: any) => { const f = e.target.files?.[0]; if (!f) return; showToast('File attached: ' + f.name); e.target.value = ''; setShowAttach(false) }
-
   const startRecord = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
@@ -220,24 +254,20 @@ export default function ChatPage() {
   const showYouRow = !searching || !q || 'you'.includes(q) || 'my profile'.includes(q)
   const selfLast = selfMsgs[selfMsgs.length - 1]
   const currentChatMsgs = openChat ? (chatMsgs[openChat.name] || []) : []
+  const filteredEmojis = EMOJI_CATS[emojiCat].filter(e => !emojiSearch || e.includes(emojiSearch))
 
-  // ===== EVA BAR - EXACTLY LIKE EVA VIDEO =====
-  // Order: 😊 outside-left | [ Message... 💧 inside-right ] | 🎤 green outside-right
   const ChatBar = ({ value, onChange, onSend, isSelf }: { value: string; onChange: (v: string) => void; onSend: () => void; isSelf: boolean }) => (
     <div style={{ background: '#0b0e24', padding: '8px 10px', paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
       {showEmoji && (
         <div style={{ background: '#1a1f4a', borderRadius: 16, padding: 10, marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#0e1230', borderRadius: 20, padding: '8px 12px', marginBottom: 8 }}>
-            <span>🔍</span>
-            <input value={emojiSearch} onChange={e => setEmojiSearch(e.target.value)} placeholder="Search emoji..." style={{ flex: 1, background: 'transparent', border: 0, outline: 'none', color: '#fff', fontSize: 14 }} />
+            <span>🔍</span><input value={emojiSearch} onChange={e => setEmojiSearch(e.target.value)} placeholder="Search emoji..." style={{ flex: 1, background: 'transparent', border: 0, outline: 'none', color: '#fff', fontSize: 14 }} />
           </div>
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6 }}>
-            {Object.keys(EMOJI_CATS).map(cat => (
-              <button key={cat} onClick={() => setEmojiCat(cat as any)} style={{ background: emojiCat === cat ? '#ff2f6d' : '#2a2f5c', border: 0, color: '#fff', borderRadius: 16, padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap' }}>{cat}</button>
-            ))}
+            {Object.keys(EMOJI_CATS).map(cat => <button key={cat} onClick={() => setEmojiCat(cat as any)} style={{ background: emojiCat === cat ? '#ff2f6d' : '#2a2f5c', border: 0, color: '#fff', borderRadius: 16, padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap' }}>{cat}</button>)}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8,1fr)', gap: 4, maxHeight: 160, overflowY: 'auto' }}>
-            {EMOJI_CATS[emojiCat].map(em => <button key={em} onClick={() => addEmoji(em, isSelf)} style={{ background: 'none', border: 0, fontSize: 26, cursor: 'pointer', padding: 4 }}>{em}</button>)}
+            {filteredEmojis.map(em => <button key={em} onClick={() => addEmoji(em, isSelf)} style={{ background: 'none', border: 0, fontSize: 26, cursor: 'pointer', padding: 4 }}>{em}</button>)}
           </div>
         </div>
       )}
@@ -256,38 +286,44 @@ export default function ChatPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button onClick={() => { setShowEmoji(!showEmoji); setShowAttach(false) }} style={{ background: 'none', border: 0, fontSize: 26, cursor: 'pointer', flexShrink: 0, lineHeight: 1 }}>😊</button>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', background: '#171c46', borderRadius: 26, paddingRight: 4 }}>
-          <input
-            placeholder={isSelf ? 'Message yourself...' : 'Message...'}
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') onSend() }}
-            style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none', color: '#fff', fontSize: 15, padding: '12px 12px 12px 14px' }}
-          />
-          {/* DROPLET ON RIGHT SIDE INSIDE BOX - LIKE EVA */}
-          <button onClick={() => { setShowAttach(!showAttach); setShowEmoji(false) }} style={{ background: 'none', border: 0, cursor: 'pointer', flexShrink: 0, padding: 0, lineHeight: 0 }} title="Attach">
-            <Droplet o={{ ...me, ring: 'none' }} w={24} />
-          </button>
+          <input placeholder={isSelf ? 'Message yourself...' : 'Message...'} value={value} onChange={e => onChange(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') onSend() }} style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none', color: '#fff', fontSize: 15, padding: '12px 12px 12px 14px' }} />
+          <button onClick={() => { setShowAttach(!showAttach); setShowEmoji(false) }} style={{ background: 'none', border: 0, cursor: 'pointer', flexShrink: 0, padding: 0, lineHeight: 0 }} title="Attach"><Droplet o={{ ...me, ring: 'none' }} w={24} /></button>
         </div>
-        {value.trim() ? (
-          <button onClick={onSend} style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>➤</button>
-        ) : (
-          <button onClick={() => toggleVoice(isSelf)} style={{ width: 44, height: 44, borderRadius: '50%', background: isRecordingVoice ? '#ff2f6d' : '#00c853', border: 0, fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>🎤</button>
-        )}
+        {value.trim() ? <button onClick={onSend} style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>➤</button>
+        : <button onClick={() => toggleVoice(isSelf)} style={{ width: 44, height: 44, borderRadius: '50%', background: isRecordingVoice ? '#ff2f6d' : '#00c853', border: 0, fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>🎤</button>}
       </div>
     </div>
   )
+  const renderMsgs = (msgs: Msg[]) => (<>{msgs.map((m, i) => (<div key={i} className="b out">{m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: '100%' }} /> : m.text}<small>{m.time} ✓✓</small></div>))}<div ref={msgsEndRef} /></>)
 
-  const renderMsgs = (msgs: Msg[]) => (
-    <>
-      {msgs.map((m, i) => (
-        <div key={i} className="b out">
-          {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: '100%' }} /> : m.text}
-          <small>{m.time} ✓✓</small>
-        </div>
-      ))}
-      <div ref={msgsEndRef} />
-    </>
-  )
+  // ===== IF NOT VERIFIED - SHOW CONNECT NUMBER SCREEN, NOT CHAT =====
+  if (!isVerified) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial', padding: 20, justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}><div style={{ fontSize: 48 }}>💬</div><h2 style={{ marginTop: 8 }}>Connect your number to chat</h2><p style={{ color: '#8a8fb0', fontSize: 14, marginTop: 8 }}>Like WhatsApp. One number, one EVA Chat account.<br/>Your number is only for chat, not public.</p></div>
+        {!codeSent ? (
+          <>
+            <label style={{ fontSize: 13, color: '#8a8fb0' }}>Your phone number</label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, background: '#171c46', borderRadius: 14, padding: '4px 4px 4px 14px', alignItems: 'center' }}>
+              <span>+234</span>
+              <input value={phoneInput} onChange={e => setPhoneInput(e.target.value)} placeholder="803 123 4567" inputMode="numeric" style={{ flex: 1, background: 'transparent', border: 0, outline: 'none', color: '#fff', fontSize: 16, padding: '12px 8px' }} />
+            </div>
+            <button onClick={sendCode} style={{ marginTop: 16, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, color: '#fff', padding: 15, borderRadius: 14, fontSize: 16, fontWeight: 700 }}>Send Code</button>
+            <p style={{ textAlign: 'center', color: '#8a8fb0', fontSize: 12, marginTop: 12 }}>Test mode: code will be 123456. Real SMS with Twilio comes later.</p>
+          </>
+        ) : (
+          <>
+            <p style={{ textAlign: 'center', color: '#8a8fb0', fontSize: 14 }}>We sent a code to<br/><b style={{ color: '#fff' }}>{myPhone}</b></p>
+            <p style={{ textAlign: 'center', color: '#ff3b6b', fontSize: 13, marginTop: 6 }}>TEST CODE: 123456</p>
+            <input value={otpInput} onChange={e => setOtpInput(e.target.value)} placeholder="Enter 6-digit code" inputMode="numeric" maxLength={6} style={{ marginTop: 16, background: '#171c46', border: 0, outline: 'none', color: '#fff', fontSize: 20, padding: 16, borderRadius: 14, textAlign: 'center', letterSpacing: 6 }} />
+            <button onClick={verifyCode} disabled={verifying} style={{ marginTop: 16, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, color: '#fff', padding: 15, borderRadius: 14, fontSize: 16, fontWeight: 700, opacity: verifying ? 0.6 : 1 }}>{verifying ? 'Verifying...' : 'Verify Number'}</button>
+            <button onClick={() => { setCodeSent(false); setOtpInput('') }} style={{ marginTop: 10, background: 'none', border: 0, color: '#8a8fb0', padding: 10 }}>Change number</button>
+          </>
+        )}
+        {toast && <div id="toast">{toast}</div>}
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial', overflow: 'hidden' }}>
@@ -338,6 +374,7 @@ export default function ChatPage() {
       {!openChat && !openSelf && !searching && (
         <header style={{ padding: '14px 16px 10px', background: '#080b1c' }}>
           <div style={{ fontSize: 22, fontWeight: 700, textAlign: 'right' }}>EVA Chat</div>
+          <div style={{ fontSize: 12, color: '#8a8fb0', textAlign: 'right', marginTop: 2 }}>{myPhone} • Verified ✔</div>
           <div className="waSearchBar" style={{ marginTop: 12 }} onClick={() => setSearching(true)}><span>🔍</span><span>Search</span></div>
         </header>
       )}
@@ -347,25 +384,19 @@ export default function ChatPage() {
             <button onClick={closeSearch} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22, padding: '6px 8px', cursor: 'pointer' }}>←</button>
             <input ref={searchInputRef} value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Search" style={{ flex: 1, background: 'none', border: 0, outline: 'none', color: '#fff', fontSize: 15, padding: '6px 6px 6px 0' }} />
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
-            <button className={`waChip ${searchFilter === 'all' ? 'on' : ''}`} onClick={() => setSearchFilter('all')}>All</button>
-            <button className={`waChip ${searchFilter === 'unread' ? 'on' : ''}`} onClick={() => setSearchFilter('unread')}>☑ Unread</button>
-            <button className={`waChip ${searchFilter === 'photo' ? 'on' : ''}`} onClick={() => setSearchFilter('photo')}>🖼️ Photos</button>
-            <button className={`waChip ${searchFilter === 'live' ? 'on' : ''}`} onClick={() => setSearchFilter('live')}>🎬 Videos</button>
-          </div>
         </header>
       )}
 
       <main id="screen" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {openSelf ? (
           <>
-            <div className="chathead"><button className="back" onClick={() => setOpenSelf(false)}>←</button><Droplet o={{ ...me, ring: 'none' }} w={36} onClick={() => openFull({ ...me, name: 'You', isMe: true })} /><div><b>You</b><div style={{ fontSize: 12, color: '#8a8fb0' }}>Message yourself</div></div></div>
+            <div className="chathead"><button className="back" onClick={() => setOpenSelf(false)}>←</button><Droplet o={{ ...me, ring: 'none' }} w={36} onClick={() => openFull({ ...me, name: 'You', isMe: true })} /><div><b>You</b><div style={{ fontSize: 12, color: '#8a8fb0' }}>Message yourself • {myPhone}</div></div></div>
             <div className="msgs">{renderMsgs(selfMsgs)}</div>
             <ChatBar value={selfInput} onChange={setSelfInput} onSend={sendSelf} isSelf={true} />
           </>
         ) : openChat ? (
           <>
-            <div className="chathead"><button className="back" onClick={() => setOpenChat(null)}>←</button><Droplet o={{ ...openChat, ring: 'none' }} w={36} /><div><b>{openChat.name}</b></div></div>
+            <div className="chathead"><button className="back" onClick={() => setOpenChat(null)}>←</button><Droplet o={{ ...openChat, ring: 'none' }} w={36} /><div><b>{openChat.name}</b><div style={{ fontSize: 12, color: '#8a8fb0' }}>{openChat.phone || ''}</div></div></div>
             <div className="msgs">
               {currentChatMsgs.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', fontSize: 13, paddingTop: 20 }}>No messages yet. Say hi 👋</div>}
               {renderMsgs(currentChatMsgs)}
@@ -381,7 +412,6 @@ export default function ChatPage() {
                 <div className="time">{selfLast ? selfLast.time : 'You'}</div>
               </div>
             )}
-            {searching && (q || searchFilter !== 'all') && <div className="section">{filteredChats.length} result{filteredChats.length === 1 ? '' : 's'}</div>}
             {filteredChats.map((c, i) => (
               <div key={i} className="row">
                 <Droplet o={c} w={46} onClick={(e) => { e.stopPropagation(); openFull({ ...c, isMe: false }) }} />
@@ -389,29 +419,12 @@ export default function ChatPage() {
                 <div className="time">{c.time}</div>
               </div>
             ))}
-            {filteredChats.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#8a8fb0' }}>
-                <div style={{ fontSize: 40, marginBottom: 10 }}>💬</div><b style={{ color: '#fff' }}>No chats yet</b>
-                <div style={{ fontSize: 13, marginTop: 6 }}>Tap + to add a real contact by number</div>
-              </div>
-            )}
+            {filteredChats.length === 0 && <div style={{ textAlign: 'center', padding: '40px 20px', color: '#8a8fb0' }}><div style={{ fontSize: 40 }}>💬</div><b style={{ color: '#fff' }}>No chats yet</b><div style={{ fontSize: 13, marginTop: 6 }}>Next step: + Add real contact by number</div></div>}
           </>
         ) : tab === 'check' ? (
-          <>
-            <div className="section">Recent Checks</div>
-            {chats.filter(c => c.ring !== 'none').map((c, i) => (
-              <div key={i} className="row" onClick={() => { setChats(prev => prev.map(x => x.name === c.name ? { ...x, ring: 'seen' as const } : x)); showToast('Check viewed'); }}>
-                <Droplet o={c} w={46} /><div className="info"><div className="name">{c.name}</div><div className="sub">{c.ring === 'new' ? 'New check' : 'Viewed'}</div></div>
-              </div>
-            ))}
-          </>
+          <><div className="section">Recent Checks</div>{chats.filter(c => c.ring !== 'none').map((c, i) => (<div key={i} className="row"><Droplet o={c} w={46} /><div className="info"><div className="name">{c.name}</div><div className="sub">Viewed</div></div></div>))}</>
         ) : (
-          <>
-            <div className="section">Recent Calls</div>
-            {chats.map((c, i) => (
-              <div key={i} className="row"><Droplet o={{ ...c, ring: 'none' }} w={46} /><div className="info"><div className="name">{c.name}</div><div className="sub">↗ Today, 9:20</div></div><div className="time">📞</div></div>
-            ))}
-          </>
+          <><div className="section">Recent Calls</div>{chats.map((c, i) => (<div key={i} className="row"><Droplet o={{ ...c, ring: 'none' }} w={46} /><div className="info"><div className="name">{c.name}</div><div className="sub">↗ Today, 9:20</div></div><div className="time">📞</div></div>))}</>
         )}
       </main>
 
@@ -427,79 +440,26 @@ export default function ChatPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={closeFull}>
           <div style={{ width: 340, maxWidth: '100%', height: 410, maxHeight: '88dvh', background: '#0e1230', border: '1px solid #23284f', borderRadius: 22, position: 'relative', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.6)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             <div style={{ position: 'absolute', top: 10, left: 0, right: 0, fontWeight: 700, fontSize: 15, zIndex: 3 }}>{fullView.name}</div>
-            <div style={{ position: 'absolute', left: 10, top: 46, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start', zIndex: 3 }}>
-              <button className="sideBtn" onClick={(e) => { e.stopPropagation(); if (me.type === 'live' && isMeFull) return showToast('Remove live sticker first'); photoRef.current?.click(); }}>🖼️ Add photo</button>
+            <div style={{ position: 'absolute', left: 10, top: 46, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 3 }}>
+              <button className="sideBtn" onClick={(e) => { e.stopPropagation(); photoRef.current?.click() }}>🖼️ Add photo</button>
               <button className="sideBtn" onClick={(e) => { e.stopPropagation(); setMe({ type: 'none' }); if (isMeFull) setFullView({ ...fullView, type: 'none', src: undefined }); showToast('Photo removed') }}>🗑️ Remove</button>
             </div>
-            <div style={{ position: 'absolute', right: 10, top: 46, zIndex: 3 }}>
-              <button className="sideBtn" onClick={(e) => { e.stopPropagation(); setFullMuted(!fullMuted) }}>{fullMuted ? '🔇 Mute' : '🔊 Sound'}</button>
-            </div>
-            <div style={{ position: 'absolute', inset: 0, top: -24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ width: 180 }}><Droplet o={{ ...fullView, ring: 'none' }} w={180} muted={fullMuted} /></div>
-            </div>
+            <div style={{ position: 'absolute', right: 10, top: 46, zIndex: 3 }}><button className="sideBtn" onClick={(e) => { e.stopPropagation(); setFullMuted(!fullMuted) }}>{fullMuted ? '🔇 Mute' : '🔊 Sound'}</button></div>
+            <div style={{ position: 'absolute', inset: 0, top: -24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ width: 180 }}><Droplet o={{ ...fullView, ring: 'none' }} w={180} muted={fullMuted} /></div></div>
             {fullView.type === 'live' && fullView.src && <video ref={fullVideoRef} src={fullView.src} muted={fullMuted} playsInline autoPlay style={{ display: 'none' }} />}
-            {showPlusMenu && (
-              <div style={{ position: 'absolute', left: 0, right: 0, bottom: 74, display: 'flex', justifyContent: 'center', zIndex: 4 }} onClick={e => e.stopPropagation()}>
-                <div className="plusMenu">
-                  <button onClick={() => { setShowPlusMenu(false); setOverlay('upload') }}>⬆️ Upload Live</button>
-                  <button onClick={() => { setShowPlusMenu(false); startRecord() }}>🎬 Record</button>
-                </div>
-              </div>
-            )}
-            <div style={{ position: 'absolute', left: 12, right: 12, bottom: 10, zIndex: 3 }} onClick={e => e.stopPropagation()}>
-              <div className="icons" style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 320, margin: '0 auto' }}>
-                <button className="fullAction" onClick={() => { closeFull(); if (fullView.name === 'You') setOpenSelf(true); else setOpenChat(fullView as Chat) }}>💬</button>
-                <button className="fullAction" onClick={() => showToast('Voice call ' + fullView.name)}>📞</button>
-                <button className="fullAction plus" onClick={() => setShowPlusMenu(!showPlusMenu)}>+</button>
-                <button className="fullAction" onClick={() => showToast('Video call ' + fullView.name)}>🎥</button>
-              </div>
-            </div>
+            <div style={{ position: 'absolute', left: 12, right: 12, bottom: 10, zIndex: 3 }}><div style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 320, margin: '0 auto' }}>
+              <button className="fullAction" onClick={() => { closeFull(); if (fullView.name === 'You') setOpenSelf(true); else setOpenChat(fullView as Chat) }}>💬</button>
+              <button className="fullAction" onClick={() => showToast('Voice call ' + fullView.name)}>📞</button>
+              <button className="fullAction plus" onClick={() => setShowPlusMenu(!showPlusMenu)}>+</button>
+              <button className="fullAction" onClick={() => showToast('Video call ' + fullView.name)}>🎥</button>
+            </div></div>
           </div>
         </div>
       )}
-
-      {overlay === 'upload' && (
-        <div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
-          <div className="sheetbox"><h3>Upload</h3>
-            <button className="big" onClick={() => { if (me.type === 'photo') { setOverlay('guard') } else { close(); galleryRef.current?.click() } }}>🖼️ Gallery</button>
-            <button className="big" onClick={() => { if (me.type === 'photo') setOverlay('guard'); else setOverlay('stickers') }}>✨ Live Stickers</button>
-          </div>
-        </div>
-      )}
-      {overlay === 'guard' && (
-        <div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
-          <div className="sheetbox"><h3>Remove photo first</h3><p className="small">You cannot have photo and live sticker at the same time.</p>
-            <button className="big pri" onClick={() => { setMe({ type: 'none' }); setOverlay('upload') }}>Remove photo</button>
-          </div>
-        </div>
-      )}
-      {overlay === 'stickers' && (
-        <div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
-          <div className="sheetbox"><h3>Live Stickers</h3><p className="small">All max 7 sec, all loop</p><div className="grid">
-            {STICKERS.map((s, i) => <button key={i} onClick={() => setLive(s.src, 0)}><b>{s.e}</b>{s.name}</button>)}
-          </div></div>
-        </div>
-      )}
-      {overlay === 'trim' && (
-        <div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
-          <div className="sheetbox"><h3>Trim to 7 seconds</h3>
-            <video className="vid" muted playsInline autoPlay src={trimUrl} />
-            <div className="small">00:{String(Math.floor(trimStart)).padStart(2, '0')} - 00:{String(Math.floor(trimStart + 7)).padStart(2, '0')}</div>
-            <input className="range" type="range" min="0" max={Math.max(0, trimDur - 7)} step="0.1" value={trimStart} onChange={e => setTrimStart(+e.target.value)} />
-            <button className="big pri" onClick={() => setLive(trimUrl, trimStart)}>Upload</button>
-          </div>
-        </div>
-      )}
-      {overlay === 'record' && (
-        <div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
-          <div className="sheetbox"><h3>Record (max 7 sec)</h3>
-            <p className="small">{recording ? 'Recording… 7 sec' : recordUrl ? 'Done (7 sec)' : 'Recording...'}</p>
-            {recordUrl && <video className="vid" muted playsInline autoPlay loop src={recordUrl} />}
-            {recordUrl && <button className="big pri" onClick={() => setLive(recordUrl, 0)}>Upload</button>}
-            <button className="big" onClick={close}>Cancel</button>
-          </div>
-        </div>
-      )}
+      {overlay === 'upload' && (<div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}><div className="sheetbox"><h3>Upload</h3><button className="big" onClick={() => { close(); galleryRef.current?.click() }}>🖼️ Gallery</button><button className="big" onClick={() => setOverlay('stickers')}>✨ Live Stickers</button></div></div>)}
+      {overlay === 'stickers' && (<div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}><div className="sheetbox"><h3>Live Stickers</h3><div className="grid">{STICKERS.map((s, i) => <button key={i} onClick={() => setLive(s.src, 0)}><b>{s.e}</b>{s.name}</button>)}</div></div></div>)}
+      {overlay === 'trim' && (<div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}><div className="sheetbox"><h3>Trim to 7 seconds</h3><video className="vid" muted playsInline autoPlay src={trimUrl} /><input className="range" type="range" min="0" max={Math.max(0, trimDur - 7)} step="0.1" value={trimStart} onChange={e => setTrimStart(+e.target.value)} /><button className="big pri" onClick={() => setLive(trimUrl, trimStart)}>Upload</button></div></div>)}
+      {overlay === 'record' && (<div id="overlay" className="sheet" onClick={(e) => { if (e.target === e.currentTarget) close() }}><div className="sheetbox"><h3>Record (max 7 sec)</h3><p className="small">{recording ? 'Recording… 7 sec' : recordUrl ? 'Done (7 sec)' : 'Recording...'}</p>{recordUrl && <video className="vid" muted playsInline autoPlay loop src={recordUrl} />}{recordUrl && <button className="big pri" onClick={() => setLive(recordUrl, 0)}>Upload</button>}<button className="big" onClick={close}>Cancel</button></div></div>)}
 
       <input ref={galleryRef} type="file" accept="video/*" hidden onChange={handleGallery} />
       <input ref={photoRef} type="file" accept="image/*" hidden onChange={handlePhoto} />
@@ -508,4 +468,4 @@ export default function ChatPage() {
       {toast && <div id="toast">{toast}</div>}
     </div>
   )
-    }
+}
