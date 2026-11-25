@@ -6,17 +6,22 @@ const T = 'translate(5,10.5) scale(.9)'
 
 type Chat = { name: string; msg: string; time: string; ring: 'new' | 'seen' | 'none'; type: 'none' | 'photo' | 'live'; src?: string; start?: number }
 type Me = { type: 'none' | 'photo' | 'live'; src?: string; start?: number }
+type Msg = { text?: string; time: string; audioUrl?: string; kind?: 'text' | 'voice' }
 
-const INITIAL_CHATS: Chat[] = [
-  { name: 'Ann', msg: 'Wetin dey happen?', time: '11:40', ring: 'new', type: 'photo', src: 'images/ann.jpg' },
-  { name: 'My Dera', msg: 'I don see am 😂', time: '10:12', ring: 'seen', type: 'photo', src: 'images/dera.jpg' },
-  { name: 'Aki', msg: 'Live sticker profile', time: 'Yesterday', ring: 'none', type: 'live', src: 'stickers/aki.mp4' },
-  { name: 'Pawpaw', msg: 'Hello', time: 'Yesterday', ring: 'none', type: 'none' },
-]
+// REAL - NO FAKE CHATS
+const INITIAL_CHATS: Chat[] = []
 const STICKERS = [
   { name: 'Aki', src: 'stickers/aki.mp4', e: '😎' },
   { name: 'Pawpaw', src: 'stickers/pawpaw.mp4', e: '🐶' },
 ]
+
+// EVA EMOJI PICKER - same categories as EVA video
+const EMOJI_CATS: Record<string, string[]> = {
+  Faces: ['😂','❤️','😍','🔥','😭','😎','🥰','😅','👏','😉','💯','😁','🤣','😘','😊','🙂','😉','😋','🤔','😴'],
+  Hands: ['👍','🙏','👏','✌️','🤞','👌','🤲','🖐️','👋','💪','🫶','👊'],
+  People: ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰'],
+  Animals: ['🐶','🐱','🦁','🐯','🐵','🐷','🐥','🦋','🐢','🦄','🐝','🦊'],
+}
 
 let uidCounter = 0
 function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onClick?: (e: any) => void; muted?: boolean }) {
@@ -28,7 +33,6 @@ function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onC
   const src = o.src
   const start = o.start || 0
   const videoRef = useRef<HTMLVideoElement>(null)
-
   useEffect(() => {
     const v = videoRef.current
     if (!v || type !== 'live' || !src) return
@@ -45,12 +49,7 @@ function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onC
     raf = requestAnimationFrame(go)
     return () => { cancelAnimationFrame(raf); v.removeEventListener('loadedmetadata', onMeta) }
   }, [src, type, start])
-
-  useEffect(() => {
-    const v = videoRef.current
-    if (v) v.muted = muted
-  }, [muted])
-
+  useEffect(() => { const v = videoRef.current; if (v) v.muted = muted }, [muted])
   return (
     <span style={{ display: 'block', width: w }} onClick={onClick}>
       <svg className="drop" viewBox="-6 -4 112 218" style={{ width: '100%', display: 'block', overflow: 'visible' }}>
@@ -85,13 +84,19 @@ export default function ChatPage() {
   const [chats, setChats] = useState<Chat[]>(INITIAL_CHATS)
   const [tab, setTab] = useState<'chat' | 'check' | 'call'>('chat')
   const [overlay, setOverlay] = useState<string | null>(null)
-  const [selected, setSelected] = useState<Chat | null>(null)
   const [openChat, setOpenChat] = useState<Chat | null>(null)
   const [openSelf, setOpenSelf] = useState(false)
-  const [selfMsgs, setSelfMsgs] = useState<{ text: string; time: string }[]>([
-    { text: 'This is your space. Save notes, links, code, anything here.', time: '11:38' },
-  ])
+  const [selfMsgs, setSelfMsgs] = useState<Msg[]>([{ text: 'This is your space. Save notes, links, code, anything here.', time: '11:38', kind: 'text' }])
   const [selfInput, setSelfInput] = useState('')
+  const [chatInput, setChatInput] = useState('')
+  const [chatMsgs, setChatMsgs] = useState<Record<string, Msg[]>>({})
+  const [showEmoji, setShowEmoji] = useState(false)
+  const [emojiCat, setEmojiCat] = useState<keyof typeof EMOJI_CATS>('Faces')
+  const [emojiSearch, setEmojiSearch] = useState('')
+  const [showAttach, setShowAttach] = useState(false)
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false)
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null)
+  const voiceChunksRef = useRef<Blob[]>([])
   const [toast, setToast] = useState('')
   const [trimUrl, setTrimUrl] = useState(''); const [trimDur, setTrimDur] = useState(0); const [trimStart, setTrimStart] = useState(0)
   const [fullView, setFullView] = useState<any | null>(null)
@@ -100,8 +105,9 @@ export default function ChatPage() {
   const [recording, setRecording] = useState(false)
   const [recordUrl, setRecordUrl] = useState('')
   const galleryRef = useRef<HTMLInputElement>(null); const photoRef = useRef<HTMLInputElement>(null)
+  const attachRef = useRef<HTMLInputElement>(null); const docRef = useRef<HTMLInputElement>(null)
   const fullVideoRef = useRef<HTMLVideoElement>(null)
-
+  const msgsEndRef = useRef<HTMLDivElement>(null)
   const [searching, setSearching] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [searchFilter, setSearchFilter] = useState<'all' | 'unread' | 'photo' | 'live'>('all')
@@ -110,12 +116,24 @@ export default function ChatPage() {
   const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(''), 2200) }
   const close = () => { setOverlay(null); setShowPlusMenu(false) }
   const setLive = (src: string, start: number) => { setMe({ type: 'live', src, start }); close(); setTab('chat'); setFullView(null); showToast('Live sticker set ✔') }
+  const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem('eva-self-msgs'); if (s) setSelfMsgs(JSON.parse(s))
+      const c = localStorage.getItem('eva-chat-msgs'); if (c) setChatMsgs(JSON.parse(c))
+      const m = localStorage.getItem('eva-me-droplet'); if (m) setMe(JSON.parse(m))
+    } catch {}
+  }, [])
+  useEffect(() => { try { localStorage.setItem('eva-self-msgs', JSON.stringify(selfMsgs)) } catch {} }, [selfMsgs])
+  useEffect(() => { try { localStorage.setItem('eva-chat-msgs', JSON.stringify(chatMsgs)) } catch {} }, [chatMsgs])
+  useEffect(() => { try { localStorage.setItem('eva-me-droplet', JSON.stringify(me)) } catch {} }, [me])
+  useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs, openChat, openSelf])
 
   useEffect(() => {
     const v = fullVideoRef.current
     if (!v || !fullView || fullView.type !== 'live') return
-    let raf = 0
-    const start = fullView.start || 0
+    let raf = 0; const start = fullView.start || 0
     const go = () => {
       if (!v.isConnected) return
       const end = Math.min(start + 7, v.duration || start + 7)
@@ -124,11 +142,9 @@ export default function ChatPage() {
       raf = requestAnimationFrame(go)
     }
     const onMeta = () => { v.currentTime = start }
-    v.addEventListener('loadedmetadata', onMeta)
-    raf = requestAnimationFrame(go)
+    v.addEventListener('loadedmetadata', onMeta); raf = requestAnimationFrame(go)
     return () => { cancelAnimationFrame(raf); v.removeEventListener('loadedmetadata', onMeta) }
   }, [fullView])
-
   useEffect(() => { if (fullVideoRef.current) fullVideoRef.current.muted = fullMuted }, [fullMuted, fullView])
   useEffect(() => { if (searching) setTimeout(() => searchInputRef.current?.focus(), 50) }, [searching])
 
@@ -138,9 +154,33 @@ export default function ChatPage() {
 
   const sendSelf = () => {
     const t = selfInput.trim(); if (!t) return
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    setSelfMsgs(prev => [...prev, { text: t, time }])
-    setSelfInput('')
+    setSelfMsgs(prev => [...prev, { text: t, time: nowTime(), kind: 'text' }])
+    setSelfInput(''); setShowEmoji(false); setShowAttach(false)
+  }
+  const sendChat = () => {
+    const t = chatInput.trim(); if (!t || !openChat) return
+    const msg: Msg = { text: t, time: nowTime(), kind: 'text' }
+    setChatMsgs(prev => ({ ...prev, [openChat.name]: [...(prev[openChat.name] || []), msg] }))
+    setChats(prev => prev.map(c => c.name === openChat.name ? { ...c, msg: t, time: nowTime() } : c))
+    setChatInput(''); setShowEmoji(false); setShowAttach(false)
+  }
+  const addEmoji = (e: string, isSelf: boolean) => { if (isSelf) setSelfInput(p => p + e); else setChatInput(p => p + e) }
+
+  const toggleVoice = async (isSelf: boolean) => {
+    if (isRecordingVoice) { voiceRecorderRef.current?.stop(); setIsRecordingVoice(false); return }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream); voiceChunksRef.current = []
+      mr.ondataavailable = ev => voiceChunksRef.current.push(ev.data)
+      mr.onstop = () => {
+        const url = URL.createObjectURL(new Blob(voiceChunksRef.current, { type: mr.mimeType }))
+        const msg: Msg = { time: nowTime(), audioUrl: url, kind: 'voice' }
+        if (isSelf) setSelfMsgs(prev => [...prev, msg])
+        else if (openChat) setChatMsgs(prev => ({ ...prev, [openChat.name]: [...(prev[openChat.name] || []), msg] }))
+        stream.getTracks().forEach(t => t.stop()); showToast('Voice note sent 🎤')
+      }
+      mr.start(); voiceRecorderRef.current = mr; setIsRecordingVoice(true); showToast('Recording... tap mic again to stop')
+    } catch { showToast('Mic not allowed') }
   }
 
   const handleGallery = (e: any) => {
@@ -148,29 +188,23 @@ export default function ChatPage() {
     const url = URL.createObjectURL(f)
     const t = document.createElement('video'); t.src = url; t.preload = 'metadata'
     t.onloadedmetadata = () => { if (t.duration <= 7.05) setLive(url, 0); else { setTrimUrl(url); setTrimDur(t.duration); setTrimStart(0); setOverlay('trim'); setFullView(null) } }
-    e.target.value = ''
+    e.target.value = ''; setShowAttach(false)
   }
   const handlePhoto = (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
-    const url = URL.createObjectURL(f)
-    setMe({ type: 'photo', src: url }); e.target.value = ''
+    const url = URL.createObjectURL(f); setMe({ type: 'photo', src: url }); e.target.value = ''
     if (fullView && fullView.isMe) setFullView({ ...fullView, type: 'photo', src: url })
-    showToast('Photo set ✔')
+    showToast('Photo set ✔'); setShowAttach(false)
   }
+  const handleAttach = (e: any) => { const f = e.target.files?.[0]; if (!f) return; showToast('File attached: ' + f.name); e.target.value = ''; setShowAttach(false) }
 
   const startRecord = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
-      const chunks: Blob[] = []
-      const mr = new MediaRecorder(stream)
+      const chunks: Blob[] = []; const mr = new MediaRecorder(stream)
       mr.ondataavailable = e => chunks.push(e.data)
-      mr.onstop = () => {
-        const url = URL.createObjectURL(new Blob(chunks, { type: mr.mimeType }))
-        setRecordUrl(url); stream.getTracks().forEach(t => t.stop())
-      }
-      mr.start(); setRecording(true)
-      setTimeout(() => { mr.stop(); setRecording(false) }, 7000)
-      setOverlay('record')
+      mr.onstop = () => { const url = URL.createObjectURL(new Blob(chunks, { type: mr.mimeType })); setRecordUrl(url); stream.getTracks().forEach(t => t.stop()) }
+      mr.start(); setRecording(true); setTimeout(() => { mr.stop(); setRecording(false) }, 7000); setOverlay('record')
     } catch { showToast('Camera not allowed') }
   }
 
@@ -185,12 +219,81 @@ export default function ChatPage() {
   })
   const showYouRow = !searching || !q || 'you'.includes(q) || 'my profile'.includes(q)
   const selfLast = selfMsgs[selfMsgs.length - 1]
+  const currentChatMsgs = openChat ? (chatMsgs[openChat.name] || []) : []
+
+  // ===== EVA BAR - EXACTLY LIKE EVA VIDEO =====
+  // Order: 😊 outside-left | [ Message... 💧 inside-right ] | 🎤 green outside-right
+  const ChatBar = ({ value, onChange, onSend, isSelf }: { value: string; onChange: (v: string) => void; onSend: () => void; isSelf: boolean }) => (
+    <div style={{ background: '#0b0e24', padding: '8px 10px', paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+      {showEmoji && (
+        <div style={{ background: '#1a1f4a', borderRadius: 16, padding: 10, marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#0e1230', borderRadius: 20, padding: '8px 12px', marginBottom: 8 }}>
+            <span>🔍</span>
+            <input value={emojiSearch} onChange={e => setEmojiSearch(e.target.value)} placeholder="Search emoji..." style={{ flex: 1, background: 'transparent', border: 0, outline: 'none', color: '#fff', fontSize: 14 }} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6 }}>
+            {Object.keys(EMOJI_CATS).map(cat => (
+              <button key={cat} onClick={() => setEmojiCat(cat as any)} style={{ background: emojiCat === cat ? '#ff2f6d' : '#2a2f5c', border: 0, color: '#fff', borderRadius: 16, padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap' }}>{cat}</button>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8,1fr)', gap: 4, maxHeight: 160, overflowY: 'auto' }}>
+            {EMOJI_CATS[emojiCat].map(em => <button key={em} onClick={() => addEmoji(em, isSelf)} style={{ background: 'none', border: 0, fontSize: 26, cursor: 'pointer', padding: 4 }}>{em}</button>)}
+          </div>
+        </div>
+      )}
+      {showAttach && (
+        <div style={{ background: '#1a1f4a', borderRadius: 16, padding: 12, marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <button onClick={() => galleryRef.current?.click()} style={{ flex: 1, background: '#0e1230', border: 0, color: '#fff', borderRadius: 12, padding: 12, fontSize: 13 }}>🖼️<br/>Gallery</button>
+            <button onClick={() => { setShowAttach(false); startRecord() }} style={{ flex: 1, background: '#0e1230', border: 0, color: '#fff', borderRadius: 12, padding: 12, fontSize: 13 }}>📷<br/>Camera</button>
+            <button onClick={() => docRef.current?.click()} style={{ flex: 1, background: '#0e1230', border: 0, color: '#fff', borderRadius: 12, padding: 12, fontSize: 13 }}>📄<br/>Document</button>
+            <button onClick={() => { setShowAttach(false); showToast('Scan opened') }} style={{ flex: 1, background: '#0e1230', border: 0, color: '#fff', borderRadius: 12, padding: 12, fontSize: 13 }}>📠<br/>Scan</button>
+          </div>
+          <button onClick={() => setShowAttach(false)} style={{ width: '100%', background: '#2a2f5c', border: 0, color: '#fff', borderRadius: 10, padding: 10, marginTop: 8 }}>Close</button>
+        </div>
+      )}
+      {isRecordingVoice && <div style={{ textAlign: 'center', color: '#ff3b6b', fontSize: 13, paddingBottom: 6 }}>● Recording voice... tap mic again to stop</div>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button onClick={() => { setShowEmoji(!showEmoji); setShowAttach(false) }} style={{ background: 'none', border: 0, fontSize: 26, cursor: 'pointer', flexShrink: 0, lineHeight: 1 }}>😊</button>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', background: '#171c46', borderRadius: 26, paddingRight: 4 }}>
+          <input
+            placeholder={isSelf ? 'Message yourself...' : 'Message...'}
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') onSend() }}
+            style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none', color: '#fff', fontSize: 15, padding: '12px 12px 12px 14px' }}
+          />
+          {/* DROPLET ON RIGHT SIDE INSIDE BOX - LIKE EVA */}
+          <button onClick={() => { setShowAttach(!showAttach); setShowEmoji(false) }} style={{ background: 'none', border: 0, cursor: 'pointer', flexShrink: 0, padding: 0, lineHeight: 0 }} title="Attach">
+            <Droplet o={{ ...me, ring: 'none' }} w={24} />
+          </button>
+        </div>
+        {value.trim() ? (
+          <button onClick={onSend} style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>➤</button>
+        ) : (
+          <button onClick={() => toggleVoice(isSelf)} style={{ width: 44, height: 44, borderRadius: '50%', background: isRecordingVoice ? '#ff2f6d' : '#00c853', border: 0, fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>🎤</button>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderMsgs = (msgs: Msg[]) => (
+    <>
+      {msgs.map((m, i) => (
+        <div key={i} className="b out">
+          {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: '100%' }} /> : m.text}
+          <small>{m.time} ✓✓</small>
+        </div>
+      ))}
+      <div ref={msgsEndRef} />
+    </>
+  )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial', overflow: 'hidden' }}>
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-        #screen{flex:1;overflow-y:auto;padding-bottom:10px}
+        #screen{flex:1;overflow-y:auto;padding-bottom:10px;min-height:0}
         #nav{display:flex;background:#0b0e24;border-top:1px solid #1b1f3d;padding-bottom:env(safe-area-inset-bottom)}
         #nav button{flex:1;background:none;border:0;color:#8a8fb0;padding:10px 0;font-size:14px}
         #nav button span{display:block;font-size:22px}
@@ -204,11 +307,6 @@ export default function ChatPage() {
         .section{padding:10px 18px 4px;font-size:13px;color:#8a8fb0}
         #overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;justify-content:center;align-items:flex-start;padding-top:70px;z-index:10}
         #overlay.sheet{align-items:flex-end;padding-top:0}
-        .popup{background:#0e1230;border:1px solid #23284f;border-radius:18px;padding:16px;width:260px;text-align:center}
-        .popup .pname{font-weight:700;margin-bottom:12px}
-        .icons{display:flex;justify-content:space-between}
-        .icons button{background:#171c46;border:0;color:#fff;width:50px;height:50px;border-radius:50%;font-size:22px}
-        .icons button.plus{color:#ff3b6b;font-weight:700}
         .sheetbox{background:#0e1230;width:100%;border-radius:20px 20px 0 0;padding:18px;max-height:88vh;overflow-y:auto}
         .sheetbox h3{margin-bottom:12px}
         .big{display:block;width:100%;background:#171c46;border:0;color:#fff;padding:14px;border-radius:12px;font-size:16px;margin-bottom:10px;text-align:left}
@@ -220,17 +318,13 @@ export default function ChatPage() {
         .grid button{background:#171c46;border:0;color:#fff;border-radius:12px;padding:12px 4px;font-size:13px}
         .grid button b{display:block;font-size:30px}
         #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#ff2f6d;padding:10px 16px;border-radius:20px;font-size:14px;z-index:20}
-        .chathead{display:flex;align-items:center;gap:12px;padding:8px 14px;background:#0b0e24}
+        .chathead{display:flex;align-items:center;gap:12px;padding:8px 14px;background:#0b0e24;flex-shrink:0}
         .chathead .back{background:none;border:0;color:#fff;font-size:24px}
-        .msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;height:calc(100vh - 150px)}
+        .msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;min-height:0}
         .b{max-width:78%;padding:8px 12px;border-radius:14px;font-size:15px}
         .b small{display:block;text-align:right;font-size:11px;opacity:.7;margin-top:2px}
         .in{background:#1a1f4a;align-self:flex-start}
         .out{background:#6a2a8f;align-self:flex-end}
-        .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#0b0e24}
-        .bar input{flex:1;background:#171c46;border:0;border-radius:22px;padding:11px 14px;color:#fff;font-size:15px}
-        .bar button{background:none;border:0;font-size:22px;color:#cfd3ff}
-        .fullTopBtn{width:44px;height:44px;border-radius:50%;background:rgba(20,24,58,.85);border:1px solid #2a2f5c;color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer}
         .fullAction{width:56px;height:56px;border-radius:50%;background:#171c46;border:0;color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;cursor:pointer}
         .fullAction.plus{background:linear-gradient(90deg,#ff2f6d,#8a2be2);color:#fff;font-weight:700}
         .plusMenu{background:#0e1230;border:1px solid #23284f;border-radius:16px;padding:10px;width:210px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
@@ -244,12 +338,9 @@ export default function ChatPage() {
       {!openChat && !openSelf && !searching && (
         <header style={{ padding: '14px 16px 10px', background: '#080b1c' }}>
           <div style={{ fontSize: 22, fontWeight: 700, textAlign: 'right' }}>EVA Chat</div>
-          <div className="waSearchBar" style={{ marginTop: 12 }} onClick={() => setSearching(true)}>
-            <span>🔍</span><span>Search</span>
-          </div>
+          <div className="waSearchBar" style={{ marginTop: 12 }} onClick={() => setSearching(true)}><span>🔍</span><span>Search</span></div>
         </header>
       )}
-
       {!openChat && !openSelf && searching && (
         <header style={{ padding: '12px 12px 10px', background: '#080b1c' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#1a1f4a', borderRadius: 22, padding: '6px 6px 6px 2px' }}>
@@ -265,52 +356,32 @@ export default function ChatPage() {
         </header>
       )}
 
-      <main id="screen" style={{ flex: 1, overflowY: 'auto' }}>
+      <main id="screen" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {openSelf ? (
           <>
-            <div className="chathead">
-              <button className="back" onClick={() => setOpenSelf(false)}>←</button>
-              <Droplet o={{ ...me, ring: 'none' }} w={36} onClick={() => openFull({ ...me, name: 'You', isMe: true })} />
-              <div><b>You</b><div style={{ fontSize: 12, color: '#8a8fb0' }}>Message yourself</div></div>
-            </div>
-            <div className="msgs">
-              {selfMsgs.map((m, i) => (
-                <div key={i} className="b out">{m.text}<small>{m.time} ✓✓</small></div>
-              ))}
-            </div>
-            <div className="bar">
-              <button>😊</button>
-              <input placeholder="Message yourself..." value={selfInput} onChange={e => setSelfInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendSelf() }} />
-              <button>📎</button><button>📷</button>
-              <button onClick={sendSelf} style={{ color: '#ff3b6b' }}>➤</button>
-            </div>
+            <div className="chathead"><button className="back" onClick={() => setOpenSelf(false)}>←</button><Droplet o={{ ...me, ring: 'none' }} w={36} onClick={() => openFull({ ...me, name: 'You', isMe: true })} /><div><b>You</b><div style={{ fontSize: 12, color: '#8a8fb0' }}>Message yourself</div></div></div>
+            <div className="msgs">{renderMsgs(selfMsgs)}</div>
+            <ChatBar value={selfInput} onChange={setSelfInput} onSend={sendSelf} isSelf={true} />
           </>
         ) : openChat ? (
           <>
-            <div className="chathead">
-              <button className="back" onClick={() => setOpenChat(null)}>←</button>
-              <Droplet o={{ ...openChat, ring: 'none' }} w={36} />
-              <div><b>{openChat.name}</b></div>
-            </div>
+            <div className="chathead"><button className="back" onClick={() => setOpenChat(null)}>←</button><Droplet o={{ ...openChat, ring: 'none' }} w={36} /><div><b>{openChat.name}</b></div></div>
             <div className="msgs">
-              <div className="b in">Boss how far?<small>11:30</small></div>
-              <div className="b out">I dey. Wetin dey?<small>11:31 ✓✓</small></div>
-              <div className="b in">{openChat.msg}<small>{openChat.time}</small></div>
+              {currentChatMsgs.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', fontSize: 13, paddingTop: 20 }}>No messages yet. Say hi 👋</div>}
+              {renderMsgs(currentChatMsgs)}
             </div>
-            <div className="bar"><button>😊</button><input placeholder="Message..." /><button>📎</button><button>📷</button><button>🎤</button></div>
+            <ChatBar value={chatInput} onChange={setChatInput} onSend={sendChat} isSelf={false} />
           </>
         ) : tab === 'chat' ? (
           <>
             {showYouRow && (
               <div className="row">
                 <Droplet o={{ ...me, ring: 'none' }} w={46} onClick={(e) => { e.stopPropagation(); openFull({ ...me, name: 'You', isMe: true }) }} />
-                <div className="info" onClick={() => { closeSearch(); setOpenSelf(true) }}><div className="name">You</div><div className="sub">{selfLast ? selfLast.text : 'Message yourself'}</div></div>
+                <div className="info" onClick={() => { closeSearch(); setOpenSelf(true) }}><div className="name">You</div><div className="sub">{selfLast ? (selfLast.text || '🎤 Voice note') : 'Message yourself'}</div></div>
                 <div className="time">{selfLast ? selfLast.time : 'You'}</div>
               </div>
             )}
-            {searching && (q || searchFilter !== 'all') && (
-              <div className="section">{filteredChats.length} result{filteredChats.length === 1 ? '' : 's'}</div>
-            )}
+            {searching && (q || searchFilter !== 'all') && <div className="section">{filteredChats.length} result{filteredChats.length === 1 ? '' : 's'}</div>}
             {filteredChats.map((c, i) => (
               <div key={i} className="row">
                 <Droplet o={c} w={46} onClick={(e) => { e.stopPropagation(); openFull({ ...c, isMe: false }) }} />
@@ -318,11 +389,10 @@ export default function ChatPage() {
                 <div className="time">{c.time}</div>
               </div>
             ))}
-            {searching && !showYouRow && filteredChats.length === 0 && (
+            {filteredChats.length === 0 && (
               <div style={{ textAlign: 'center', padding: '40px 20px', color: '#8a8fb0' }}>
-                <div style={{ fontSize: 40, marginBottom: 10 }}>🔍</div>
-                <b style={{ color: '#fff' }}>No results found</b>
-                <div style={{ fontSize: 13, marginTop: 6 }}>Try a different name or message</div>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>💬</div><b style={{ color: '#fff' }}>No chats yet</b>
+                <div style={{ fontSize: 13, marginTop: 6 }}>Tap + to add a real contact by number</div>
               </div>
             )}
           </>
@@ -433,7 +503,9 @@ export default function ChatPage() {
 
       <input ref={galleryRef} type="file" accept="video/*" hidden onChange={handleGallery} />
       <input ref={photoRef} type="file" accept="image/*" hidden onChange={handlePhoto} />
+      <input ref={attachRef} type="file" hidden onChange={handleAttach} />
+      <input ref={docRef} type="file" hidden onChange={handleAttach} />
       {toast && <div id="toast">{toast}</div>}
     </div>
   )
-}
+    }
