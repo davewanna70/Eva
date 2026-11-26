@@ -158,6 +158,8 @@ export default function ChatPage() {
   useEffect(() => {
     const savedPhone = localStorage.getItem('eva-phone')
     const savedVerified = localStorage.getItem('eva-verified')
+    // Only auto-login if THIS user has logged in before on THIS device.
+    // No hard-coded phone, no hard-coded name, no fake user.
     if (savedPhone && savedVerified === '1') {
       setMyPhone(savedPhone); setIsVerified(true)
       setMyName(localStorage.getItem(`eva-name-${savedPhone}`) || '')
@@ -169,6 +171,9 @@ export default function ChatPage() {
       if (savedContacts) { try { setContacts(JSON.parse(savedContacts)) } catch {} }
       const savedSelf = localStorage.getItem(`eva-self-${savedPhone}`)
       if (savedSelf) { try { setSelfMsgs(JSON.parse(savedSelf)) } catch {} }
+    } else {
+      // New user: stay on login, all fields empty
+      setIsVerified(false); setMyPhone(''); setMyName(''); setPhoneInput(''); setSignupName(''); setOtpInput(''); setCodeSent(false)
     }
   }, [])
 
@@ -191,18 +196,18 @@ export default function ChatPage() {
       setMyPhone(phone); setIsVerified(true); setVerifying(false)
       localStorage.setItem('eva-phone', phone); localStorage.setItem('eva-verified', '1')
       if (authMode === 'signup' && signupName.trim()) { setMyName(signupName.trim()); localStorage.setItem(`eva-name-${phone}`, signupName.trim()) }
-      else { const n = localStorage.getItem(`eva-name-${phone}`); if (n) setMyName(n) }
-      showToast('Welcome to EVA Chat')
+      else { const n = localStorage.getItem(`eva-name-${phone}`); if (n) setMyName(n); else setMyName('') }
+      showToast('Welcome')
     }, 800)
   }
   const doLogout = () => {
     localStorage.removeItem('eva-verified'); setIsVerified(false); setShowLogoutConfirm(false); setOpenChat(null); setOpenSelf(false); setShowSelectContact(false)
+    setMyPhone(''); setMyName(''); setPhoneInput(''); setSignupName(''); setOtpInput(''); setCodeSent(false)
   }
   const setLive = (src: string, start: number) => {
     setMe({ type: 'live', src, start, ring: 'new' }); setOverlay(null); setShowPlusMenu(false); setFullView(null); showToast('Live profile set - 7 secs loop')
   }
-
-   const filteredEmojis = EMOJI_CATS[emojiCat] || []
+  const filteredEmojis = EMOJI_CATS[emojiCat] || []
   const visibleContacts = contacts.filter(c => c.phone !== myPhone).filter(c => c.name.toLowerCase().includes(contactSearch.toLowerCase()))
   const visibleChats = chats.filter(c => c.phone !== myPhone).filter(c => {
     if (searchFilter === 'unread') return c.msg && c.msg !== 'Tap to chat'
@@ -270,8 +275,6 @@ export default function ChatPage() {
   if (!isVerified) {
     return (
       <div style={{ minHeight: '100vh', background: '#0a0d26', color: '#fff', padding: 20, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <div style={{ fontSize: 32, fontWeight: 800, textAlign: 'center' }}>💧 EVA Chat</div>
-        <div style={{ textAlign: 'center', opacity: 0.7, marginBottom: 20 }}>Chat, Check and Call in one place</div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           <button onClick={() => setAuthMode('login')} style={{ flex: 1, background: authMode === 'login' ? '#ff2f6d' : '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 10 }}>Login</button>
           <button onClick={() => setAuthMode('signup')} style={{ flex: 1, background: authMode === 'signup' ? '#ff2f6d' : '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 10 }}>Sign Up</button>
@@ -333,9 +336,9 @@ export default function ChatPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0d26', color: '#fff', paddingBottom: 90 }}>
-      {/* CLEAN HEADER - NO DROPLET HERE, NO DUPLICATE TABS */}
+      {/* CLEAN HEADER - NO TITLE, NO DROPLET */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px 8px', background: '#0e1230', position: 'sticky', top: 0, zIndex: 20 }}>
-        <div style={{ flex: 1 }}><div style={{ fontSize: 22, fontWeight: 800 }}>EVA Chat</div><div style={{ fontSize: 12, opacity: 0.6 }}>{myName ? myName + ' • ' : ''}{myPhone}</div></div>
+        <div style={{ flex: 1 }}><div style={{ fontSize: 14, opacity: 0.8 }}>{myName ? myName + ' • ' : ''}{myPhone}</div></div>
         <button onClick={() => setShowQR(true)} style={{ background: '#171c46', border: 0, color: '#fff', borderRadius: '50%', width: 38, height: 38 }}>📷</button>
         <button onClick={() => setShowContactMenu(true)} style={{ background: '#171c46', border: 0, color: '#fff', borderRadius: '50%', width: 38, height: 38 }}>⋮</button>
       </div>
@@ -413,7 +416,7 @@ export default function ChatPage() {
 
       {showQR && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 380, borderRadius: 16, padding: 16, textAlign: 'center' }}>
         <div style={{ fontWeight: 800, marginBottom: 10 }}>QR Code</div>
-        <div style={{ background: '#fff', color: '#000', padding: 20, borderRadius: 12, marginBottom: 12, fontSize: 12 }}>QR for {myPhone}<br />{myName || 'EVA User'}</div>
+        <div style={{ background: '#fff', color: '#000', padding: 20, borderRadius: 12, marginBottom: 12, fontSize: 12 }}>QR for {myPhone}<br />{myName || ''}</div>
         <input value={scanInput} onChange={e => setScanInput(e.target.value)} placeholder="Paste scanned number" style={{ background: '#171c46', border: 0, borderRadius: 10, padding: 10, color: '#fff', width: '100%', marginBottom: 10 }} />
         <button onClick={() => { if (scanInput.trim()) { showToast('Scanned: ' + scanInput); setScanInput(''); setShowQR(false) } }} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%', marginBottom: 8 }}>Add Scanned</button>
         <button onClick={() => setShowQR(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%' }}>Close</button>
@@ -426,7 +429,7 @@ export default function ChatPage() {
       </div></div>}
 
       {showInvite && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 97, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 360, borderRadius: 16, padding: 16, textAlign: 'center' }}>
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>Invite Friends</div><div style={{ opacity: 0.6, marginBottom: 12 }}>Share EVA Chat with your friends</div>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Invite Friends</div><div style={{ opacity: 0.6, marginBottom: 12 }}>Share with your friends</div>
         <button onClick={() => { showToast('Invite link copied'); setShowInvite(false) }} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 10, padding: 12, width: '100%', marginBottom: 8 }}>Copy Invite Link</button>
         <button onClick={() => setShowInvite(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%' }}>Close</button>
       </div></div>}
@@ -460,4 +463,4 @@ export default function ChatPage() {
       <style>{`.drop{box-shadow:0 4px 14px rgba(0,0,0,.35)} input::placeholder{color:#888}`}</style>
     </div>
   )
-} 
+}
