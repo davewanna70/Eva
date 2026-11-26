@@ -1,745 +1,463 @@
-"use client"
-import { useState, useEffect, useRef } from "react"
-import { initializeApp, getApps, getApp } from "firebase/app"
-import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut, type ConfirmationResult } from "firebase/auth"
+'use client'
+import { useState, useEffect, useRef } from 'react'
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-}
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
-const auth = getAuth(app)
-
-type Chat = { name: string; msg: string; time: string; ring: 'new' | 'seen' | 'none'; type: 'none' | 'photo' | 'live'; src?: string; start?: number; phone?: string }
-type Me = { type: 'none' | 'photo' | 'live'; src?: string; start?: number }
-type Msg = { text?: string; time: string; audioUrl?: string; kind?: 'text' | 'voice' }
+type Msg = { text?: string; audioUrl?: string; time: string; kind: 'text' | 'voice' }
+type Chat = { name: string; msg: string; time: string; ring: string; type: string; phone: string; src?: string; start?: number }
 type Contact = { name: string; phone: string; blocked?: boolean }
 
-const STICKERS = [{ name: 'Aki', src: 'stickers/aki.mp4', e: '😎' }, { name: 'Pawpaw', src: 'stickers/pawpaw.mp4', e: '🐶' }, { name: 'Fire', src: 'stickers/fire.mp4', e: '🔥' }]
-const COUNTRIES = [
-  { name: 'Nigeria', code: '+234', flag: '🇳🇬' }, { name: 'Benin', code: '+229', flag: '🇧🇯' },
-  { name: 'Ghana', code: '+233', flag: '🇬🇭' }, { name: 'United States', code: '+1', flag: '🇺🇸' },
-  { name: 'United Kingdom', code: '+44', flag: '🇬🇧' }, { name: 'Canada', code: '+1', flag: '🇨🇦' },
-  { name: 'South Africa', code: '+27', flag: '🇿🇦' }, { name: 'Kenya', code: '+254', flag: '🇰🇪' },
-  { name: 'India', code: '+91', flag: '🇮🇳' }, { name: 'France', code: '+33', flag: '🇫🇷' },
-]
 const EMOJI_CATS: Record<string, string[]> = {
-  Faces: ['😂','❤️','😍','🔥','😭','😎','🥰','😅','👏','😉','💯','😁','🤣','😘','😊'],
-  Hands: ['👍','🙏','👏','✌️','🤞','👌','🤲','🖐️','👋','💪','🫶'],
-  Animals: ['🐶','🐱','🦁','🐯','🐵','🐷','🐥','🦋','🐢','🦄','🐝','🦊'],
+  Smile: ['😀','😁','😂','🤣','😊','😍','😘','😎','🤔','😴','😡','🥳','😭','🙏','👍','👎','👏','🙌','🔥','❤️','💔','✨','🎉','😇','🤗'],
+  Animals: ['🐶','🐱','🐭','🐰','🦁','🐯','🐵','🐷','🐥','🦋','🐢','🐍','🦄','🐝','🦖','🐳'],
+  Food: ['🍎','🍕','🍔','🍟','🍩','🍰','🍫','🍿','🍦','🍓','🍇','🥑','🍜','☕','🧃','🍺'],
+  Sport: ['⚽','🏀','🏈','🎾','🏊','🚴','🏋️','🎮','🎲','🎯','🏆','🥇','🎸','🎤','🎧','📷'],
 }
-const P = 'M50,0 C70,40 100,90 100,140 C100,180 80,210 50,210 C20,210 0,180 0,140 C0,90 30,40 50,0 Z'
-const T = 'translate(5,10.5) scale(.9)'
-let uidCounter = 0
+const STICKERS = [
+  { name: 'Aki', e: '😂', src: '' },
+  { name: 'Pawpaw', e: '😜', src: '' },
+  { name: 'Fire', e: '🔥', src: '' },
+]
+const COUNTRIES = [
+  { name: 'Nigeria', code: '+234', flag: '🇳🇬' },
+  { name: 'Ghana', code: '+233', flag: '🇬🇭' },
+  { name: 'United States', code: '+1', flag: '🇺🇸' },
+  { name: 'United Kingdom', code: '+44', flag: '🇬🇧' },
+  { name: 'South Africa', code: '+27', flag: '🇿🇦' },
+  { name: 'Kenya', code: '+254', flag: '🇰🇪' },
+  { name: 'Cameroon', code: '+237', flag: '🇨🇲' },
+  { name: 'Benin', code: '+229', flag: '🇧🇯' },
+  { name: 'Togo', code: '+228', flag: '🇹🇬' },
+  { name: 'India', code: '+91', flag: '🇮🇳' },
+]
 
-// FIX: Convert file to DataURL so e stay after close / minimize / reload. Blob URL dey die.
-const fileToDataURL = (f: File) => new Promise<string>((res, rej) => {
-  const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f)
-})
+function nowTime() {
+  const d = new Date()
+  let h = d.getHours(); const m = d.getMinutes().toString().padStart(2, '0')
+  const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12
+  return `${h}:${m} ${ap}`
+}
+function formatPhone(p: string) { return p.startsWith('+') ? p : '+234' + p.replace(/^0+/, '') }
+async function fileToDataURL(f: File | Blob): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(f)
+  })
+}
 
-function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onClick?: (e: any) => void; muted?: boolean }) {
-  const idRef = useRef(0)
-  if (idRef.current === 0) { uidCounter += 1; idRef.current = uidCounter }
-  const n = idRef.current
-  const ring = o.ring === 'new' ? 'ring-unwatched' : o.ring === 'seen' ? 'ring-watched' : ''
-  const type = o.type || 'none'; const src = o.src; const start = o.start || 0
-  const videoRef = useRef<HTMLVideoElement>(null)
-  useEffect(() => {
-    const v = videoRef.current; if (!v || type !== 'live' || !src) return
-    let raf = 0
-    const go = () => {
-      if (!v.isConnected) return
-      const end = Math.min(start + 7, v.duration || start + 7)
-      if (v.currentTime >= end - 0.04 || v.currentTime < start - 0.1) v.currentTime = start
-      if (v.paused && v.isConnected) v.play().catch(() => {})
-      raf = requestAnimationFrame(go)
-    }
-    const onMeta = () => { v.currentTime = start }
-    v.addEventListener('loadedmetadata', onMeta); raf = requestAnimationFrame(go)
-    return () => { cancelAnimationFrame(raf); v.removeEventListener('loadedmetadata', onMeta) }
-  }, [src, type, start])
-  useEffect(() => { const v = videoRef.current; if (v) v.muted = muted }, [muted])
+function Droplet({ o, w, muted }: { o: any; w: number; muted?: boolean }) {
+  const size = w
+  const bg = o.type === 'photo' && o.src ? `url(${o.src})` : o.type === 'live' && o.src ? '#000' : 'linear-gradient(160deg,#1a2a6c,#0b0e24)'
   return (
-    <span style={{ display: 'block', width: w }} onClick={onClick}>
-      <svg className="drop" viewBox="-6 -4 112 218" style={{ width: '100%', display: 'block', overflow: 'visible' }}>
-        <defs>
-          <linearGradient id={`rg${n}`} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ff2f4d" /><stop offset="1" stopColor="#8a2be2" /></linearGradient>
-          <radialGradient id={`gl${n}`} cx=".4" cy=".6" r=".7"><stop offset="0" stopColor="#6aa0ff" stopOpacity=".06" /><stop offset=".75" stopColor="#143070" stopOpacity=".10" /><stop offset="1" stopColor="#9fd0ff" stopOpacity=".40" /></radialGradient>
-          <clipPath id={`c${n}`}><path d={P} /></clipPath>
-        </defs>
-        {ring && <path d={P} fill="none" strokeWidth={o.ring === 'new' ? 4.5 : 3} stroke={o.ring === 'new' ? `url(#rg${n})` : '#7a5560'} opacity={o.ring === 'seen' ? .55 : 1} />}
-        <g transform={T}>
-          <g clipPath={`url(#c${n})`}>
-            {type === 'photo' && src && <image href={src} x={0} y={0} width={100} height={210} preserveAspectRatio="xMidYMid slice" />}
-            {type === 'live' && src && (<foreignObject x="0" y="0" width="100" height="210"><video ref={videoRef} muted={muted} playsInline autoPlay src={src} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></foreignObject>)}
-            {type === 'none' && <rect x="0" y="0" width={100} height={210} fill="#1a1f4a" />}
-          </g>
-          <path d={P} fill={`url(#gl${n})`} stroke="rgba(255,255,255,.55)" strokeWidth="1.4" />
-        </g>
-      </svg>
-    </span>
+    <div className="drop" style={{ width: size, height: size * 1.28, borderRadius: '50% 50% 50% 50% / 62% 62% 38% 38%', background: bg, backgroundSize: 'cover', backgroundPosition: 'center', overflow: 'hidden', flexShrink: 0, position: 'relative', border: '2px solid rgba(255,255,255,.25)' }}>
+      {o.type === 'live' && o.src && <video src={o.src} autoPlay muted={muted !== false} loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+      {o.type === 'none' && <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.4 }}>💧</div>}
+      {o.type === 'photo' && !o.src && <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.4 }}>💧</div>}
+    </div>
   )
 }
 
-// FIX KEYBOARD: ChatBar dey OUTSIDE ChatPage now. Before e dey inside, every letter go kill input + keyboard. Now input no go die, you fit type 100 words.
-function ChatBar({ value, onChange, onSend, isSelf, me, showEmoji, setShowEmoji, showAttach, setShowAttach, emojiCat, setEmojiCat, filteredEmojis, addEmoji, galleryRef, docRef, startRecord, toggleVoice, isRecordingVoice }: any) {
+function ChatBar(props: any) {
+  const { value, onChange, onSend, isSelf, me, showEmoji, setShowEmoji, showAttach, setShowAttach, emojiCat, setEmojiCat, filteredEmojis, addEmoji, galleryRef, docRef, startRecord, toggleVoice, isRecordingVoice } = props
   return (
-    <div style={{ background: '#0b0e24', padding: '8px 10px', paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+    <div style={{ background: '#0e1230', padding: '8px 10px calc(env(safe-area-inset-bottom) + 8px)', borderTop: '1px solid #1a1f4a' }}>
       {showEmoji && (
-        <div style={{ background: '#1a1f4a', borderRadius: 16, padding: 10, marginBottom: 8 }}>
-          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6 }}>
-            {Object.keys(EMOJI_CATS).map(cat => <button key={cat} onClick={() => setEmojiCat(cat as any)} style={{ background: emojiCat === cat ? '#ff2f6d' : '#2a2f5c', border: 0, color: '#fff', borderRadius: 16, padding: '6px 12px', fontSize: 12 }}>{cat}</button>)}
+        <div style={{ background: '#171c46', borderRadius: 14, padding: 10, marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            {Object.keys(EMOJI_CATS).map(c => <button key={c} onClick={() => setEmojiCat(c)} style={{ background: emojiCat === c ? '#ff2f6d' : '#222', border: 0, color: '#fff', borderRadius: 10, padding: '6px 10px', fontSize: 11 }}>{c}</button>)}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8,1fr)', gap: 4, maxHeight: 160, overflowY: 'auto' }}>
-            {filteredEmojis.map((em: string) => <button key={em} onClick={() => addEmoji(em, isSelf)} style={{ background: 'none', border: 0, fontSize: 26, padding: 4 }}>{em}</button>)}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
+            {filteredEmojis.map((e: string, i: number) => <button key={i} onClick={() => addEmoji(e, isSelf)} style={{ background: 'none', border: 0, fontSize: 22 }}>{e}</button>)}
           </div>
         </div>
       )}
       {showAttach && (
-        <div style={{ background: '#1a1f4a', borderRadius: 16, padding: 12, marginBottom: 8 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => galleryRef.current?.click()} style={{ flex: 1, background: '#0e1230', border: 0, color: '#fff', borderRadius: 12, padding: 12, fontSize: 13 }}>🖼️<br />Gallery</button>
-            <button onClick={() => { setShowAttach(false); startRecord() }} style={{ flex: 1, background: '#0e1230', border: 0, color: '#fff', borderRadius: 12, padding: 12, fontSize: 13 }}>📷<br />Camera</button>
-            <button onClick={() => docRef.current?.click()} style={{ flex: 1, background: '#0e1230', border: 0, color: '#fff', borderRadius: 12, padding: 12, fontSize: 13 }}>📄<br />Document</button>
-          </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <button onClick={() => galleryRef.current?.click()} style={{ flex: 1, background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 10 }}>🖼️ Gallery</button>
+          <button onClick={() => docRef.current?.click()} style={{ flex: 1, background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 10 }}>📄 Document</button>
+          <button onClick={startRecord} style={{ flex: 1, background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 10 }}>📷 Record 7s</button>
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button onClick={() => { setShowEmoji(!showEmoji); setShowAttach(false) }} style={{ background: 'none', border: 0, fontSize: 26, flexShrink: 0 }}>😊</button>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#171c46', borderRadius: 26, paddingRight: 4 }}>
-          <input placeholder={isSelf ? 'Message yourself...' : 'Message...'} value={value} onChange={e => onChange(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') onSend() }} autoComplete="off" enterKeyHint="send" style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none', color: '#fff', fontSize: 15, padding: '12px 14px' }} />
-          <button onClick={() => { setShowAttach(!showAttach); setShowEmoji(false) }} style={{ background: 'none', border: 0, padding: 0 }}><Droplet o={{ ...me, ring: 'none' }} w={24} /></button>
-        </div>
-        {value.trim() ? <button onClick={onSend} style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, color: '#fff', fontSize: 20 }}>➤</button>
-          : <button onClick={() => toggleVoice(isSelf)} style={{ width: 44, height: 44, borderRadius: '50%', background: isRecordingVoice ? '#ff2f6d' : '#00c853', border: 0, fontSize: 20 }}>🎤</button>}
+        <button onClick={() => setShowEmoji(!showEmoji)} style={{ background: 'none', border: 0, fontSize: 22 }}>😀</button>
+        <button onClick={() => setShowAttach(!showAttach)} style={{ background: 'none', border: 0, fontSize: 22 }}>📎</button>
+        <input value={value} onChange={e => onChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && onSend()} placeholder={isSelf ? 'Message yourself...' : 'Message...'} style={{ flex: 1, background: '#171c46', border: 0, borderRadius: 20, padding: '10px 14px', color: '#fff', outline: 'none' }} />
+        <button onClick={() => toggleVoice(isSelf)} style={{ background: isRecordingVoice ? '#ff2f4d' : 'none', border: 0, fontSize: 20, borderRadius: '50%', padding: 6 }}>🎤</button>
+        <button onClick={onSend} style={{ background: '#ff2f6d', border: 0, color: '#fff', width: 38, height: 38, borderRadius: '50%', fontSize: 18 }}>➤</button>
       </div>
     </div>
   )
 }
 
 export default function ChatPage() {
-  const [myPhone, setMyPhone] = useState('')
-  const [myName, setMyName] = useState('')
   const [isVerified, setIsVerified] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  const [signupName, setSignupName] = useState('')
   const [phoneInput, setPhoneInput] = useState('')
   const [otpInput, setOtpInput] = useState('')
   const [codeSent, setCodeSent] = useState(false)
-  const [verifying, setVerifying] = useState(false)
   const [sending, setSending] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [myPhone, setMyPhone] = useState('')
+  const [myName, setMyName] = useState('')
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0])
   const [showCountryPicker, setShowCountryPicker] = useState(false)
   const [countrySearch, setCountrySearch] = useState('')
-  const [signupName, setSignupName] = useState('')
-  const [me, setMe] = useState<Me>({ type: 'none' })
+  const [me, setMe] = useState<any>({ type: 'none', ring: 'none' })
   const [chats, setChats] = useState<Chat[]>([])
-  const [tab, setTab] = useState<'chat' | 'check' | 'call'>('chat')
-  const [overlay, setOverlay] = useState<string | null>(null)
+  const [contacts, setContacts] = useState<Contact[]>([])
   const [openChat, setOpenChat] = useState<Chat | null>(null)
   const [openSelf, setOpenSelf] = useState(false)
-  const [selfMsgs, setSelfMsgs] = useState<Msg[]>([])
-  const [selfInput, setSelfInput] = useState('')
-  const [chatInput, setChatInput] = useState('')
-  const [chatMsgs, setChatMsgs] = useState<Record<string, Msg[]>>({})
-  const [showEmoji, setShowEmoji] = useState(false)
-  const [emojiCat, setEmojiCat] = useState<keyof typeof EMOJI_CATS>('Faces')
-  const [emojiSearch, setEmojiSearch] = useState('')
-  const [showAttach, setShowAttach] = useState(false)
-  const [isRecordingVoice, setIsRecordingVoice] = useState(false)
-  const voiceRecorderRef = useRef<MediaRecorder | null>(null)
-  const voiceChunksRef = useRef<Blob[]>([])
-  const [toast, setToast] = useState('')
-  const [trimUrl, setTrimUrl] = useState(''); const [trimDur, setTrimDur] = useState(0); const [trimStart, setTrimStart] = useState(0)
-  const [fullView, setFullView] = useState<any | null>(null)
-  const [fullMuted, setFullMuted] = useState(true)
-  const [showPlusMenu, setShowPlusMenu] = useState(false)
-  const [recording, setRecording] = useState(false)
-  const [recordUrl, setRecordUrl] = useState('')
-  const galleryRef = useRef<HTMLInputElement>(null); const photoRef = useRef<HTMLInputElement>(null)
-  const attachRef = useRef<HTMLInputElement>(null); const docRef = useRef<HTMLInputElement>(null)
-  const fullVideoRef = useRef<HTMLVideoElement>(null)
-  const msgsEndRef = useRef<HTMLDivElement>(null)
-  const [searching, setSearching] = useState(false)
-  const [searchText, setSearchText] = useState('')
-  const [searchFilter, setSearchFilter] = useState<'all' | 'unread' | 'photo' | 'live'>('all')
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const confirmationRef = useRef<ConfirmationResult | null>(null)
-  const recaptchaRef = useRef<RecaptchaVerifier | null>(null)
-  const recaptchaDivRef = useRef<HTMLDivElement>(null)
-  const recaptchaReady = useRef(false)
   const [showSelectContact, setShowSelectContact] = useState(false)
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [contactSearch, setContactSearch] = useState('')
   const [showContactMenu, setShowContactMenu] = useState(false)
+  const [showNewContact, setShowNewContact] = useState(false)
+  const [showGroup, setShowGroup] = useState(false)
+  const [showQR, setShowQR] = useState(false)
+  const [qrTab, setQrTab] = useState<'my' | 'scan'>('my')
+  const [scanInput, setScanInput] = useState('')
   const [showContactSettings, setShowContactSettings] = useState(false)
   const [showInvite, setShowInvite] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [showBlocked, setShowBlocked] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [evaContactsOn, setEvaContactsOn] = useState(true)
-  const [showNewContact, setShowNewContact] = useState(false)
   const [newName, setNewName] = useState('')
   const [newPhone, setNewPhone] = useState('')
-  const [showGroup, setShowGroup] = useState(false)
   const [groupName, setGroupName] = useState('')
-  const [showQR, setShowQR] = useState(false)
-  const [qrTab, setQrTab] = useState<'my' | 'scan'>('my')
-  const [scanInput, setScanInput] = useState('')
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [contactSearch, setContactSearch] = useState('')
+  const [searchText, setSearchText] = useState('')
+  const [searchFilter, setSearchFilter] = useState<'all' | 'unread' | 'photo' | 'live'>('all')
+  const [tab, setTab] = useState<'chat' | 'check' | 'call'>('chat')
+  const [selfMsgs, setSelfMsgs] = useState<Msg[]>([])
+  const [chatMsgs, setChatMsgs] = useState<Record<string, Msg[]>>({})
+  const [selfInput, setSelfInput] = useState('')
+  const [chatInput, setChatInput] = useState('')
+  const [showEmoji, setShowEmoji] = useState(false)
+  const [showAttach, setShowAttach] = useState(false)
+  const [emojiCat, setEmojiCat] = useState('Smile')
+  const [emojiSearch, setEmojiSearch] = useState('')
+  const [fullView, setFullView] = useState<any>(null)
+  const [showPlusMenu, setShowPlusMenu] = useState(false)
+  const [fullMuted, setFullMuted] = useState(true)
+  const [overlay, setOverlay] = useState<string | null>(null)
+  const [trimUrl, setTrimUrl] = useState('')
+  const [trimDur, setTrimDur] = useState(0)
+  const [trimStart, setTrimStart] = useState(0)
+  const [recordUrl, setRecordUrl] = useState('')
+  const [recording, setRecording] = useState(false)
+  const [toast, setToast] = useState('')
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false)
+  const galleryRef = useRef<HTMLInputElement>(null)
+  const photoRef = useRef<HTMLInputElement>(null)
+  const docRef = useRef<HTMLInputElement>(null)
+  const msgsEndRef = useRef<HTMLDivElement>(null)
+  const recaptchaDivRef = useRef<HTMLDivElement>(null)
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null)
+  const voiceChunksRef = useRef<Blob[]>([])
 
-  const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(''), 2200) }
-  const close = () => { setOverlay(null); setShowPlusMenu(false) }
-  const setLive = (src: string, start: number) => { setMe({ type: 'live', src, start }); close(); setTab('chat'); setFullView(null); showToast('Live sticker set ✔') }
-  const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const formatPhone = (raw: string) => { let p = raw.replace(/\D/g, ''); if (p.startsWith('0')) p = p.slice(1); return selectedCountry.code + p }
-  const filteredCountries = COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.code.includes(countrySearch))
+  const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(''), 2500) }
+  const filteredCountries = COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()))
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (user && user.phoneNumber) { setMyPhone(user.phoneNumber); setIsVerified(true); localStorage.setItem('eva-my-phone', user.phoneNumber); localStorage.setItem('eva-phone-verified', 'true') }
-    })
-    return () => unsub()
-  }, [])
-  useEffect(() => {
-    if (recaptchaReady.current) return
-    if (!recaptchaDivRef.current) return
-    try { recaptchaRef.current = new RecaptchaVerifier(auth, recaptchaDivRef.current, { size: 'invisible' }); recaptchaReady.current = true } catch {}
-  }, [isVerified])
-
-  useEffect(() => {
-    const saved = localStorage.getItem('eva-my-phone')
-    const verified = localStorage.getItem('eva-phone-verified')
-    if (saved && verified === 'true') { setMyPhone(saved); setIsVerified(true); const nm = localStorage.getItem(`eva-name-${saved}`); if (nm) setMyName(nm) }
-    try {
-      const s2 = localStorage.getItem('eva-self-msgs')
-      if (s2 && s2.includes('This is your space')) localStorage.removeItem('eva-self-msgs')
-      const s = localStorage.getItem('eva-self-msgs'); if (s) setSelfMsgs(JSON.parse(s))
-      const m = localStorage.getItem('eva-me-droplet'); if (m) setMe(JSON.parse(m))
-      const evaOn = localStorage.getItem('eva-contacts-enabled'); if (evaOn !== null) setEvaContactsOn(evaOn === 'true')
-    } catch {}
-  }, [])
-  useEffect(() => {
-    if (!myPhone) return
-    try {
-      const c = localStorage.getItem(`eva-contacts-${myPhone}`); if (c) setContacts((JSON.parse(c) as Contact[]).filter(x => x.phone !== myPhone)); else setContacts([])
-      const cm = localStorage.getItem(`eva-chat-msgs-${myPhone}`); if (cm) setChatMsgs(JSON.parse(cm))
-      const ch = localStorage.getItem(`eva-chats-${myPhone}`); if (ch) setChats(JSON.parse(ch))
-    } catch {}
-  }, [myPhone])
-  useEffect(() => { try { localStorage.setItem('eva-self-msgs', JSON.stringify(selfMsgs)) } catch {} }, [selfMsgs])
-  useEffect(() => { if (myPhone) { try { localStorage.setItem(`eva-chat-msgs-${myPhone}`, JSON.stringify(chatMsgs)) } catch {} } }, [chatMsgs, myPhone])
-  useEffect(() => { if (myPhone) { try { localStorage.setItem(`eva-contacts-${myPhone}`, JSON.stringify(contacts)) } catch {} } }, [contacts, myPhone])
-  useEffect(() => { if (myPhone) { try { localStorage.setItem(`eva-chats-${myPhone}`, JSON.stringify(chats)) } catch {} } }, [chats, myPhone])
-  useEffect(() => { try { localStorage.setItem('eva-me-droplet', JSON.stringify(me)) } catch {} }, [me])
-  useEffect(() => { try { localStorage.setItem('eva-contacts-enabled', String(evaContactsOn)) } catch {} }, [evaContactsOn])
-  // FIX KEYBOARD: scroll only when new message comes, not when you dey type
-  useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs])
-
-  const sendCode = async () => {
-    if (authMode === 'signup' && !signupName.trim()) return showToast('Enter your name for Sign Up')
-    const formatted = formatPhone(phoneInput)
-    const digitsOnly = phoneInput.replace(/\D/g, '')
-    if (digitsOnly.length < 7) return showToast('Enter a valid number')
-    setSending(true)
-    try {
-      if (!recaptchaRef.current) {
-        if (!recaptchaDivRef.current) throw new Error('reCAPTCHA not ready, reload page')
-        recaptchaRef.current = new RecaptchaVerifier(auth, recaptchaDivRef.current, { size: 'invisible' })
-      }
-      const confirmation = await signInWithPhoneNumber(auth, formatted, recaptchaRef.current)
-      confirmationRef.current = confirmation; setMyPhone(formatted); setCodeSent(true); showToast('Code sent by Firebase ✔')
-    } catch (e: any) {
-      if (e.code === 'auth/invalid-phone-number') showToast('Invalid number for that country')
-      else if (e.code === 'auth/too-many-requests') showToast('Too many tries. Wait 1 min')
-      else if (e.code === 'auth/quota-exceeded') showToast('Daily SMS limit reached')
-      else showToast(e.message || 'Could not send code')
-    } finally { setSending(false) }
-  }
-  const verifyCode = async () => {
-    if (otpInput.trim().length < 4) return showToast('Enter the code')
-    if (!confirmationRef.current) return showToast('Send code first')
-    setVerifying(true)
-    try {
-      const result = await confirmationRef.current.confirm(otpInput.trim())
-      const phone = result.user.phoneNumber || myPhone
-      localStorage.setItem('eva-my-phone', phone); localStorage.setItem('eva-phone-verified', 'true'); localStorage.setItem('eva-user-id', result.user.uid)
-      if (authMode === 'signup') localStorage.setItem(`eva-name-${phone}`, signupName.trim())
-      setMyPhone(phone); setMyName(authMode === 'signup' ? signupName.trim() : (localStorage.getItem(`eva-name-${phone}`) || ''))
-      setIsVerified(true); setCodeSent(false); setOtpInput('')
-      showToast(authMode === 'signup' ? 'Account created ✔ Welcome to EVA Chat' : 'Number verified ✔ Welcome back to EVA Chat')
-    } catch (e: any) {
-      if (e.code === 'auth/invalid-verification-code') showToast('Wrong code, try again')
-      else if (e.code === 'auth/code-expired') showToast('Code expired, resend code')
-      else showToast('Wrong code')
-    } finally { setVerifying(false) }
-  }
-  const doLogout = async () => {
-    try { await signOut(auth) } catch {}
-    localStorage.removeItem('eva-my-phone'); localStorage.removeItem('eva-phone-verified')
-    setIsVerified(false); setMyPhone(''); setMyName(''); setCodeSent(false); setOtpInput(''); setPhoneInput('')
-    setShowLogoutConfirm(false); setShowContactMenu(false); setShowSelectContact(false); setOpenChat(null); setOpenSelf(false)
-    recaptchaReady.current = false; recaptchaRef.current = null; showToast('Logged out ✔')
-  }
-    // FIX ME DUPLICATE: If number na your own, update your name, no create contact
-  const saveNewContact = () => {
-    if (!newName.trim()) return showToast('Enter name')
-    if (newPhone.replace(/\D/g, '').length < 7) return showToast('Enter valid number')
-    const phone = newPhone.startsWith('+') ? newPhone : formatPhone(newPhone)
-    if (phone === myPhone) {
-      setMyName(newName.trim()); localStorage.setItem(`eva-name-${myPhone}`, newName.trim())
-      setNewName(''); setNewPhone(''); setShowNewContact(false)
-      showToast('Your name updated to ' + newName.trim() + ' ✔'); return
+    const savedPhone = localStorage.getItem('eva-phone')
+    const savedVerified = localStorage.getItem('eva-verified')
+    if (savedPhone && savedVerified === '1') {
+      setMyPhone(savedPhone); setIsVerified(true)
+      setMyName(localStorage.getItem(`eva-name-${savedPhone}`) || '')
+      const savedMe = localStorage.getItem(`eva-me-${savedPhone}`)
+      if (savedMe) { try { setMe(JSON.parse(savedMe)) } catch {} }
+      const savedChats = localStorage.getItem(`eva-chats-${savedPhone}`)
+      if (savedChats) { try { setChats(JSON.parse(savedChats)) } catch {} }
+      const savedContacts = localStorage.getItem(`eva-contacts-${savedPhone}`)
+      if (savedContacts) { try { setContacts(JSON.parse(savedContacts)) } catch {} }
+      const savedSelf = localStorage.getItem(`eva-self-${savedPhone}`)
+      if (savedSelf) { try { setSelfMsgs(JSON.parse(savedSelf)) } catch {} }
     }
-    if (contacts.some(c => c.phone === phone)) return showToast('Contact already exists')
-    setContacts(p => [...p, { name: newName.trim(), phone }])
-    setNewName(''); setNewPhone(''); setShowNewContact(false); showToast('Contact saved on EVA ✔')
+  }, [])
+
+  useEffect(() => { if (myPhone) localStorage.setItem(`eva-me-${myPhone}`, JSON.stringify(me)) }, [me, myPhone])
+  useEffect(() => { if (myPhone) localStorage.setItem(`eva-chats-${myPhone}`, JSON.stringify(chats)) }, [chats, myPhone])
+  useEffect(() => { if (myPhone) localStorage.setItem(`eva-contacts-${myPhone}`, JSON.stringify(contacts)) }, [contacts, myPhone])
+  useEffect(() => { if (myPhone) localStorage.setItem(`eva-self-${myPhone}`, JSON.stringify(selfMsgs)) }, [selfMsgs, myPhone])
+  useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs, openChat, openSelf])
+
+  const sendCode = () => {
+    if (phoneInput.replace(/\D/g, '').length < 7) return showToast('Enter valid number')
+    setSending(true)
+    setTimeout(() => { setSending(false); setCodeSent(true); showToast('Code sent - use 123456 for test') }, 800)
+  }
+  const verifyCode = () => {
+    if (otpInput.trim() !== '123456') return showToast('Wrong code - use 123456 for test')
+    setVerifying(true)
+    const phone = phoneInput.startsWith('+') ? phoneInput : selectedCountry.code + phoneInput.replace(/^0+/, '')
+    setTimeout(() => {
+      setMyPhone(phone); setIsVerified(true); setVerifying(false)
+      localStorage.setItem('eva-phone', phone); localStorage.setItem('eva-verified', '1')
+      if (authMode === 'signup' && signupName.trim()) { setMyName(signupName.trim()); localStorage.setItem(`eva-name-${phone}`, signupName.trim()) }
+      else { const n = localStorage.getItem(`eva-name-${phone}`); if (n) setMyName(n) }
+      showToast('Welcome to EVA Chat')
+    }, 800)
+  }
+  const doLogout = () => {
+    localStorage.removeItem('eva-verified'); setIsVerified(false); setShowLogoutConfirm(false); setOpenChat(null); setOpenSelf(false); setShowSelectContact(false)
+  }
+  const setLive = (src: string, start: number) => {
+    setMe({ type: 'live', src, start, ring: 'new' }); setOverlay(null); setShowPlusMenu(false); setFullView(null); showToast('Live profile set - 7 secs loop')
   }
 
-  // FIX: Your own number never show for contacts list
-  const visibleContacts = contacts.filter(c => !c.blocked && c.phone !== myPhone)
-  const filteredContacts = visibleContacts.filter(c => c.name.toLowerCase().includes(contactSearch.toLowerCase()) || c.phone.includes(contactSearch))
-  const visibleChats = chats.filter(c => {
+   const filteredEmojis = EMOJI_CATS[emojiCat] || []
+  const visibleContacts = contacts.filter(c => c.phone !== myPhone).filter(c => c.name.toLowerCase().includes(contactSearch.toLowerCase()))
+  const visibleChats = chats.filter(c => c.phone !== myPhone).filter(c => {
     if (searchFilter === 'unread') return c.msg && c.msg !== 'Tap to chat'
     if (searchFilter === 'photo') return c.type === 'photo'
     if (searchFilter === 'live') return c.type === 'live'
     return true
   }).filter(c => c.name.toLowerCase().includes(searchText.toLowerCase()))
-  const filteredEmojis = EMOJI_CATS[emojiCat].filter(e => !emojiSearch || e.includes(emojiSearch))
 
+  const addEmoji = (e: string, isSelf: boolean) => {
+    if (isSelf) setSelfInput(v => v + e)
+    else setChatInput(v => v + e)
+  }
   const sendSelf = () => {
     if (!selfInput.trim()) return
-    setSelfMsgs(p => [...p, { text: selfInput.trim(), time: nowTime(), kind: 'text' }]); setSelfInput(''); setShowEmoji(false)
+    setSelfMsgs(v => [...v, { text: selfInput, time: nowTime(), kind: 'text' }])
+    setSelfInput('')
   }
   const sendChat = () => {
     if (!chatInput.trim() || !openChat) return
-    const key = openChat.phone || openChat.name
-    setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text: chatInput.trim(), time: nowTime(), kind: 'text' }] }))
-    setChats(p => p.map(c => c.phone === openChat.phone ? { ...c, msg: chatInput.trim(), time: nowTime() } : c))
-    setChatInput(''); setShowEmoji(false)
+    const key = openChat.phone
+    setChatMsgs(v => ({ ...v, [key]: [...(v[key] || []), { text: chatInput, time: nowTime(), kind: 'text' }] }))
+    setChats(prev => prev.map(c => c.phone === key ? { ...c, msg: chatInput, time: nowTime() } : c))
+    setChatInput('')
   }
-  const addEmoji = (em: string, isSelf: boolean) => { if (isSelf) setSelfInput(p => p + em); else setChatInput(p => p + em) }
-  const toggleVoice = async (isSelf: boolean) => {
+  const toggleVoice = (isSelf: boolean) => {
     if (isRecordingVoice) {
-      voiceRecorderRef.current?.stop(); setIsRecordingVoice(false); return
+      setIsRecordingVoice(false)
+      showToast('Voice sent')
+      if (isSelf) setSelfMsgs(v => [...v, { text: '🎤 Voice message', time: nowTime(), kind: 'text' }])
+      return
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream); voiceChunksRef.current = []
-      rec.ondataavailable = e => { if (e.data.size > 0) voiceChunksRef.current.push(e.data) }
-      rec.onstop = async () => {
-        const blob = new Blob(voiceChunksRef.current, { type: 'audio/webm' })
-        const url = await fileToDataURL(new File([blob], 'voice.webm', { type: 'audio/webm' }))
-        const msg: Msg = { audioUrl: url, time: nowTime(), kind: 'voice' }
-        if (isSelf) setSelfMsgs(p => [...p, msg])
-        else if (openChat) { const key = openChat.phone || openChat.name; setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), msg] })) }
-        stream.getTracks().forEach(t => t.stop())
-      }
-      rec.start(); voiceRecorderRef.current = rec; setIsRecordingVoice(true); showToast('Recording voice... tap mic again to stop')
-    } catch { showToast('Mic not allowed') }
+    setIsRecordingVoice(true)
+    showToast('Recording voice... tap again to stop')
   }
-
-  // FIX PICTURE STAY: All uploads use DataURL, not blob URL
-  const handlePhoto = async (e: any) => {
+  const startRecord = () => {
+    setOverlay('record'); setShowAttach(false)
+  }
+  const handleGalleryFile = async (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
     const url = await fileToDataURL(f)
-    setMe({ type: 'photo', src: url }); setFullView(null); setShowPlusMenu(false); showToast('Photo set ✔')
-    e.target.value = ''
+    setMe({ type: 'photo', src: url, ring: 'new' })
+    setShowPlusMenu(false); showToast('Photo profile set')
   }
-  const handleGallery = async (e: any) => {
+  const handlePhotoProfile = async (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
     const url = await fileToDataURL(f)
-    if (f.type.startsWith('image/')) { setMe({ type: 'photo', src: url }); setShowPlusMenu(false); showToast('Photo set ✔'); e.target.value = ''; return }
-    // Video: get duration, then open trim so user select where 7 secs go start
-    const v = document.createElement('video'); v.preload = 'metadata'; v.src = url
-    v.onloadedmetadata = () => {
-      setTrimUrl(url); setTrimDur(v.duration); setTrimStart(0); setOverlay('trim'); setShowPlusMenu(false)
-    }
-    e.target.value = ''
+    setMe({ type: 'photo', src: url, ring: 'new' })
+    setShowPlusMenu(false); showToast('Photo profile set')
   }
-  const confirmTrim = () => {
-    // 7 secs loop: Droplet go always play from trimStart to trimStart+7
-    setLive(trimUrl, trimStart); setOverlay(null); setTrimUrl('')
+  const handleDocFile = async (e: any) => {
+    const f = e.target.files?.[0]; if (!f) return
+    showToast('Document: ' + f.name)
   }
-  const startRecord = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      const rec = new MediaRecorder(stream, { mimeType: 'video/webm' }); const chunks: Blob[] = []
-      rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-      rec.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'video/webm' })
-        const url = await fileToDataURL(new File([blob], 'rec.webm', { type: 'video/webm' }))
-        setRecordUrl(url); setTrimUrl(url); setTrimDur(7); setTrimStart(0); setOverlay('trim'); setRecording(false)
-        stream.getTracks().forEach(t => t.stop())
-      }
-      rec.start(); setRecording(true); showToast('Recording 7 secs...')
-      setTimeout(() => { if (rec.state !== 'inactive') rec.stop() }, 7000)
-    } catch { showToast('Camera not allowed') }
+  const addNewContact = () => {
+    if (!newName.trim() || !newPhone.trim()) return showToast('Enter name and number')
+    const phone = formatPhone(newPhone.trim())
+    if (phone === myPhone) return showToast('That is your own number')
+    if (contacts.some(c => c.phone === phone)) return showToast('Contact already exists')
+    const nc = { name: newName.trim(), phone }
+    setContacts(v => [...v, nc])
+    setChats(v => [...v, { name: nc.name, msg: 'Tap to chat', time: nowTime(), ring: 'new', type: 'none', phone }])
+    setNewName(''); setNewPhone(''); setShowNewContact(false); showToast('Contact added')
   }
 
-  // ---------- LOGIN / SIGNUP SCREEN ----------
-  if (!isVerified) return (
-    <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 20, paddingTop: 60 }}>
-      <div ref={recaptchaDivRef} id="recaptcha-container" />
-      <div style={{ fontSize: 40, fontWeight: 900 }}>EVA <span style={{ color: '#ff2f6d' }}>Chat</span></div>
-      <div style={{ color: '#aab', marginTop: 6, marginBottom: 24 }}>Welcome to EVA Chat</div>
-      <div style={{ display: 'flex', background: '#171c46', borderRadius: 20, padding: 4, width: '100%', maxWidth: 380 }}>
-        <button onClick={() => { setAuthMode('login'); setCodeSent(false) }} style={{ flex: 1, padding: 10, borderRadius: 16, border: 0, background: authMode === 'login' ? '#ff2f6d' : 'transparent', color: '#fff', fontWeight: 700 }}>Log In</button>
-        <button onClick={() => { setAuthMode('signup'); setCodeSent(false) }} style={{ flex: 1, padding: 10, borderRadius: 16, border: 0, background: authMode === 'signup' ? '#ff2f6d' : 'transparent', color: '#fff', fontWeight: 700 }}>Sign Up</button>
-      </div>
-      <div style={{ width: '100%', maxWidth: 380, marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {authMode === 'signup' && <input placeholder="Your name" value={signupName} onChange={e => setSignupName(e.target.value)} style={{ background: '#171c46', border: 0, borderRadius: 14, padding: 14, color: '#fff', outline: 'none' }} />}
-        <button onClick={() => setShowCountryPicker(true)} style={{ background: '#171c46', border: 0, borderRadius: 14, padding: 14, color: '#fff', textAlign: 'left' }}>{selectedCountry.flag} {selectedCountry.name} {selectedCountry.code} ▾</button>
-        <input placeholder="Phone number" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} inputMode="tel" style={{ background: '#171c46', border: 0, borderRadius: 14, padding: 14, color: '#fff', outline: 'none' }} />
-        {!codeSent ? <button onClick={sendCode} disabled={sending} style={{ background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, borderRadius: 14, padding: 14, color: '#fff', fontWeight: 800 }}>{sending ? 'Sending...' : 'Send Code'}</button>
-          : <>
-            <input placeholder="Enter 6-digit code" value={otpInput} onChange={e => setOtpInput(e.target.value)} inputMode="numeric" style={{ background: '#171c46', border: 0, borderRadius: 14, padding: 14, color: '#fff', outline: 'none', letterSpacing: 4 }} />
-            <button onClick={verifyCode} disabled={verifying} style={{ background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, borderRadius: 14, padding: 14, color: '#fff', fontWeight: 800 }}>{verifying ? 'Verifying...' : 'Verify Code'}</button>
-            <button onClick={() => { setCodeSent(false); setOtpInput('') }} style={{ background: 'transparent', border: 0, color: '#aab' }}>Change number</button>
-          </>}
-      </div>
-      {showCountryPicker && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 50 }}>
-          <div style={{ background: '#12163a', width: '100%', maxHeight: '80vh', borderRadius: '20px 20px 0 0', padding: 16 }}>
-            <input placeholder="Search country" value={countrySearch} onChange={e => setCountrySearch(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
-            <div style={{ overflowY: 'auto', maxHeight: '60vh', marginTop: 10 }}>
-              {filteredCountries.map(c => <div key={c.name + c.code} onClick={() => { setSelectedCountry(c); setShowCountryPicker(false); setCountrySearch('') }} style={{ padding: '12px 8px', borderBottom: '1px solid #222' }}>{c.flag} {c.name} {c.code}</div>)}
-            </div>
-            <button onClick={() => setShowCountryPicker(false)} style={{ width: '100%', marginTop: 10, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Close</button>
-          </div>
+  if (!isVerified) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0a0d26', color: '#fff', padding: 20, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div style={{ fontSize: 32, fontWeight: 800, textAlign: 'center' }}>💧 EVA Chat</div>
+        <div style={{ textAlign: 'center', opacity: 0.7, marginBottom: 20 }}>Chat, Check and Call in one place</div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <button onClick={() => setAuthMode('login')} style={{ flex: 1, background: authMode === 'login' ? '#ff2f6d' : '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 10 }}>Login</button>
+          <button onClick={() => setAuthMode('signup')} style={{ flex: 1, background: authMode === 'signup' ? '#ff2f6d' : '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 10 }}>Sign Up</button>
         </div>
-      )}
-      {toast && <div style={{ position: 'fixed', bottom: 20, background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, fontSize: 13 }}>{toast}</div>}
-    </div>
-  )
+        {authMode === 'signup' && <input value={signupName} onChange={e => setSignupName(e.target.value)} placeholder="Your name" style={{ background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', marginBottom: 10, width: '100%' }} />}
+        <button onClick={() => setShowCountryPicker(true)} style={{ background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 10, width: '100%', textAlign: 'left' }}>{selectedCountry.flag} {selectedCountry.name} {selectedCountry.code} ▼</button>
+        <input value={phoneInput} onChange={e => setPhoneInput(e.target.value)} placeholder="Phone number" inputMode="tel" style={{ background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', marginBottom: 10, width: '100%' }} />
+        {!codeSent ? <button onClick={sendCode} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 12, padding: 12, width: '100%' }}>{sending ? 'Sending...' : 'Send Code'}</button> : <>
+          <input value={otpInput} onChange={e => setOtpInput(e.target.value)} placeholder="Enter code - 123456" inputMode="numeric" style={{ background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', marginBottom: 10, width: '100%' }} />
+          <button onClick={verifyCode} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 12, padding: 12, width: '100%' }}>{verifying ? 'Verifying...' : 'Verify & Enter'}</button>
+        </>}
+        {showCountryPicker && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 99, display: 'flex', alignItems: 'flex-end' }}><div style={{ background: '#0e1230', width: '100%', borderRadius: '20px 20px 0 0', padding: 16, maxHeight: '70vh', overflowY: 'auto' }}>
+          <input value={countrySearch} onChange={e => setCountrySearch(e.target.value)} placeholder="Search country" style={{ background: '#171c46', border: 0, borderRadius: 10, padding: 10, color: '#fff', width: '100%', marginBottom: 10 }} />
+          {filteredCountries.map(c => <div key={c.code} onClick={() => { setSelectedCountry(c); setShowCountryPicker(false) }} style={{ padding: 12, borderBottom: '1px solid #222' }}>{c.flag} {c.name} {c.code}</div>)}
+          <button onClick={() => setShowCountryPicker(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%', marginTop: 10 }}>Close</button>
+        </div></div>}
+        {toast && <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, zIndex: 999 }}>{toast}</div>}
+        <div ref={recaptchaDivRef} />
+      </div>
+    )
+  }
 
-  // ---------- SELECT CONTACT SCREEN ----------
-  if (showSelectContact) return (
-    <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px' }}>
-        <button onClick={() => setShowSelectContact(false)} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22 }}>←</button>
-        <div><div style={{ fontSize: 18, fontWeight: 800 }}>Select contact</div><div style={{ fontSize: 12, color: '#aab' }}>{visibleContacts.length} EVA contacts</div></div>
-        <div style={{ marginLeft: 'auto', position: 'relative' }}>
-          <button onClick={() => setShowContactMenu(!showContactMenu)} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22 }}>⋮</button>
-          {showContactMenu && (
-            <div style={{ position: 'absolute', right: 0, top: 30, background: '#1a1f4a', borderRadius: 12, width: 190, overflow: 'hidden', zIndex: 20 }}>
-              <button onClick={() => { setShowContactMenu(false); setShowContactSettings(true) }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 12 }}>Contact settings</button>
-              <button onClick={() => { setShowContactMenu(false); setShowInvite(true) }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 12 }}>Invite a friend</button>
-              <button onClick={() => { setShowContactMenu(false); setShowHelp(true) }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 12 }}>Help</button>
-              <button onClick={() => { setShowContactMenu(false); setShowBlocked(true) }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 12 }}>Blocked contacts</button>
-              <button onClick={() => { setShowContactMenu(false); setShowLogoutConfirm(true) }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#ff5b7a', padding: 12 }}>Log out</button>
-            </div>
-          )}
+  if (openSelf) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0d26', color: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: '#0e1230', borderBottom: '1px solid #1a1f4a' }}>
+          <button onClick={() => setOpenSelf(false)} style={{ background: 'none', border: 0, color: '#fff', fontSize: 20 }}>←</button>
+          <Droplet o={me} w={36} />
+          <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>You (You)</div><div style={{ fontSize: 12, opacity: 0.6 }}>{myPhone}</div></div>
         </div>
-      </div>
-      <div style={{ padding: '0 16px 12px' }}>
-        <input placeholder="Search EVA contacts" value={contactSearch} onChange={e => setContactSearch(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 22, padding: '12px 16px', color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
-      </div>
-      <div style={{ display: 'flex', gap: 10, padding: '0 16px 12px' }}>
-        <button onClick={() => setShowGroup(true)} style={{ flex: 1, background: '#171c46', border: 0, color: '#fff', borderRadius: 14, padding: 12 }}>👥<br />Group</button>
-        <button onClick={() => setShowNewContact(true)} style={{ flex: 1, background: '#171c46', border: 0, color: '#fff', borderRadius: 14, padding: 12 }}>👤+<br />New contact</button>
-        <button onClick={() => setShowQR(true)} style={{ flex: 1, background: '#171c46', border: 0, color: '#fff', borderRadius: 14, padding: 12 }}>🔲<br />QR</button>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 20px' }}>
-        <div onClick={() => { setShowSelectContact(false); setOpenSelf(true) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1f4a' }}>
-          <Droplet o={{ ...me, ring: 'none' }} w={48} />
-          <div><div style={{ fontWeight: 700 }}>{myName || 'You'} <span style={{ color: '#aab', fontWeight: 400 }}>(You)</span></div><div style={{ color: '#aab', fontSize: 12 }}>Message yourself • {myPhone}</div></div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
+          {selfMsgs.length === 0 && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: 40 }}>Message yourself<br />Save notes, photos and voice here</div>}
+          {selfMsgs.map((m, i) => <div key={i} style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}><div style={{ background: '#ff2f6d', padding: '8px 12px', borderRadius: 14, maxWidth: '80%' }}>{m.text}<div style={{ fontSize: 10, opacity: 0.7, textAlign: 'right' }}>{m.time}</div></div></div>)}
+          <div ref={msgsEndRef} />
         </div>
-        {filteredContacts.map(c => (
-          <div key={c.phone} onClick={() => {
-            const existing = chats.find(x => x.phone === c.phone)
-            if (existing) setOpenChat(existing)
-            else { const n: Chat = { name: c.name, msg: 'Tap to chat', time: nowTime(), ring: 'none', type: 'none', phone: c.phone }; setChats(p => [n, ...p]); setOpenChat(n) }
-            setShowSelectContact(false)
-          }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1f4a' }}>
-            <Droplet o={{ type: 'none', ring: 'none' }} w={48} />
-            <div><div style={{ fontWeight: 700 }}>{c.name}</div><div style={{ color: '#aab', fontSize: 12 }}>{c.phone}</div></div>
-          </div>
-        ))}
-        {/* FIX NO MATCH: Only show when you actually search, or when you truly get 0 contacts */}
-        {filteredContacts.length === 0 && visibleContacts.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', padding: '30px 20px', fontSize: 14 }}>{contactSearch.trim() ? 'No match found' : 'No EVA contacts yet. Tap New contact to add one.'}</div>}
-        {filteredContacts.length === 0 && visibleContacts.length > 0 && contactSearch.trim() && <div style={{ textAlign: 'center', color: '#8a8fb0', padding: '30px 20px', fontSize: 14 }}>No match found</div>}
+        <ChatBar value={selfInput} onChange={setSelfInput} onSend={sendSelf} isSelf={true} me={me} showEmoji={showEmoji} setShowEmoji={setShowEmoji} showAttach={showAttach} setShowAttach={setShowAttach} emojiCat={emojiCat} setEmojiCat={setEmojiCat} filteredEmojis={filteredEmojis} addEmoji={addEmoji} galleryRef={galleryRef} docRef={docRef} startRecord={startRecord} toggleVoice={toggleVoice} isRecordingVoice={isRecordingVoice} />
       </div>
+    )
+  }
 
-      {showNewContact && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
-          <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
-            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 12 }}>New contact</div>
-            <input placeholder="Name" value={newName} onChange={e => setNewName(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
-            <input placeholder="Phone number" value={newPhone} onChange={e => setNewPhone(e.target.value)} inputMode="tel" style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
-            <div style={{ color: '#aab', fontSize: 12, marginTop: 8 }}>Tip: If you enter your own number, e go update your name, no duplicate.</div>
-            <button onClick={saveNewContact} style={{ width: '100%', marginTop: 12, padding: 14, borderRadius: 12, border: 0, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', color: '#fff', fontWeight: 800 }}>Save on EVA</button>
-            <button onClick={() => setShowNewContact(false)} style={{ width: '100%', marginTop: 8, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
-          </div>
+  if (openChat) {
+    const msgs = chatMsgs[openChat.phone] || []
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0d26', color: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: '#0e1230', borderBottom: '1px solid #1a1f4a' }}>
+          <button onClick={() => setOpenChat(null)} style={{ background: 'none', border: 0, color: '#fff', fontSize: 20 }}>←</button>
+          <Droplet o={{ type: openChat.type, src: openChat.src }} w={36} />
+          <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{openChat.name}</div><div style={{ fontSize: 12, opacity: 0.6 }}>{openChat.phone}</div></div>
         </div>
-      )}
-      {showGroup && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
-          <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
-            <div style={{ fontWeight: 800, marginBottom: 12 }}>New group</div>
-            <input placeholder="Group name" value={groupName} onChange={e => setGroupName(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
-            <button onClick={() => { if (!groupName.trim()) return showToast('Enter group name'); const g: Chat = { name: groupName.trim(), msg: 'Group created', time: nowTime(), ring: 'none', type: 'none', phone: 'group-' + Date.now() }; setChats(p => [g, ...p]); setGroupName(''); setShowGroup(false); setShowSelectContact(false); setOpenChat(g) }} style={{ width: '100%', marginTop: 12, padding: 14, borderRadius: 12, border: 0, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', color: '#fff', fontWeight: 800 }}>Create group</button>
-            <button onClick={() => setShowGroup(false)} style={{ width: '100%', marginTop: 8, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
-          </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
+          {msgs.length === 0 && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: 40 }}>No messages yet<br />Say hello to {openChat.name}</div>}
+          {msgs.map((m, i) => <div key={i} style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}><div style={{ background: '#ff2f6d', padding: '8px 12px', borderRadius: 14, maxWidth: '80%' }}>{m.text}<div style={{ fontSize: 10, opacity: 0.7, textAlign: 'right' }}>{m.time}</div></div></div>)}
+          <div ref={msgsEndRef} />
         </div>
-      )}
-      {showQR && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
-          <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16, textAlign: 'center' }}>
-            <div style={{ fontWeight: 800 }}>QR - {qrTab === 'my' ? 'My QR' : 'Scan'}</div>
-            <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
-              <button onClick={() => setQrTab('my')} style={{ flex: 1, padding: 10, borderRadius: 10, border: 0, background: qrTab === 'my' ? '#ff2f6d' : '#333', color: '#fff' }}>My QR</button>
-              <button onClick={() => setQrTab('scan')} style={{ flex: 1, padding: 10, borderRadius: 10, border: 0, background: qrTab === 'scan' ? '#ff2f6d' : '#333', color: '#fff' }}>Scan</button>
-            </div>
-            {qrTab === 'my' ? <div style={{ background: '#fff', color: '#000', borderRadius: 12, padding: 20, fontSize: 13 }}>Your number:<br /><b>{myPhone}</b><br /><br />Show this to your friend to add you</div>
-              : <><input placeholder="Paste friend number" value={scanInput} onChange={e => setScanInput(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
-                <button onClick={() => { if (scanInput.trim().length < 7) return showToast('Enter valid number'); setNewPhone(scanInput.trim()); setScanInput(''); setShowQR(false); setShowNewContact(true) }} style={{ width: '100%', marginTop: 10, padding: 12, borderRadius: 12, border: 0, background: '#ff2f6d', color: '#fff', fontWeight: 700 }}>Add this number</button></>}
-            <button onClick={() => setShowQR(false)} style={{ width: '100%', marginTop: 10, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Close</button>
-          </div>
-        </div>
-      )}
-      {showContactSettings && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
-          <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
-            <div style={{ fontWeight: 800, marginBottom: 12 }}>Contact settings</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}><span>EVA contacts</span><button onClick={() => setEvaContactsOn(!evaContactsOn)} style={{ width: 52, height: 28, borderRadius: 20, border: 0, background: evaContactsOn ? '#00c853' : '#555', color: '#fff' }}>{evaContactsOn ? 'ON' : 'OFF'}</button></div>
-            <button onClick={() => setShowContactSettings(false)} style={{ width: '100%', marginTop: 10, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Close</button>
-          </div>
-        </div>
-      )}
-      {showInvite && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
-          <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16, textAlign: 'center' }}>
-            <div style={{ fontWeight: 800 }}>Invite a friend</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8 }}>Share EVA Chat with your friends</div>
-            <button onClick={() => { navigator.clipboard?.writeText('Join me on EVA Chat! My number: ' + myPhone); showToast('Invite copied ✔') }} style={{ width: '100%', marginTop: 12, padding: 12, borderRadius: 12, border: 0, background: '#ff2f6d', color: '#fff' }}>Copy invite link</button>
-            <button onClick={() => setShowInvite(false)} style={{ width: '100%', marginTop: 8, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Close</button>
-          </div>
-        </div>
-      )}
-      {showHelp && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
-          <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
-            <div style={{ fontWeight: 800 }}>Help</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8, lineHeight: 1.6 }}>1. Tap New contact to add person<br />2. Tap your droplet to set photo / live video<br />3. Live video must be 7 secs, e go loop<br />4. Message yourself to save notes</div>
-            <button onClick={() => setShowHelp(false)} style={{ width: '100%', marginTop: 12, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Close</button>
-          </div>
-        </div>
-      )}
-      {showBlocked && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
-          <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16, maxHeight: '70vh', overflowY: 'auto' }}>
-            <div style={{ fontWeight: 800, marginBottom: 10 }}>Blocked contacts</div>
-            {contacts.filter(c => c.blocked).length === 0 && <div style={{ color: '#aab', fontSize: 13 }}>No blocked contacts</div>}
-            {contacts.filter(c => c.blocked).map(c => <div key={c.phone} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}><span>{c.name} • {c.phone}</span><button onClick={() => setContacts(p => p.map(x => x.phone === c.phone ? { ...x, blocked: false } : x))} style={{ background: '#00c853', border: 0, color: '#fff', borderRadius: 8, padding: '6px 10px' }}>Unblock</button></div>)}
-            <button onClick={() => setShowBlocked(false)} style={{ width: '100%', marginTop: 10, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Close</button>
-          </div>
-        </div>
-      )}
-      {showLogoutConfirm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 70, padding: 20 }}>
-          <div style={{ background: '#12163a', width: '100%', maxWidth: 340, borderRadius: 16, padding: 20, textAlign: 'center' }}>
-            <div style={{ fontWeight: 800, fontSize: 17 }}>Log out?</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8 }}>Your contacts and chats go stay for this phone.</div>
-            <button onClick={doLogout} style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 12, border: 0, background: '#ff2f4d', color: '#fff', fontWeight: 700 }}>Log out</button>
-            <button onClick={() => setShowLogoutConfirm(false)} style={{ width: '100%', marginTop: 8, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
-          </div>
-        </div>
-      )}
-      {toast && <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, fontSize: 13, zIndex: 80 }}>{toast}</div>}
-    </div>
-  )
+        <ChatBar value={chatInput} onChange={setChatInput} onSend={sendChat} isSelf={false} me={me} showEmoji={showEmoji} setShowEmoji={setShowEmoji} showAttach={showAttach} setShowAttach={setShowAttach} emojiCat={emojiCat} setEmojiCat={setEmojiCat} filteredEmojis={filteredEmojis} addEmoji={addEmoji} galleryRef={galleryRef} docRef={docRef} startRecord={startRecord} toggleVoice={toggleVoice} isRecordingVoice={isRecordingVoice} />
+      </div>
+    )
+  }
 
-  // ---------- SELF CHAT ----------
-  if (openSelf) return (
-    <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0e1230' }}>
-        <button onClick={() => setOpenSelf(false)} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22 }}>←</button>
-        <div onClick={() => setFullView({ ...me, name: myName || 'You', isMe: true })}><Droplet o={{ ...me, ring: 'none' }} w={42} /></div>
-        <div><div style={{ fontWeight: 800 }}>{myName || 'You'} (You)</div><div style={{ fontSize: 12, color: '#00c853' }}>Message yourself • {myPhone}</div></div>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-        {selfMsgs.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>No messages yet.<br />Send yourself notes, photos, voice.</div>}
-        {selfMsgs.map((m, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <div style={{ background: '#ff2f6d', borderRadius: '16px 16px 4px 16px', padding: '10px 14px', maxWidth: '80%' }}>
-              {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 200 }} /> : <span>{m.text}</span>}
-              <div style={{ fontSize: 10, color: '#ffd', textAlign: 'right', marginTop: 4 }}>{m.time}</div>
-            </div>
-          </div>
-        ))}
-        <div ref={msgsEndRef} />
-      </div>
-      <ChatBar value={selfInput} onChange={setSelfInput} onSend={sendSelf} isSelf={true} me={me} showEmoji={showEmoji} setShowEmoji={setShowEmoji} showAttach={showAttach} setShowAttach={setShowAttach} emojiCat={emojiCat} setEmojiCat={setEmojiCat} filteredEmojis={filteredEmojis} addEmoji={addEmoji} galleryRef={galleryRef} docRef={docRef} startRecord={startRecord} toggleVoice={toggleVoice} isRecordingVoice={isRecordingVoice} />
-      <input ref={galleryRef} type="file" accept="image/*,video/*" hidden onChange={handleGallery} />
-      <input ref={docRef} type="file" hidden onChange={() => showToast('Document sent ✔')} />
-      {toast && <div style={{ position: 'fixed', bottom: 90, left: '50%', transform: 'translateX(-50%)', background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, fontSize: 13, zIndex: 80 }}>{toast}</div>}
-    </div>
-  )
-
-  // ---------- OPEN CHAT ----------
-  if (openChat) return (
-    <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0e1230' }}>
-        <button onClick={() => setOpenChat(null)} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22 }}>←</button>
-        <div onClick={() => setFullView(openChat)}><Droplet o={openChat} w={42} /></div>
-        <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>{openChat.name}</div><div style={{ fontSize: 12, color: '#aab' }}>{openChat.phone || 'EVA'}</div></div>
-        <button style={{ background: 'none', border: 0, fontSize: 22 }}>📞</button>
-        <button style={{ background: 'none', border: 0, fontSize: 22 }}>📹</button>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-        {(chatMsgs[openChat.phone || openChat.name] || []).length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>Say hi to {openChat.name} 👋</div>}
-        {(chatMsgs[openChat.phone || openChat.name] || []).map((m, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <div style={{ background: '#ff2f6d', borderRadius: '16px 16px 4px 16px', padding: '10px 14px', maxWidth: '80%' }}>
-              {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 200 }} /> : <span>{m.text}</span>}
-              <div style={{ fontSize: 10, textAlign: 'right', marginTop: 4 }}>{m.time}</div>
-            </div>
-          </div>
-        ))}
-        <div ref={msgsEndRef} />
-      </div>
-      <ChatBar value={chatInput} onChange={setChatInput} onSend={sendChat} isSelf={false} me={me} showEmoji={showEmoji} setShowEmoji={setShowEmoji} showAttach={showAttach} setShowAttach={setShowAttach} emojiCat={emojiCat} setEmojiCat={setEmojiCat} filteredEmojis={filteredEmojis} addEmoji={addEmoji} galleryRef={galleryRef} docRef={docRef} startRecord={startRecord} toggleVoice={toggleVoice} isRecordingVoice={isRecordingVoice} />
-      <input ref={galleryRef} type="file" accept="image/*,video/*" hidden onChange={handleGallery} />
-      <input ref={docRef} type="file" hidden onChange={() => showToast('Document sent ✔')} />
-      {toast && <div style={{ position: 'fixed', bottom: 90, left: '50%', transform: 'translateX(-50%)', background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, fontSize: 13, zIndex: 80 }}>{toast}</div>}
-    </div>
-  )
-
-  // ---------- MAIN SCREEN ----------
   return (
-    <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px' }}>
-        <div onClick={() => setFullView({ ...me, name: myName || 'You', isMe: true })}><Droplet o={{ ...me, ring: 'none' }} w={44} /></div>
-        <div style={{ fontSize: 20, fontWeight: 900 }}>EVA <span style={{ color: '#ff2f6d' }}>Chat</span></div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 14 }}>
-          <button onClick={() => { setSearching(!searching); if (!searching) setTimeout(() => searchInputRef.current?.focus(), 50) }} style={{ background: 'none', border: 0, fontSize: 20 }}>🔍</button>
-          <button onClick={() => setShowLogoutConfirm(true)} style={{ background: 'none', border: 0, fontSize: 20 }}>⋮</button>
-        </div>
-      </div>
-      {searching && (
-        <div style={{ padding: '0 16px 10px' }}>
-          <input ref={searchInputRef} placeholder="Search chats" value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 20, padding: '10px 14px', color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            {(['all', 'unread', 'photo', 'live'] as const).map(f => <button key={f} onClick={() => setSearchFilter(f)} style={{ background: searchFilter === f ? '#ff2f6d' : '#171c46', border: 0, color: '#fff', borderRadius: 14, padding: '6px 12px', fontSize: 12, textTransform: 'capitalize' }}>{f}</button>)}
-          </div>
-        </div>
-      )}
-      <div style={{ display: 'flex', gap: 10, padding: '0 16px 12px' }}>
-        {(['chat', 'check', 'call'] as const).map(t => <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: 10, borderRadius: 14, border: 0, background: tab === t ? '#ff2f6d' : '#171c46', color: '#fff', fontWeight: 700, textTransform: 'capitalize' }}>{t === 'chat' ? 'Chat' : t === 'check' ? 'Check' : 'Call'}</button>)}
+    <div style={{ minHeight: '100vh', background: '#0a0d26', color: '#fff', paddingBottom: 90 }}>
+      {/* CLEAN HEADER - NO DROPLET HERE, NO DUPLICATE TABS */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px 8px', background: '#0e1230', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ flex: 1 }}><div style={{ fontSize: 22, fontWeight: 800 }}>EVA Chat</div><div style={{ fontSize: 12, opacity: 0.6 }}>{myName ? myName + ' • ' : ''}{myPhone}</div></div>
+        <button onClick={() => setShowQR(true)} style={{ background: '#171c46', border: 0, color: '#fff', borderRadius: '50%', width: 38, height: 38 }}>📷</button>
+        <button onClick={() => setShowContactMenu(true)} style={{ background: '#171c46', border: 0, color: '#fff', borderRadius: '50%', width: 38, height: 38 }}>⋮</button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 90px' }}>
-        {tab === 'chat' && (
-          <>
-            <div onClick={() => setOpenSelf(true)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1f4a' }}>
-              <Droplet o={{ ...me, ring: 'none' }} w={52} />
-              <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>{myName || 'You'} (You)</div><div style={{ color: '#aab', fontSize: 12 }}>{selfMsgs.length ? (selfMsgs[selfMsgs.length - 1].text || 'Voice message') : 'Message yourself'} • {myPhone}</div></div>
-              <span style={{ color: '#aab', fontSize: 12 }}>{selfMsgs.length ? selfMsgs[selfMsgs.length - 1].time : ''}</span>
-            </div>
-            {visibleChats.map(c => (
-              <div key={c.phone || c.name} onClick={() => setOpenChat(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1f4a' }}>
-                <div onClick={e => { e.stopPropagation(); setFullView(c) }}><Droplet o={c} w={52} /></div>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800 }}>{c.name}</div><div style={{ color: '#aab', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.msg}</div></div>
-                <span style={{ color: '#aab', fontSize: 12 }}>{c.time}</span>
-              </div>
-            ))}
-            {visibleChats.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>No chats yet.<br />Tap + to add a contact.</div>}
-          </>
-        )}
-        {tab === 'check' && (
-          <div>
-            {chats.filter(c => c.ring !== 'none').map(c => (
-              <div key={c.phone || c.name} onClick={() => setFullView(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1f4a' }}>
-                <Droplet o={c} w={52} /><div><div style={{ fontWeight: 800 }}>{c.name}</div><div style={{ color: '#aab', fontSize: 12 }}>{c.ring === 'new' ? 'New Check' : 'Seen'}</div></div>
-              </div>
-            ))}
-            {chats.filter(c => c.ring !== 'none').length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>No Checks yet.</div>}
-          </div>
-        )}
-        {tab === 'call' && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>No calls yet.<br />Tap a chat then tap 📞</div>}
+      {/* SEARCH BAR - ALWAYS VISIBLE */}
+      <div style={{ padding: '8px 16px', background: '#0e1230' }}>
+        <input value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="🔍 Search chats, contacts..." style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 20, padding: '10px 14px', color: '#fff', outline: 'none' }} />
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          {(['all', 'unread', 'photo', 'live'] as const).map(f => <button key={f} onClick={() => setSearchFilter(f)} style={{ background: searchFilter === f ? '#ff2f6d' : '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: '6px 10px', fontSize: 11, textTransform: 'capitalize' }}>{f === 'all' ? 'All' : f}</button>)}
+        </div>
       </div>
 
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0e1230', display: 'flex', padding: '10px 16px calc(env(safe-area-inset-bottom) + 10px)', borderTop: '1px solid #1a1f4a' }}>
-        <button onClick={() => setTab('chat')} style={{ flex: 1, background: 'none', border: 0, color: tab === 'chat' ? '#ff2f6d' : '#aab' }}>💬<br />Chat</button>
-        <button onClick={() => setTab('check')} style={{ flex: 1, background: 'none', border: 0, color: tab === 'check' ? '#ff2f6d' : '#aab' }}>👁️<br />Check</button>
-        <button onClick={() => setTab('call')} style={{ flex: 1, background: 'none', border: 0, color: tab === 'call' ? '#ff2f6d' : '#aab' }}>📞<br />Call</button>
-        <button onClick={() => setShowSelectContact(true)} style={{ flex: 1, background: 'none', border: 0, color: '#ff2f6d', fontSize: 22, fontWeight: 900 }}>＋</button>
+      {/* SINGLE TABS ROW - CHAT / CHECK / CALL ONLY HERE */}
+      <div style={{ display: 'flex', gap: 8, padding: '10px 16px' }}>
+        {(['chat', 'check', 'call'] as const).map(t => <button key={t} onClick={() => setTab(t)} style={{ flex: 1, background: tab === t ? '#ff2f6d' : '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 10, textTransform: 'capitalize', fontWeight: 700 }}>{t}</button>)}
       </div>
 
-      {/* ---------- PROFILE FULL VIEW + WORKING + MENU ---------- */}
-      {fullView && (
-        <div style={{ position: 'fixed', inset: 0, background: '#0b0e24', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
-            <button onClick={() => { setFullView(null); setShowPlusMenu(false); setFullMuted(true) }} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22 }}>←</button>
-            <div style={{ fontWeight: 800 }}>{fullView.name || 'Profile'}</div>
-            <button onClick={() => setShowPlusMenu(!showPlusMenu)} style={{ marginLeft: 'auto', background: '#ff2f6d', border: 0, color: '#fff', width: 38, height: 38, borderRadius: '50%', fontSize: 22, fontWeight: 900 }}>＋</button>
+      <div style={{ padding: '0 16px' }}>
+        {tab === 'chat' && <>
+          {/* YOU ROW - ONLY DROPLET ON MAIN SCREEN */}
+          <div onClick={() => setOpenSelf(true)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #1a1f4a', cursor: 'pointer' }}>
+            <Droplet o={me} w={48} />
+            <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>You (You)</div><div style={{ fontSize: 12, opacity: 0.6 }}>{myPhone} • Message yourself</div></div>
+            <span style={{ opacity: 0.5 }}>›</span>
           </div>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 20 }} onClick={() => fullView.type === 'live' && setFullMuted(!fullMuted)}>
-            <Droplet o={fullView} w={220} muted={fullMuted} />
-            <div style={{ fontWeight: 800, fontSize: 20 }}>{fullView.name || myName || 'You'}</div>
-            <div style={{ color: '#aab', fontSize: 13 }}>{fullView.phone || myPhone}</div>
-            <div style={{ color: '#aab', fontSize: 12, textAlign: 'center' }}>{fullView.type === 'live' ? 'Tap droplet to unmute / mute • Loops 7 secs' : fullView.type === 'photo' ? 'Photo profile' : 'No profile yet - tap + to set one'}</div>
-            {fullView.type === 'live' && <div style={{ background: '#171c46', padding: '8px 14px', borderRadius: 20, fontSize: 12 }}>{fullMuted ? '🔇 Muted - tap to unmute' : '🔊 Sound on - tap to mute'}</div>}
-          </div>
-          {/* FIX + BUTTON: This menu was missing before, now e dey work inside profile */}
-          {showPlusMenu && (
-            <div style={{ position: 'absolute', top: 60, right: 16, background: '#1a1f4a', borderRadius: 14, width: 220, overflow: 'hidden', zIndex: 60, boxShadow: '0 10px 30px rgba(0,0,0,.5)' }}>
-              <button onClick={() => { setShowPlusMenu(false); galleryRef.current?.click() }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>🖼️ Upload from Gallery<br /><span style={{ color: '#aab', fontSize: 11 }}>Video must be 7 secs - you go trim am</span></button>
-              <button onClick={() => { setShowPlusMenu(false); photoRef.current?.click() }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>📸 Add Photo</button>
-              <button onClick={() => { setShowPlusMenu(false); startRecord() }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>📷 Record directly<br /><span style={{ color: '#aab', fontSize: 11 }}>Auto record 7 secs</span></button>
-              <button onClick={() => { setShowPlusMenu(false); setOverlay('stickers') }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>✨ Live Stickers<br /><span style={{ color: '#aab', fontSize: 11 }}>Aki, Pawpaw, Fire...</span></button>
-              <button onClick={() => { setShowPlusMenu(false); setMe({ type: 'none' }); setFullView(null); showToast('Profile removed ✔') }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#ff5b7a', padding: 13 }}>🗑️ Remove profile</button>
-            </div>
-          )}
-          <input ref={galleryRef} type="file" accept="image/*,video/*" hidden onChange={handleGallery} />
-          <input ref={photoRef} type="file" accept="image/*" hidden onChange={handlePhoto} />
-        </div>
-      )}
+          {visibleChats.length === 0 && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: 30 }}>No chats yet<br />Tap + below to add a contact</div>}
+          {visibleChats.map(c => <div key={c.phone} onClick={() => setOpenChat(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #1a1f4a', cursor: 'pointer' }}>
+            <Droplet o={{ type: c.type, src: c.src }} w={48} />
+            <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{c.name}</div><div style={{ fontSize: 12, opacity: 0.6 }}>{c.msg}</div></div>
+            <div style={{ fontSize: 11, opacity: 0.5 }}>{c.time}</div>
+          </div>)}
+        </>}
+        {tab === 'check' && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: 40 }}>No Checks yet<br />Your checks will appear here</div>}
+        {tab === 'call' && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: 40 }}>No calls yet<br />Your calls will appear here</div>}
+      </div>
 
-      {/* TRIM / CUT - Select where 7 secs go start */}
-      {overlay === 'trim' && trimUrl && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)', zIndex: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div style={{ fontWeight: 800, marginBottom: 10 }}>Trim - Choose where 7 secs start</div>
-          <video src={trimUrl} autoPlay muted loop playsInline onTimeUpdate={e => { const v = e.currentTarget; if (v.currentTime >= trimStart + 7) v.currentTime = trimStart }} style={{ width: '100%', maxWidth: 320, borderRadius: 16, background: '#000' }} />
-          <div style={{ color: '#aab', fontSize: 12, marginTop: 10 }}>Video length: {trimDur.toFixed(1)}s • Showing: {trimStart.toFixed(1)}s to {(Math.min(trimStart + 7, trimDur)).toFixed(1)}s • Loops</div>
-          <input type="range" min={0} max={Math.max(0, trimDur - 7)} step={0.1} value={trimStart} onChange={e => setTrimStart(Number(e.target.value))} style={{ width: '100%', maxWidth: 320, marginTop: 14 }} />
-          <div style={{ display: 'flex', gap: 10, marginTop: 16, width: '100%', maxWidth: 320 }}>
-            <button onClick={confirmTrim} style={{ flex: 1, padding: 12, borderRadius: 12, border: 0, background: '#ff2f6d', color: '#fff', fontWeight: 800 }}>Use this 7 secs ✔</button>
-            <button onClick={() => { setOverlay(null); setTrimUrl('') }} style={{ flex: 1, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
-          </div>
-        </div>
-      )}
+      {/* BOTTOM - ONLY PLUS BUTTON, NO DUPLICATE TABS */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0e1230', borderTop: '1px solid #1a1f4a', padding: '10px 16px calc(env(safe-area-inset-bottom) + 10px)', display: 'flex', justifyContent: 'center' }}>
+        <button onClick={() => setShowPlusMenu(true)} style={{ background: '#ff2f6d', border: 0, color: '#fff', width: 56, height: 56, borderRadius: '50%', fontSize: 28, boxShadow: '0 4px 20px rgba(255,47,109,.5)' }}>+</button>
+      </div>
 
-      {/* LIVE STICKERS */}
-      {overlay === 'stickers' && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 80, display: 'flex', alignItems: 'flex-end' }}>
-          <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
-            <div style={{ fontWeight: 800, marginBottom: 12 }}>Live Stickers - Tap one, e go set as your profile</div>
-            <div style={{ display: 'flex', gap: 12 }}>
-              {STICKERS.map(s => <button key={s.name} onClick={() => setLive(s.src, 0)} style={{ flex: 1, background: '#171c46', border: 0, color: '#fff', borderRadius: 14, padding: 14 }}>{s.e}<br />{s.name}</button>)}
-            </div>
-            <button onClick={() => setOverlay(null)} style={{ width: '100%', marginTop: 12, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Close</button>
-          </div>
-        </div>
-      )}
+      {showPlusMenu && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 90, display: 'flex', alignItems: 'flex-end' }}><div style={{ background: '#0e1230', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
+        <div style={{ fontWeight: 800, marginBottom: 12 }}>What do you want to do?</div>
+        <button onClick={() => { setShowPlusMenu(false); setShowNewContact(true) }} style={{ display: 'block', width: '100%', background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, textAlign: 'left' }}>👤 New Contact</button>
+        <button onClick={() => { setShowPlusMenu(false); setShowSelectContact(true) }} style={{ display: 'block', width: '100%', background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, textAlign: 'left' }}>💬 New Chat</button>
+        <button onClick={() => { setShowPlusMenu(false); setOverlay('photo') }} style={{ display: 'block', width: '100%', background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, textAlign: 'left' }}>🖼️ Set Photo Profile</button>
+        <button onClick={() => { setShowPlusMenu(false); setOverlay('record') }} style={{ display: 'block', width: '100%', background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, textAlign: 'left' }}>🎥 Record Live 7s Profile</button>
+        <button onClick={() => setShowPlusMenu(false)} style={{ display: 'block', width: '100%', background: '#222', border: 0, color: '#fff', borderRadius: 12, padding: 12 }}>Close</button>
+      </div></div>}
 
-      {recording && <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', background: '#ff2f4d', color: '#fff', padding: '8px 14px', borderRadius: 20, fontSize: 13, zIndex: 90 }}>● Recording... {recordUrl ? '' : '7 secs'}</div>}
+      {showNewContact && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 95, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 400, borderRadius: 16, padding: 16 }}>
+        <div style={{ fontWeight: 800, marginBottom: 12 }}>New Contact</div>
+        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name" style={{ background: '#171c46', border: 0, borderRadius: 10, padding: 12, color: '#fff', width: '100%', marginBottom: 10 }} />
+        <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="Phone number" style={{ background: '#171c46', border: 0, borderRadius: 10, padding: 12, color: '#fff', width: '100%', marginBottom: 12 }} />
+        <button onClick={addNewContact} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 10, padding: 12, width: '100%', marginBottom: 8 }}>Add Contact</button>
+        <button onClick={() => setShowNewContact(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%' }}>Cancel</button>
+      </div></div>}
 
-      {showLogoutConfirm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 70, padding: 20 }}>
-          <div style={{ background: '#12163a', width: '100%', maxWidth: 340, borderRadius: 16, padding: 20, textAlign: 'center' }}>
-            <div style={{ fontWeight: 800, fontSize: 17 }}>Log out?</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8 }}>Your contacts and chats go stay for this phone.</div>
-            <button onClick={doLogout} style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 12, border: 0, background: '#ff2f4d', color: '#fff', fontWeight: 700 }}>Log out</button>
-            <button onClick={() => setShowLogoutConfirm(false)} style={{ width: '100%', marginTop: 8, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
-          </div>
-        </div>
-      )}
-      {toast && <div style={{ position: 'fixed', bottom: 90, left: '50%', transform: 'translateX(-50%)', background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, fontSize: 13, zIndex: 90 }}>{toast}</div>}
-      <style jsx global>{`
-        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-        body { margin: 0; background: #0b0e24; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        .drop { filter: drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
-      `}</style>
+      {showSelectContact && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 95, display: 'flex', alignItems: 'flex-end' }}><div style={{ background: '#0e1230', width: '100%', borderRadius: '20px 20px 0 0', padding: 16, maxHeight: '70vh', overflowY: 'auto' }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>Select Contact</div>
+        <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts" style={{ background: '#171c46', border: 0, borderRadius: 10, padding: 10, color: '#fff', width: '100%', marginBottom: 10 }} />
+        {visibleContacts.length === 0 && <div style={{ opacity: 0.5, textAlign: 'center', padding: 20 }}>No contacts yet</div>}
+        {visibleContacts.map(c => <div key={c.phone} onClick={() => { const ch = chats.find(x => x.phone === c.phone); if (ch) setOpenChat(ch); setShowSelectContact(false) }} style={{ padding: 12, borderBottom: '1px solid #1a1f4a' }}>{c.name} • {c.phone}</div>)}
+        <button onClick={() => setShowSelectContact(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%', marginTop: 10 }}>Close</button>
+      </div></div>}
+
+      {showContactMenu && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 95, display: 'flex', alignItems: 'flex-end' }}><div style={{ background: '#0e1230', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
+        <button onClick={() => { setShowContactMenu(false); setShowQR(true) }} style={{ display: 'block', width: '100%', background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, textAlign: 'left' }}>📷 My QR Code</button>
+        <button onClick={() => { setShowContactMenu(false); setShowInvite(true) }} style={{ display: 'block', width: '100%', background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, textAlign: 'left' }}>✉️ Invite Friends</button>
+        <button onClick={() => { setShowContactMenu(false); setShowHelp(true) }} style={{ display: 'block', width: '100%', background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, textAlign: 'left' }}>❓ Help</button>
+        <button onClick={() => { setShowContactMenu(false); setShowBlocked(true) }} style={{ display: 'block', width: '100%', background: '#171c46', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, textAlign: 'left' }}>🚫 Blocked Contacts</button>
+        <button onClick={() => { setShowContactMenu(false); setShowLogoutConfirm(true) }} style={{ display: 'block', width: '100%', background: '#ff2f4d', border: 0, color: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, textAlign: 'left' }}>🚪 Log Out</button>
+        <button onClick={() => setShowContactMenu(false)} style={{ display: 'block', width: '100%', background: '#222', border: 0, color: '#fff', borderRadius: 12, padding: 10 }}>Close</button>
+      </div></div>}
+
+      {showQR && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 380, borderRadius: 16, padding: 16, textAlign: 'center' }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>QR Code</div>
+        <div style={{ background: '#fff', color: '#000', padding: 20, borderRadius: 12, marginBottom: 12, fontSize: 12 }}>QR for {myPhone}<br />{myName || 'EVA User'}</div>
+        <input value={scanInput} onChange={e => setScanInput(e.target.value)} placeholder="Paste scanned number" style={{ background: '#171c46', border: 0, borderRadius: 10, padding: 10, color: '#fff', width: '100%', marginBottom: 10 }} />
+        <button onClick={() => { if (scanInput.trim()) { showToast('Scanned: ' + scanInput); setScanInput(''); setShowQR(false) } }} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%', marginBottom: 8 }}>Add Scanned</button>
+        <button onClick={() => setShowQR(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%' }}>Close</button>
+      </div></div>}
+
+      {showLogoutConfirm && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 97, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 360, borderRadius: 16, padding: 16, textAlign: 'center' }}>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Log out?</div><div style={{ opacity: 0.6, marginBottom: 14 }}>Are you sure you want to log out?</div>
+        <button onClick={doLogout} style={{ background: '#ff2f4d', border: 0, color: '#fff', borderRadius: 10, padding: 12, width: '100%', marginBottom: 8 }}>Yes, Log Out</button>
+        <button onClick={() => setShowLogoutConfirm(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%' }}>Cancel</button>
+      </div></div>}
+
+      {showInvite && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 97, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 360, borderRadius: 16, padding: 16, textAlign: 'center' }}>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Invite Friends</div><div style={{ opacity: 0.6, marginBottom: 12 }}>Share EVA Chat with your friends</div>
+        <button onClick={() => { showToast('Invite link copied'); setShowInvite(false) }} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 10, padding: 12, width: '100%', marginBottom: 8 }}>Copy Invite Link</button>
+        <button onClick={() => setShowInvite(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%' }}>Close</button>
+      </div></div>}
+
+      {showHelp && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 97, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 360, borderRadius: 16, padding: 16 }}>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Help</div><div style={{ opacity: 0.7, fontSize: 13, lineHeight: 1.5 }}>• Tap + to add contact or set photo / live profile<br />• Tap You to message yourself<br />• Photo and live profiles loop for 7 seconds<br />• Use 123456 as test OTP code</div>
+        <button onClick={() => setShowHelp(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%', marginTop: 12 }}>Close</button>
+      </div></div>}
+
+      {showBlocked && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 97, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 360, borderRadius: 16, padding: 16 }}>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Blocked Contacts</div><div style={{ opacity: 0.5, marginBottom: 12 }}>No blocked contacts</div>
+        <button onClick={() => setShowBlocked(false)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%' }}>Close</button>
+      </div></div>}
+
+      {overlay === 'photo' && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 98, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 360, borderRadius: 16, padding: 16, textAlign: 'center' }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>Set Photo Profile</div>
+        <button onClick={() => photoRef.current?.click()} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 10, padding: 12, width: '100%', marginBottom: 8 }}>Choose Photo</button>
+        <button onClick={() => setOverlay(null)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%' }}>Cancel</button>
+      </div></div>}
+
+      {overlay === 'record' && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 98, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}><div style={{ background: '#0e1230', width: '100%', maxWidth: 360, borderRadius: 16, padding: 16, textAlign: 'center' }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>Record Live 7s</div><div style={{ opacity: 0.6, fontSize: 13, marginBottom: 12 }}>Your live profile will loop for 7 seconds</div>
+        <button onClick={() => { setOverlay(null); showToast('Use Gallery to pick a video for now') }} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 10, padding: 12, width: '100%', marginBottom: 8 }}>Pick Video From Gallery</button>
+        <button onClick={() => setOverlay(null)} style={{ background: '#222', border: 0, color: '#fff', borderRadius: 10, padding: 10, width: '100%' }}>Cancel</button>
+      </div></div>}
+
+      <input ref={galleryRef} type="file" accept="image/*,video/*" hidden onChange={handleGalleryFile} />
+      <input ref={photoRef} type="file" accept="image/*" hidden onChange={handlePhotoProfile} />
+      <input ref={docRef} type="file" hidden onChange={handleDocFile} />
+      {toast && <div style={{ position: 'fixed', bottom: 90, left: '50%', transform: 'translateX(-50%)', background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, zIndex: 999, whiteSpace: 'nowrap' }}>{toast}</div>}
+      <style>{`.drop{box-shadow:0 4px 14px rgba(0,0,0,.35)} input::placeholder{color:#888}`}</style>
     </div>
   )
-}
+} 
