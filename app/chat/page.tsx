@@ -1,11 +1,18 @@
 "use client"
 import { useState, useEffect, useRef } from "react"
-import { createClient } from "@supabase/supabase-js"
+import { initializeApp, getApps, getApp } from "firebase/app"
+import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, type ConfirmationResult } from "firebase/auth"
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+}
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
+const auth = getAuth(app)
 
 const P = 'M50,0 C70,40 100,90 100,140 C100,180 80,210 50,210 C20,210 0,180 0,140 C0,90 30,40 50,0 Z'
 const T = 'translate(5,10.5) scale(.9)'
@@ -312,6 +319,8 @@ export default function ChatPage() {
   const [searchText, setSearchText] = useState('')
   const [searchFilter, setSearchFilter] = useState<'all' | 'unread' | 'photo' | 'live'>('all')
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const confirmationRef = useRef<ConfirmationResult | null>(null)
+  const recaptchaRef = useRef<RecaptchaVerifier | null>(null)
 
   const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(''), 2200) }
   const close = () => { setOverlay(null); setShowPlusMenu(false) }
@@ -328,6 +337,18 @@ export default function ChatPage() {
     c.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
     c.code.includes(countrySearch)
   )
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user && user.phoneNumber) {
+        setMyPhone(user.phoneNumber)
+        setIsVerified(true)
+        localStorage.setItem('eva-my-phone', user.phoneNumber)
+        localStorage.setItem('eva-phone-verified', 'true')
+      }
+    })
+    return () => unsub()
+  }, [])
 
   useEffect(() => {
     const saved = localStorage.getItem('eva-my-phone')
@@ -350,18 +371,21 @@ export default function ChatPage() {
     if (digitsOnly.length < 7) return showToast('Enter a valid number')
     setSending(true)
     try {
-      const res = await fetch('/api/send-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: formatted }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Could not send code')
+      if (!recaptchaRef.current) {
+        recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' })
+      }
+      const confirmation = await signInWithPhoneNumber(auth, formatted, recaptchaRef.current)
+      confirmationRef.current = confirmation
       setMyPhone(formatted)
       setCodeSent(true)
-      showToast('Code sent')
+      showToast('Code sent by Firebase ✔')
     } catch (e: any) {
-      showToast(e.message || 'Could not send code. Try again.')
+      console.log('Firebase send error:', e)
+      if (e.code === 'auth/invalid-phone-number') showToast('Invalid number for that country')
+      else if (e.code === 'auth/too-many-requests') showToast('Too many tries. Wait 1 min')
+      else if (e.code === 'auth/quota-exceeded') showToast('Daily SMS limit reached. Try tomorrow or upgrade Firebase Blaze')
+      else showToast(e.message || 'Could not send code. Check Firebase Phone Auth is enabled')
+      try { recaptchaRef.current?.clear(); recaptchaRef.current = null } catch {}
     } finally {
       setSending(false)
     }
@@ -369,39 +393,27 @@ export default function ChatPage() {
 
   const verifyCode = async () => {
     if (otpInput.trim().length < 4) return showToast('Enter the code')
+    if (!confirmationRef.current) return showToast('Send code first')
     setVerifying(true)
     try {
-      const res = await fetch('/api/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: myPhone, code: otpInput.trim() }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Wrong code')
-      try {
-        const userId = localStorage.getItem('eva-user-id') || crypto.randomUUID()
-        localStorage.setItem('eva-user-id', userId)
-        await supabase.from('profiles').upsert({ id: userId, name: 'You' }, { onConflict: 'id' })
-        const { error } = await supabase.from('chat_profiles').upsert({
-          user_id: userId,
-          phone_number: myPhone,
-          phone_verified: true,
-          verified_at: new Date().toISOString(),
-        }, { onConflict: 'user_id' })
-        if (error) console.log('Supabase save:', error.message)
-      } catch (e) { console.log('Supabase offline, saved locally') }
-      localStorage.setItem('eva-my-phone', myPhone)
+      const result = await confirmationRef.current.confirm(otpInput.trim())
+      const phone = result.user.phoneNumber || myPhone
+      localStorage.setItem('eva-my-phone', phone)
       localStorage.setItem('eva-phone-verified', 'true')
+      localStorage.setItem('eva-user-id', result.user.uid)
+      setMyPhone(phone)
       setIsVerified(true)
       showToast('Number verified ✔ Welcome to EVA Chat')
     } catch (e: any) {
-      showToast(e.message || 'Wrong code')
+      console.log('Firebase verify error:', e)
+      if (e.code === 'auth/invalid-verification-code') showToast('Wrong code, try again')
+      else if (e.code === 'auth/code-expired') showToast('Code expired, resend code')
+      else showToast('Wrong code')
     } finally {
       setVerifying(false)
     }
   }
-
-  useEffect(() => {
+    useEffect(() => {
     const v = fullVideoRef.current; if (!v || !fullView || fullView.type !== 'live') return
     let raf = 0; const start = fullView.start || 0
     const go = () => {
@@ -524,6 +536,7 @@ export default function ChatPage() {
     if (!isVerified) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial', padding: 20, justifyContent: 'center' }}>
+        <div id="recaptcha-container" />
         <div style={{ textAlign: 'center', marginBottom: 24 }}><div style={{ fontSize: 48 }}>💬</div></div>
         {!codeSent ? (
           <>
@@ -551,6 +564,7 @@ export default function ChatPage() {
               </div>
             )}
             <button onClick={sendCode} disabled={sending} style={{ marginTop: 16, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, color: '#fff', padding: 15, borderRadius: 14, fontSize: 16, fontWeight: 700, opacity: sending ? 0.6 : 1 }}>{sending ? 'Sending...' : 'Send Code'}</button>
+            <p style={{ textAlign: 'center', color: '#8a8fb0', fontSize: 12, marginTop: 10 }}>Code sent by Firebase / Google - No Termii needed</p>
           </>
         ) : (
           <>
@@ -567,6 +581,7 @@ export default function ChatPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial', overflow: 'hidden' }}>
+      <div id="recaptcha-container" />
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
         #screen{flex:1;overflow-y:auto;padding-bottom:10px;min-height:0}
