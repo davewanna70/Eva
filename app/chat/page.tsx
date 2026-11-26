@@ -321,6 +321,8 @@ export default function ChatPage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const confirmationRef = useRef<ConfirmationResult | null>(null)
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null)
+  const recaptchaDivRef = useRef<HTMLDivElement>(null)
+  const recaptchaReady = useRef(false)
 
   const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(''), 2200) }
   const close = () => { setOverlay(null); setShowPlusMenu(false) }
@@ -351,6 +353,15 @@ export default function ChatPage() {
   }, [])
 
   useEffect(() => {
+    if (recaptchaReady.current) return
+    if (!recaptchaDivRef.current) return
+    try {
+      recaptchaRef.current = new RecaptchaVerifier(auth, recaptchaDivRef.current, { size: 'invisible' })
+      recaptchaReady.current = true
+    } catch {}
+  }, [isVerified])
+
+  useEffect(() => {
     const saved = localStorage.getItem('eva-my-phone')
     const verified = localStorage.getItem('eva-phone-verified')
     if (saved && verified === 'true') { setMyPhone(saved); setIsVerified(true) }
@@ -372,7 +383,8 @@ export default function ChatPage() {
     setSending(true)
     try {
       if (!recaptchaRef.current) {
-        recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' })
+        if (!recaptchaDivRef.current) throw new Error('reCAPTCHA not ready, reload page')
+        recaptchaRef.current = new RecaptchaVerifier(auth, recaptchaDivRef.current, { size: 'invisible' })
       }
       const confirmation = await signInWithPhoneNumber(auth, formatted, recaptchaRef.current)
       confirmationRef.current = confirmation
@@ -384,8 +396,8 @@ export default function ChatPage() {
       if (e.code === 'auth/invalid-phone-number') showToast('Invalid number for that country')
       else if (e.code === 'auth/too-many-requests') showToast('Too many tries. Wait 1 min')
       else if (e.code === 'auth/quota-exceeded') showToast('Daily SMS limit reached. Try tomorrow or upgrade Firebase Blaze')
+      else if ((e.message || '').includes('already been rendered')) showToast('Reload page once and try again')
       else showToast(e.message || 'Could not send code. Check Firebase Phone Auth is enabled')
-      try { recaptchaRef.current?.clear(); recaptchaRef.current = null } catch {}
     } finally {
       setSending(false)
     }
@@ -413,7 +425,7 @@ export default function ChatPage() {
       setVerifying(false)
     }
   }
-    useEffect(() => {
+      useEffect(() => {
     const v = fullVideoRef.current; if (!v || !fullView || fullView.type !== 'live') return
     let raf = 0; const start = fullView.start || 0
     const go = () => {
@@ -536,7 +548,7 @@ export default function ChatPage() {
     if (!isVerified) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial', padding: 20, justifyContent: 'center' }}>
-        <div id="recaptcha-container" />
+        <div ref={recaptchaDivRef} />
         <div style={{ textAlign: 'center', marginBottom: 24 }}><div style={{ fontSize: 48 }}>💬</div></div>
         {!codeSent ? (
           <>
@@ -564,7 +576,6 @@ export default function ChatPage() {
               </div>
             )}
             <button onClick={sendCode} disabled={sending} style={{ marginTop: 16, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, color: '#fff', padding: 15, borderRadius: 14, fontSize: 16, fontWeight: 700, opacity: sending ? 0.6 : 1 }}>{sending ? 'Sending...' : 'Send Code'}</button>
-            <p style={{ textAlign: 'center', color: '#8a8fb0', fontSize: 12, marginTop: 10 }}>Code sent by Firebase / Google - No Termii needed</p>
           </>
         ) : (
           <>
@@ -581,7 +592,6 @@ export default function ChatPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#050520', color: '#fff', fontFamily: 'system-ui,Arial', overflow: 'hidden' }}>
-      <div id="recaptcha-container" />
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
         #screen{flex:1;overflow-y:auto;padding-bottom:10px;min-height:0}
