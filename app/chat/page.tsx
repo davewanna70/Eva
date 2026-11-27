@@ -192,21 +192,15 @@ export default function ChatPage() {
   const formatPhone = (raw: string) => { let p = raw.replace(/\D/g, ''); if (p.startsWith('0')) p = p.slice(1); return selectedCountry.code + p }
   const filteredCountries = COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.code.includes(countrySearch))
 
-  // NUMBER 4: Hide reCAPTCHA badge after login, show it again on login screen.
+  // NUMBER 4 - UPDATED: Always hide reCAPTCHA badge everywhere. Verification still works because RecaptchaVerifier is invisible.
   useEffect(() => {
     const id = 'eva-hide-captcha'
-    let el = document.getElementById(id) as HTMLStyleElement | null
-    if (isVerified) {
-      if (!el) {
-        el = document.createElement('style'); el.id = id
-        el.textContent = '.grecaptcha-badge{visibility:hidden !important; opacity:0 !important; pointer-events:none !important; display:none !important;}'
-        document.head.appendChild(el)
-      }
-    } else {
-      el?.remove()
+    if (!document.getElementById(id)) {
+      const el = document.createElement('style'); el.id = id
+      el.textContent = '.grecaptcha-badge{visibility:hidden !important; opacity:0 !important; pointer-events:none !important; display:none !important;}'
+      document.head.appendChild(el)
     }
-    return () => { if (!isVerified) document.getElementById(id)?.remove() }
-  }, [isVerified])
+  }, [])
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
