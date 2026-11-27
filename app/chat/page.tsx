@@ -36,7 +36,7 @@ const P = 'M50,0 C70,40 100,90 100,140 C100,180 80,210 50,210 C20,210 0,180 0,14
 const T = 'translate(5,10.5) scale(.9)'
 let uidCounter = 0
 
-// FIX: Convert file to DataURL so e stay after close / minimize / reload. Blob URL dey die.
+// FIX: Convert file to DataURL so it stays after close / minimize / reload. Blob URL does not stay.
 const fileToDataURL = (f: File) => new Promise<string>((res, rej) => {
   const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f)
 })
@@ -85,7 +85,7 @@ function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onC
   )
 }
 
-// FIX KEYBOARD: ChatBar dey OUTSIDE ChatPage now. Before e dey inside, every letter go kill input + keyboard. Now input no go die, you fit type 100 words.
+// FIX KEYBOARD: ChatBar is OUTSIDE ChatPage now. Before it was inside, every letter closed the input and keyboard. Now the input stays open, you can type 100 words.
 function ChatBar({ value, onChange, onSend, isSelf, me, showEmoji, setShowEmoji, showAttach, setShowAttach, emojiCat, setEmojiCat, filteredEmojis, addEmoji, galleryRef, docRef, startRecord, toggleVoice, isRecordingVoice }: any) {
   return (
     <div style={{ background: '#0b0e24', padding: '8px 10px', paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
@@ -163,9 +163,7 @@ export default function ChatPage() {
   const attachRef = useRef<HTMLInputElement>(null); const docRef = useRef<HTMLInputElement>(null)
   const fullVideoRef = useRef<HTMLVideoElement>(null)
   const msgsEndRef = useRef<HTMLDivElement>(null)
-  const [searching, setSearching] = useState(false)
   const [searchText, setSearchText] = useState('')
-  const [searchFilter, setSearchFilter] = useState<'all' | 'unread' | 'photo' | 'live'>('all')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const confirmationRef = useRef<ConfirmationResult | null>(null)
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null)
@@ -235,7 +233,7 @@ export default function ChatPage() {
   useEffect(() => { if (myPhone) { try { localStorage.setItem(`eva-chats-${myPhone}`, JSON.stringify(chats)) } catch {} } }, [chats, myPhone])
   useEffect(() => { try { localStorage.setItem('eva-me-droplet', JSON.stringify(me)) } catch {} }, [me])
   useEffect(() => { try { localStorage.setItem('eva-contacts-enabled', String(evaContactsOn)) } catch {} }, [evaContactsOn])
-  // FIX KEYBOARD: scroll only when new message comes, not when you dey type
+  // FIX KEYBOARD: scroll only when new message comes, not when you are typing
   useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs])
 
   const sendCode = async () => {
@@ -283,7 +281,7 @@ export default function ChatPage() {
     setShowLogoutConfirm(false); setShowContactMenu(false); setShowSelectContact(false); setOpenChat(null); setOpenSelf(false)
     recaptchaReady.current = false; recaptchaRef.current = null; showToast('Logged out ✔')
   }
-    // FIX ME DUPLICATE: If number na your own, update your name, no create contact
+  // FIX ME DUPLICATE: If the number is your own, update your name, do not create a contact
   const saveNewContact = () => {
     if (!newName.trim()) return showToast('Enter name')
     if (newPhone.replace(/\D/g, '').length < 7) return showToast('Enter valid number')
@@ -298,15 +296,10 @@ export default function ChatPage() {
     setNewName(''); setNewPhone(''); setShowNewContact(false); showToast('Contact saved on EVA ✔')
   }
 
-  // FIX: Your own number never show for contacts list
+  // FIX: Your own number never shows in the contacts list
   const visibleContacts = contacts.filter(c => !c.blocked && c.phone !== myPhone)
   const filteredContacts = visibleContacts.filter(c => c.name.toLowerCase().includes(contactSearch.toLowerCase()) || c.phone.includes(contactSearch))
-  const visibleChats = chats.filter(c => {
-    if (searchFilter === 'unread') return c.msg && c.msg !== 'Tap to chat'
-    if (searchFilter === 'photo') return c.type === 'photo'
-    if (searchFilter === 'live') return c.type === 'live'
-    return true
-  }).filter(c => c.name.toLowerCase().includes(searchText.toLowerCase()))
+  const visibleChats = chats.filter(c => c.name.toLowerCase().includes(searchText.toLowerCase()))
   const filteredEmojis = EMOJI_CATS[emojiCat].filter(e => !emojiSearch || e.includes(emojiSearch))
 
   const sendSelf = () => {
@@ -352,7 +345,7 @@ export default function ChatPage() {
     const f = e.target.files?.[0]; if (!f) return
     const url = await fileToDataURL(f)
     if (f.type.startsWith('image/')) { setMe({ type: 'photo', src: url }); setShowPlusMenu(false); showToast('Photo set ✔'); e.target.value = ''; return }
-    // Video: get duration, then open trim so user select where 7 secs go start
+    // Video: get duration, then open trim so user selects where 7 secs will start
     const v = document.createElement('video'); v.preload = 'metadata'; v.src = url
     v.onloadedmetadata = () => {
       setTrimUrl(url); setTrimDur(v.duration); setTrimStart(0); setOverlay('trim'); setShowPlusMenu(false)
@@ -360,7 +353,7 @@ export default function ChatPage() {
     e.target.value = ''
   }
   const confirmTrim = () => {
-    // 7 secs loop: Droplet go always play from trimStart to trimStart+7
+    // 7 secs loop: Droplet will always play from trimStart to trimStart+7
     setLive(trimUrl, trimStart); setOverlay(null); setTrimUrl('')
   }
   const startRecord = async () => {
@@ -468,7 +461,6 @@ export default function ChatPage() {
             <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 12 }}>New contact</div>
             <input placeholder="Name" value={newName} onChange={e => setNewName(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
             <input placeholder="Phone number" value={newPhone} onChange={e => setNewPhone(e.target.value)} inputMode="tel" style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
-            <div style={{ color: '#aab', fontSize: 12, marginTop: 8 }}>Tip: If you enter your own number, e go update your name, no duplicate.</div>
             <button onClick={saveNewContact} style={{ width: '100%', marginTop: 12, padding: 14, borderRadius: 12, border: 0, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', color: '#fff', fontWeight: 800 }}>Save on EVA</button>
             <button onClick={() => setShowNewContact(false)} style={{ width: '100%', marginTop: 8, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
           </div>
@@ -520,7 +512,7 @@ export default function ChatPage() {
       {showHelp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
           <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
-            <div style={{ fontWeight: 800 }}>Help</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8, lineHeight: 1.6 }}>1. Tap New contact to add person<br />2. Tap your droplet to set photo / live video<br />3. Live video must be 7 secs, e go loop<br />4. Message yourself to save notes</div>
+            <div style={{ fontWeight: 800 }}>Help</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8, lineHeight: 1.6 }}>1. Tap New contact to add person<br />2. Tap your droplet to set photo / live video<br />3. Live video must be 7 secs, it will loop<br />4. Message yourself to save notes</div>
             <button onClick={() => setShowHelp(false)} style={{ width: '100%', marginTop: 12, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Close</button>
           </div>
         </div>
@@ -538,7 +530,7 @@ export default function ChatPage() {
       {showLogoutConfirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 70, padding: 20 }}>
           <div style={{ background: '#12163a', width: '100%', maxWidth: 340, borderRadius: 16, padding: 20, textAlign: 'center' }}>
-            <div style={{ fontWeight: 800, fontSize: 17 }}>Log out?</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8 }}>Your contacts and chats go stay for this phone.</div>
+            <div style={{ fontWeight: 800, fontSize: 17 }}>Log out?</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8 }}>Your contacts and chats will stay on this phone.</div>
             <button onClick={doLogout} style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 12, border: 0, background: '#ff2f4d', color: '#fff', fontWeight: 700 }}>Log out</button>
             <button onClick={() => setShowLogoutConfirm(false)} style={{ width: '100%', marginTop: 8, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
           </div>
@@ -559,9 +551,9 @@ export default function ChatPage() {
         {selfMsgs.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>No messages yet.<br />Send yourself notes, photos, voice.</div>}
         {selfMsgs.map((m, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <div style={{ background: '#ff2f6d', borderRadius: '16px 16px 4px 16px', padding: '10px 14px', maxWidth: '80%' }}>
-              {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 200 }} /> : <span>{m.text}</span>}
-              <div style={{ fontSize: 10, color: '#ffd', textAlign: 'right', marginTop: 4 }}>{m.time}</div>
+            <div style={{ background: '#ff2f6d', borderRadius: '16px 16px 4px 16px', padding: '12px 16px', maxWidth: '85%', minWidth: 90 }}>
+              {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 220 }} /> : <span style={{ fontSize: 17, lineHeight: 1.4 }}>{m.text}</span>}
+              <div style={{ fontSize: 11, color: '#fff', textAlign: 'right', marginTop: 6 }}>{m.time} <span style={{ color: '#b3e5fc' }}>✓✓</span></div>
             </div>
           </div>
         ))}
@@ -588,9 +580,9 @@ export default function ChatPage() {
         {(chatMsgs[openChat.phone || openChat.name] || []).length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>Say hi to {openChat.name} 👋</div>}
         {(chatMsgs[openChat.phone || openChat.name] || []).map((m, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <div style={{ background: '#ff2f6d', borderRadius: '16px 16px 4px 16px', padding: '10px 14px', maxWidth: '80%' }}>
-              {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 200 }} /> : <span>{m.text}</span>}
-              <div style={{ fontSize: 10, textAlign: 'right', marginTop: 4 }}>{m.time}</div>
+            <div style={{ background: '#ff2f6d', borderRadius: '16px 16px 4px 16px', padding: '12px 16px', maxWidth: '85%', minWidth: 90 }}>
+              {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 220 }} /> : <span style={{ fontSize: 17, lineHeight: 1.4 }}>{m.text}</span>}
+              <div style={{ fontSize: 11, color: '#fff', textAlign: 'right', marginTop: 6 }}>{m.time} <span style={{ color: '#b3e5fc' }}>✓✓</span></div>
             </div>
           </div>
         ))}
@@ -603,40 +595,37 @@ export default function ChatPage() {
     </div>
   )
 
-  // ---------- MAIN SCREEN - EDITED ONLY HERE ----------
+  // ---------- MAIN SCREEN ----------
   return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
-      {/* EDIT 1: EVA Chat on right on top, NO droplet on top, NO search icon, NO menu on top */}
+      {/* EVA Chat on right on top, NO droplet on top */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 16px 6px' }}>
         <div style={{ fontSize: 20, fontWeight: 900 }}>EVA <span style={{ color: '#ff2f6d' }}>Chat</span></div>
       </div>
 
-      {/* EDIT 2: Long search bar on top, always visible - same style as before */}
+      {/* Search bar on top, always visible - NO All / Unread / Photo / Live */}
       <div style={{ padding: '0 16px 10px' }}>
         <input ref={searchInputRef} placeholder="Search" value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 20, padding: '12px 14px', color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          {(['all', 'unread', 'photo', 'live'] as const).map(f => <button key={f} onClick={() => setSearchFilter(f)} style={{ background: searchFilter === f ? '#ff2f6d' : '#171c46', border: 0, color: '#fff', borderRadius: 14, padding: '6px 12px', fontSize: 12, textTransform: 'capitalize' }}>{f}</button>)}
-        </div>
       </div>
 
-      {/* EDIT 3: Top Chat / Check / Call pills REMOVED - bottom is now the only navigation */}
+      {/* Top Chat / Check / Call pills REMOVED - bottom is now the only navigation */}
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 90px' }}>
         {tab === 'chat' && (
           <>
             <div onClick={() => setOpenSelf(true)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1f4a' }}>
               <Droplet o={{ ...me, ring: 'none' }} w={52} />
-              <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>{myName || 'You'} (You)</div><div style={{ color: '#aab', fontSize: 12 }}>{selfMsgs.length ? (selfMsgs[selfMsgs.length - 1].text || 'Voice message') : 'Message yourself'} • {myPhone}</div></div>
+              <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>{myName || 'You'} (You)</div><div style={{ color: '#aab', fontSize: 13 }}>{selfMsgs.length ? <span><span style={{ color: '#4fc3f7' }}>✓✓ </span>{selfMsgs[selfMsgs.length - 1].text || 'Voice message'}</span> : 'Message yourself'}</div></div>
               <span style={{ color: '#aab', fontSize: 12 }}>{selfMsgs.length ? selfMsgs[selfMsgs.length - 1].time : ''}</span>
             </div>
             {visibleChats.map(c => (
               <div key={c.phone || c.name} onClick={() => setOpenChat(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1f4a' }}>
                 <div onClick={e => { e.stopPropagation(); setFullView(c) }}><Droplet o={c} w={52} /></div>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800 }}>{c.name}</div><div style={{ color: '#aab', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.msg}</div></div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800 }}>{c.name}</div><div style={{ color: '#aab', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><span style={{ color: '#4fc3f7' }}>✓✓ </span>{c.msg}</div></div>
                 <span style={{ color: '#aab', fontSize: 12 }}>{c.time}</span>
               </div>
             ))}
-            {/* EDIT 4: "No chats yet. Tap + to add a contact." REMOVED - center stays empty */}
+            {/* "No chats yet. Tap + to add a contact." REMOVED - center stays empty */}
           </>
         )}
         {tab === 'check' && (
@@ -652,7 +641,7 @@ export default function ChatPage() {
         {tab === 'call' && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>No calls yet.<br />Tap a chat then tap 📞</div>}
       </div>
 
-      {/* BOTTOM NAV - NOT TOUCHED, STILL WORKS: Chat / Check / Call setTab, + opens Select Contact */}
+      {/* BOTTOM NAV - STILL WORKS: Chat / Check / Call setTab, + opens Select Contact */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0e1230', display: 'flex', padding: '10px 16px calc(env(safe-area-inset-bottom) + 10px)', borderTop: '1px solid #1a1f4a' }}>
         <button onClick={() => setTab('chat')} style={{ flex: 1, background: 'none', border: 0, color: tab === 'chat' ? '#ff2f6d' : '#aab' }}>💬<br />Chat</button>
         <button onClick={() => setTab('check')} style={{ flex: 1, background: 'none', border: 0, color: tab === 'check' ? '#ff2f6d' : '#aab' }}>👁️<br />Check</button>
@@ -675,10 +664,10 @@ export default function ChatPage() {
             <div style={{ color: '#aab', fontSize: 12, textAlign: 'center' }}>{fullView.type === 'live' ? 'Tap droplet to unmute / mute • Loops 7 secs' : fullView.type === 'photo' ? 'Photo profile' : 'No profile yet - tap + to set one'}</div>
             {fullView.type === 'live' && <div style={{ background: '#171c46', padding: '8px 14px', borderRadius: 20, fontSize: 12 }}>{fullMuted ? '🔇 Muted - tap to unmute' : '🔊 Sound on - tap to mute'}</div>}
           </div>
-          {/* FIX + BUTTON: This menu was missing before, now e dey work inside profile */}
+          {/* FIX + BUTTON: This menu was missing before, now it works inside profile */}
           {showPlusMenu && (
             <div style={{ position: 'absolute', top: 60, right: 16, background: '#1a1f4a', borderRadius: 14, width: 220, overflow: 'hidden', zIndex: 60, boxShadow: '0 10px 30px rgba(0,0,0,.5)' }}>
-              <button onClick={() => { setShowPlusMenu(false); galleryRef.current?.click() }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>🖼️ Upload from Gallery<br /><span style={{ color: '#aab', fontSize: 11 }}>Video must be 7 secs - you go trim am</span></button>
+              <button onClick={() => { setShowPlusMenu(false); galleryRef.current?.click() }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>🖼️ Upload from Gallery<br /><span style={{ color: '#aab', fontSize: 11 }}>Video must be 7 secs - you will trim it</span></button>
               <button onClick={() => { setShowPlusMenu(false); photoRef.current?.click() }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>📸 Add Photo</button>
               <button onClick={() => { setShowPlusMenu(false); startRecord() }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>📷 Record directly<br /><span style={{ color: '#aab', fontSize: 11 }}>Auto record 7 secs</span></button>
               <button onClick={() => { setShowPlusMenu(false); setOverlay('stickers') }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>✨ Live Stickers<br /><span style={{ color: '#aab', fontSize: 11 }}>Aki, Pawpaw, Fire...</span></button>
@@ -690,7 +679,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* TRIM / CUT - Select where 7 secs go start */}
+      {/* TRIM / CUT - Select where 7 secs will start */}
       {overlay === 'trim' && trimUrl && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)', zIndex: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ fontWeight: 800, marginBottom: 10 }}>Trim - Choose where 7 secs start</div>
@@ -708,7 +697,7 @@ export default function ChatPage() {
       {overlay === 'stickers' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 80, display: 'flex', alignItems: 'flex-end' }}>
           <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
-            <div style={{ fontWeight: 800, marginBottom: 12 }}>Live Stickers - Tap one, e go set as your profile</div>
+            <div style={{ fontWeight: 800, marginBottom: 12 }}>Live Stickers - Tap one, it will be set as your profile</div>
             <div style={{ display: 'flex', gap: 12 }}>
               {STICKERS.map(s => <button key={s.name} onClick={() => setLive(s.src, 0)} style={{ flex: 1, background: '#171c46', border: 0, color: '#fff', borderRadius: 14, padding: 14 }}>{s.e}<br />{s.name}</button>)}
             </div>
@@ -722,7 +711,7 @@ export default function ChatPage() {
       {showLogoutConfirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 70, padding: 20 }}>
           <div style={{ background: '#12163a', width: '100%', maxWidth: 340, borderRadius: 16, padding: 20, textAlign: 'center' }}>
-            <div style={{ fontWeight: 800, fontSize: 17 }}>Log out?</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8 }}>Your contacts and chats go stay for this phone.</div>
+            <div style={{ fontWeight: 800, fontSize: 17 }}>Log out?</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8 }}>Your contacts and chats will stay on this phone.</div>
             <button onClick={doLogout} style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 12, border: 0, background: '#ff2f4d', color: '#fff', fontWeight: 700 }}>Log out</button>
             <button onClick={() => setShowLogoutConfirm(false)} style={{ width: '100%', marginTop: 8, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
           </div>
