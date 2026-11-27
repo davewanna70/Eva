@@ -134,7 +134,6 @@ export default function ChatPage() {
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0])
   const [showCountryPicker, setShowCountryPicker] = useState(false)
   const [countrySearch, setCountrySearch] = useState('')
-  const [signupName, setSignupName] = useState('')
   const [me, setMe] = useState<Me>({ type: 'none' })
   const [chats, setChats] = useState<Chat[]>([])
   const [tab, setTab] = useState<'chat' | 'check' | 'call'>('chat')
@@ -235,7 +234,6 @@ export default function ChatPage() {
   useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs])
 
   const sendCode = async () => {
-    if (authMode === 'signup' && !signupName.trim()) return showToast('Enter your name for Sign Up')
     const formatted = formatPhone(phoneInput)
     const digitsOnly = phoneInput.replace(/\D/g, '')
     if (digitsOnly.length < 7) return showToast('Enter a valid number')
@@ -262,8 +260,7 @@ export default function ChatPage() {
       const result = await confirmationRef.current.confirm(otpInput.trim())
       const phone = result.user.phoneNumber || myPhone
       localStorage.setItem('eva-my-phone', phone); localStorage.setItem('eva-phone-verified', 'true'); localStorage.setItem('eva-user-id', result.user.uid)
-      if (authMode === 'signup') localStorage.setItem(`eva-name-${phone}`, signupName.trim())
-      setMyPhone(phone); setMyName(authMode === 'signup' ? signupName.trim() : (localStorage.getItem(`eva-name-${phone}`) || ''))
+      setMyPhone(phone); setMyName(localStorage.getItem(`eva-name-${phone}`) || '')
       setIsVerified(true); setCodeSent(false); setOtpInput('')
       showToast(authMode === 'signup' ? 'Account created ✔ Welcome to EVA Chat' : 'Number verified ✔ Welcome back to EVA Chat')
     } catch (e: any) {
@@ -381,7 +378,6 @@ export default function ChatPage() {
         <button onClick={() => { setAuthMode('signup'); setCodeSent(false) }} style={{ flex: 1, padding: 10, borderRadius: 16, border: 0, background: authMode === 'signup' ? '#ff2f6d' : 'transparent', color: '#fff', fontWeight: 700 }}>Sign Up</button>
       </div>
       <div style={{ width: '100%', maxWidth: 380, marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {authMode === 'signup' && <input placeholder="Your name" value={signupName} onChange={e => setSignupName(e.target.value)} style={{ background: '#171c46', border: 0, borderRadius: 14, padding: 14, color: '#fff', outline: 'none' }} />}
         <button onClick={() => setShowCountryPicker(true)} style={{ background: '#171c46', border: 0, borderRadius: 14, padding: 14, color: '#fff', textAlign: 'left' }}>{selectedCountry.flag} {selectedCountry.name} {selectedCountry.code} ▾</button>
         <input placeholder="Phone number" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} inputMode="tel" style={{ background: '#171c46', border: 0, borderRadius: 14, padding: 14, color: '#fff', outline: 'none' }} />
         {!codeSent ? <button onClick={sendCode} disabled={sending} style={{ background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, borderRadius: 14, padding: 14, color: '#fff', fontWeight: 800 }}>{sending ? 'Sending...' : 'Send Code'}</button>
