@@ -192,6 +192,22 @@ export default function ChatPage() {
   const formatPhone = (raw: string) => { let p = raw.replace(/\D/g, ''); if (p.startsWith('0')) p = p.slice(1); return selectedCountry.code + p }
   const filteredCountries = COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.code.includes(countrySearch))
 
+  // NUMBER 4: Hide reCAPTCHA badge after login, show it again on login screen.
+  useEffect(() => {
+    const id = 'eva-hide-captcha'
+    let el = document.getElementById(id) as HTMLStyleElement | null
+    if (isVerified) {
+      if (!el) {
+        el = document.createElement('style'); el.id = id
+        el.textContent = '.grecaptcha-badge{visibility:hidden !important; opacity:0 !important; pointer-events:none !important; display:none !important;}'
+        document.head.appendChild(el)
+      }
+    } else {
+      el?.remove()
+    }
+    return () => { if (!isVerified) document.getElementById(id)?.remove() }
+  }, [isVerified])
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user && user.phoneNumber) { setMyPhone(user.phoneNumber); setIsVerified(true); localStorage.setItem('eva-my-phone', user.phoneNumber); localStorage.setItem('eva-phone-verified', 'true') }
@@ -212,7 +228,6 @@ export default function ChatPage() {
       const evaOn = localStorage.getItem('eva-contacts-enabled'); if (evaOn !== null) setEvaContactsOn(evaOn === 'true')
     } catch {}
   }, [])
-  // NUMBER 3: When phone changes, always load ONLY that phone's data. If no data, clear to empty, do not keep old phone's data.
   useEffect(() => {
     if (!myPhone) return
     try {
@@ -268,7 +283,6 @@ export default function ChatPage() {
       else showToast('Wrong code')
     } finally { setVerifying(false) }
   }
-  // NUMBER 3: Full clear on logout. Screen becomes empty. Saved data stays in storage per number.
   const doLogout = async () => {
     try { await signOut(auth) } catch {}
     localStorage.removeItem('eva-my-phone'); localStorage.removeItem('eva-phone-verified')
