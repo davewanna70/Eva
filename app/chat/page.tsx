@@ -212,10 +212,6 @@ export default function ChatPage() {
     const verified = localStorage.getItem('eva-phone-verified')
     if (saved && verified === 'true') { setMyPhone(saved); setIsVerified(true); const nm = localStorage.getItem(`eva-name-${saved}`); if (nm) setMyName(nm) }
     try {
-      const s2 = localStorage.getItem('eva-self-msgs')
-      if (s2 && s2.includes('This is your space')) localStorage.removeItem('eva-self-msgs')
-      const s = localStorage.getItem('eva-self-msgs'); if (s) setSelfMsgs(JSON.parse(s))
-      const m = localStorage.getItem('eva-me-droplet'); if (m) setMe(JSON.parse(m))
       const evaOn = localStorage.getItem('eva-contacts-enabled'); if (evaOn !== null) setEvaContactsOn(evaOn === 'true')
     } catch {}
   }, [])
@@ -225,13 +221,15 @@ export default function ChatPage() {
       const c = localStorage.getItem(`eva-contacts-${myPhone}`); if (c) setContacts((JSON.parse(c) as Contact[]).filter(x => x.phone !== myPhone)); else setContacts([])
       const cm = localStorage.getItem(`eva-chat-msgs-${myPhone}`); if (cm) setChatMsgs(JSON.parse(cm))
       const ch = localStorage.getItem(`eva-chats-${myPhone}`); if (ch) setChats(JSON.parse(ch))
+      const s = localStorage.getItem(`eva-self-msgs-${myPhone}`); if (s) setSelfMsgs(JSON.parse(s)); else setSelfMsgs([])
+      const m = localStorage.getItem(`eva-me-droplet-${myPhone}`); if (m) setMe(JSON.parse(m)); else setMe({ type: 'none' })
     } catch {}
   }, [myPhone])
-  useEffect(() => { try { localStorage.setItem('eva-self-msgs', JSON.stringify(selfMsgs)) } catch {} }, [selfMsgs])
+  useEffect(() => { if (!myPhone) return; try { localStorage.setItem(`eva-self-msgs-${myPhone}`, JSON.stringify(selfMsgs)) } catch {} }, [selfMsgs, myPhone])
   useEffect(() => { if (myPhone) { try { localStorage.setItem(`eva-chat-msgs-${myPhone}`, JSON.stringify(chatMsgs)) } catch {} } }, [chatMsgs, myPhone])
   useEffect(() => { if (myPhone) { try { localStorage.setItem(`eva-contacts-${myPhone}`, JSON.stringify(contacts)) } catch {} } }, [contacts, myPhone])
   useEffect(() => { if (myPhone) { try { localStorage.setItem(`eva-chats-${myPhone}`, JSON.stringify(chats)) } catch {} } }, [chats, myPhone])
-  useEffect(() => { try { localStorage.setItem('eva-me-droplet', JSON.stringify(me)) } catch {} }, [me])
+  useEffect(() => { if (!myPhone) return; try { localStorage.setItem(`eva-me-droplet-${myPhone}`, JSON.stringify(me)) } catch {} }, [me, myPhone])
   useEffect(() => { try { localStorage.setItem('eva-contacts-enabled', String(evaContactsOn)) } catch {} }, [evaContactsOn])
   // FIX KEYBOARD: scroll only when new message comes, not when you are typing
   useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs])
@@ -278,7 +276,7 @@ export default function ChatPage() {
     try { await signOut(auth) } catch {}
     localStorage.removeItem('eva-my-phone'); localStorage.removeItem('eva-phone-verified')
     setIsVerified(false); setMyPhone(''); setMyName(''); setCodeSent(false); setOtpInput(''); setPhoneInput('')
-    setShowLogoutConfirm(false); setShowContactMenu(false); setShowSelectContact(false); setOpenChat(null); setOpenSelf(false)
+    setShowLogoutConfirm(false); setShowContactMenu(false); setShowSelectContact(false); setOpenChat(null); setOpenSelf(false); setSelfMsgs([]); setMe({ type: 'none' })
     recaptchaReady.current = false; recaptchaRef.current = null; showToast('Logged out ✔')
   }
   // FIX ME DUPLICATE: If the number is your own, update your name, do not create a contact
@@ -539,7 +537,7 @@ export default function ChatPage() {
       {toast && <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, fontSize: 13, zIndex: 80 }}>{toast}</div>}
     </div>
   )
-    // ---------- SELF CHAT ----------
+      // ---------- SELF CHAT ----------
   if (openSelf) return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0e1230' }}>
@@ -598,18 +596,12 @@ export default function ChatPage() {
   // ---------- MAIN SCREEN ----------
   return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
-      {/* EVA Chat on right on top, NO droplet on top */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 16px 6px' }}>
         <div style={{ fontSize: 20, fontWeight: 900 }}>EVA <span style={{ color: '#ff2f6d' }}>Chat</span></div>
       </div>
-
-      {/* Search bar on top, always visible - NO All / Unread / Photo / Live */}
       <div style={{ padding: '0 16px 10px' }}>
         <input ref={searchInputRef} placeholder="Search" value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 20, padding: '12px 14px', color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
       </div>
-
-      {/* Top Chat / Check / Call pills REMOVED - bottom is now the only navigation */}
-
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 90px' }}>
         {tab === 'chat' && (
           <>
@@ -625,7 +617,6 @@ export default function ChatPage() {
                 <span style={{ color: '#aab', fontSize: 12 }}>{c.time}</span>
               </div>
             ))}
-            {/* "No chats yet. Tap + to add a contact." REMOVED - center stays empty */}
           </>
         )}
         {tab === 'check' && (
@@ -640,16 +631,12 @@ export default function ChatPage() {
         )}
         {tab === 'call' && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>No calls yet.<br />Tap a chat then tap 📞</div>}
       </div>
-
-      {/* BOTTOM NAV - STILL WORKS: Chat / Check / Call setTab, + opens Select Contact */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0e1230', display: 'flex', padding: '10px 16px calc(env(safe-area-inset-bottom) + 10px)', borderTop: '1px solid #1a1f4a' }}>
         <button onClick={() => setTab('chat')} style={{ flex: 1, background: 'none', border: 0, color: tab === 'chat' ? '#ff2f6d' : '#aab' }}>💬<br />Chat</button>
         <button onClick={() => setTab('check')} style={{ flex: 1, background: 'none', border: 0, color: tab === 'check' ? '#ff2f6d' : '#aab' }}>👁️<br />Check</button>
         <button onClick={() => setTab('call')} style={{ flex: 1, background: 'none', border: 0, color: tab === 'call' ? '#ff2f6d' : '#aab' }}>📞<br />Call</button>
         <button onClick={() => setShowSelectContact(true)} style={{ flex: 1, background: 'none', border: 0, color: '#ff2f6d', fontSize: 22, fontWeight: 900 }}>＋</button>
       </div>
-
-      {/* ---------- PROFILE FULL VIEW + WORKING + MENU ---------- */}
       {fullView && (
         <div style={{ position: 'fixed', inset: 0, background: '#0b0e24', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
@@ -664,7 +651,6 @@ export default function ChatPage() {
             <div style={{ color: '#aab', fontSize: 12, textAlign: 'center' }}>{fullView.type === 'live' ? 'Tap droplet to unmute / mute • Loops 7 secs' : fullView.type === 'photo' ? 'Photo profile' : 'No profile yet - tap + to set one'}</div>
             {fullView.type === 'live' && <div style={{ background: '#171c46', padding: '8px 14px', borderRadius: 20, fontSize: 12 }}>{fullMuted ? '🔇 Muted - tap to unmute' : '🔊 Sound on - tap to mute'}</div>}
           </div>
-          {/* FIX + BUTTON: This menu was missing before, now it works inside profile */}
           {showPlusMenu && (
             <div style={{ position: 'absolute', top: 60, right: 16, background: '#1a1f4a', borderRadius: 14, width: 220, overflow: 'hidden', zIndex: 60, boxShadow: '0 10px 30px rgba(0,0,0,.5)' }}>
               <button onClick={() => { setShowPlusMenu(false); galleryRef.current?.click() }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, color: '#fff', padding: 13 }}>🖼️ Upload from Gallery<br /><span style={{ color: '#aab', fontSize: 11 }}>Video must be 7 secs - you will trim it</span></button>
@@ -678,8 +664,6 @@ export default function ChatPage() {
           <input ref={photoRef} type="file" accept="image/*" hidden onChange={handlePhoto} />
         </div>
       )}
-
-      {/* TRIM / CUT - Select where 7 secs will start */}
       {overlay === 'trim' && trimUrl && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)', zIndex: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ fontWeight: 800, marginBottom: 10 }}>Trim - Choose where 7 secs start</div>
@@ -692,8 +676,6 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-
-      {/* LIVE STICKERS */}
       {overlay === 'stickers' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', zIndex: 80, display: 'flex', alignItems: 'flex-end' }}>
           <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
@@ -705,9 +687,7 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-
       {recording && <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', background: '#ff2f4d', color: '#fff', padding: '8px 14px', borderRadius: 20, fontSize: 13, zIndex: 90 }}>● Recording... {recordUrl ? '' : '7 secs'}</div>}
-
       {showLogoutConfirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 70, padding: 20 }}>
           <div style={{ background: '#12163a', width: '100%', maxWidth: 340, borderRadius: 16, padding: 20, textAlign: 'center' }}>
