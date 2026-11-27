@@ -36,7 +36,6 @@ const P = 'M50,0 C70,40 100,90 100,140 C100,180 80,210 50,210 C20,210 0,180 0,14
 const T = 'translate(5,10.5) scale(.9)'
 let uidCounter = 0
 
-// FIX: Convert file to DataURL so it stays after close / minimize / reload. Blob URL does not stay.
 const fileToDataURL = (f: File) => new Promise<string>((res, rej) => {
   const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f)
 })
@@ -85,7 +84,6 @@ function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onC
   )
 }
 
-// FIX KEYBOARD: ChatBar is OUTSIDE ChatPage now. Before it was inside, every letter closed the input and keyboard. Now the input stays open, you can type 100 words.
 function ChatBar({ value, onChange, onSend, isSelf, me, showEmoji, setShowEmoji, showAttach, setShowAttach, emojiCat, setEmojiCat, filteredEmojis, addEmoji, galleryRef, docRef, startRecord, toggleVoice, isRecordingVoice }: any) {
   return (
     <div style={{ background: '#0b0e24', padding: '8px 10px', paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
@@ -214,12 +212,14 @@ export default function ChatPage() {
       const evaOn = localStorage.getItem('eva-contacts-enabled'); if (evaOn !== null) setEvaContactsOn(evaOn === 'true')
     } catch {}
   }, [])
+  // NUMBER 3: When phone changes, always load ONLY that phone's data. If no data, clear to empty, do not keep old phone's data.
   useEffect(() => {
     if (!myPhone) return
     try {
+      const nm = localStorage.getItem(`eva-name-${myPhone}`); setMyName(nm || '')
       const c = localStorage.getItem(`eva-contacts-${myPhone}`); if (c) setContacts((JSON.parse(c) as Contact[]).filter(x => x.phone !== myPhone)); else setContacts([])
-      const cm = localStorage.getItem(`eva-chat-msgs-${myPhone}`); if (cm) setChatMsgs(JSON.parse(cm))
-      const ch = localStorage.getItem(`eva-chats-${myPhone}`); if (ch) setChats(JSON.parse(ch))
+      const cm = localStorage.getItem(`eva-chat-msgs-${myPhone}`); if (cm) setChatMsgs(JSON.parse(cm)); else setChatMsgs({})
+      const ch = localStorage.getItem(`eva-chats-${myPhone}`); if (ch) setChats(JSON.parse(ch)); else setChats([])
       const s = localStorage.getItem(`eva-self-msgs-${myPhone}`); if (s) setSelfMsgs(JSON.parse(s)); else setSelfMsgs([])
       const m = localStorage.getItem(`eva-me-droplet-${myPhone}`); if (m) setMe(JSON.parse(m)); else setMe({ type: 'none' })
     } catch {}
@@ -230,7 +230,6 @@ export default function ChatPage() {
   useEffect(() => { if (myPhone) { try { localStorage.setItem(`eva-chats-${myPhone}`, JSON.stringify(chats)) } catch {} } }, [chats, myPhone])
   useEffect(() => { if (!myPhone) return; try { localStorage.setItem(`eva-me-droplet-${myPhone}`, JSON.stringify(me)) } catch {} }, [me, myPhone])
   useEffect(() => { try { localStorage.setItem('eva-contacts-enabled', String(evaContactsOn)) } catch {} }, [evaContactsOn])
-  // FIX KEYBOARD: scroll only when new message comes, not when you are typing
   useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs])
 
   const sendCode = async () => {
@@ -269,14 +268,17 @@ export default function ChatPage() {
       else showToast('Wrong code')
     } finally { setVerifying(false) }
   }
+  // NUMBER 3: Full clear on logout. Screen becomes empty. Saved data stays in storage per number.
   const doLogout = async () => {
     try { await signOut(auth) } catch {}
     localStorage.removeItem('eva-my-phone'); localStorage.removeItem('eva-phone-verified')
     setIsVerified(false); setMyPhone(''); setMyName(''); setCodeSent(false); setOtpInput(''); setPhoneInput('')
-    setShowLogoutConfirm(false); setShowContactMenu(false); setShowSelectContact(false); setOpenChat(null); setOpenSelf(false); setSelfMsgs([]); setMe({ type: 'none' })
+    setShowLogoutConfirm(false); setShowContactMenu(false); setShowSelectContact(false); setOpenChat(null); setOpenSelf(false)
+    setSelfMsgs([]); setChats([]); setChatMsgs({}); setContacts([]); setMe({ type: 'none' })
+    setSelfInput(''); setChatInput(''); setSearchText(''); setContactSearch(''); setNewName(''); setNewPhone('')
+    setFullView(null); setOverlay(null); setShowPlusMenu(false); setTab('chat')
     recaptchaReady.current = false; recaptchaRef.current = null; showToast('Logged out ✔')
   }
-  // FIX ME DUPLICATE: If the number is your own, update your name, do not create a contact
   const saveNewContact = () => {
     if (!newName.trim()) return showToast('Enter name')
     if (newPhone.replace(/\D/g, '').length < 7) return showToast('Enter valid number')
@@ -291,7 +293,6 @@ export default function ChatPage() {
     setNewName(''); setNewPhone(''); setShowNewContact(false); showToast('Contact saved on EVA ✔')
   }
 
-  // FIX: Your own number never shows in the contacts list
   const visibleContacts = contacts.filter(c => !c.blocked && c.phone !== myPhone)
   const filteredContacts = visibleContacts.filter(c => c.name.toLowerCase().includes(contactSearch.toLowerCase()) || c.phone.includes(contactSearch))
   const visibleChats = chats.filter(c => c.name.toLowerCase().includes(searchText.toLowerCase()))
@@ -329,7 +330,6 @@ export default function ChatPage() {
     } catch { showToast('Mic not allowed') }
   }
 
-  // FIX PICTURE STAY: All uploads use DataURL, not blob URL
   const handlePhoto = async (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
     const url = await fileToDataURL(f)
@@ -340,7 +340,6 @@ export default function ChatPage() {
     const f = e.target.files?.[0]; if (!f) return
     const url = await fileToDataURL(f)
     if (f.type.startsWith('image/')) { setMe({ type: 'photo', src: url }); setShowPlusMenu(false); showToast('Photo set ✔'); e.target.value = ''; return }
-    // Video: get duration, then open trim so user selects where 7 secs will start
     const v = document.createElement('video'); v.preload = 'metadata'; v.src = url
     v.onloadedmetadata = () => {
       setTrimUrl(url); setTrimDur(v.duration); setTrimStart(0); setOverlay('trim'); setShowPlusMenu(false)
@@ -348,7 +347,6 @@ export default function ChatPage() {
     e.target.value = ''
   }
   const confirmTrim = () => {
-    // 7 secs loop: Droplet will always play from trimStart to trimStart+7
     setLive(trimUrl, trimStart); setOverlay(null); setTrimUrl('')
   }
   const startRecord = async () => {
@@ -367,7 +365,6 @@ export default function ChatPage() {
     } catch { showToast('Camera not allowed') }
   }
 
-  // ---------- LOGIN / SIGNUP SCREEN ----------
   if (!isVerified) return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 20, paddingTop: 60 }}>
       <div ref={recaptchaDivRef} id="recaptcha-container" />
@@ -402,7 +399,6 @@ export default function ChatPage() {
     </div>
   )
 
-  // ---------- SELECT CONTACT SCREEN ----------
   if (showSelectContact) return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px' }}>
@@ -533,7 +529,7 @@ export default function ChatPage() {
       {toast && <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, fontSize: 13, zIndex: 80 }}>{toast}</div>}
     </div>
   )
-      // ---------- SELF CHAT ----------
+
   if (openSelf) return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0e1230' }}>
@@ -560,7 +556,6 @@ export default function ChatPage() {
     </div>
   )
 
-  // ---------- OPEN CHAT ----------
   if (openChat) return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0e1230' }}>
@@ -589,7 +584,6 @@ export default function ChatPage() {
     </div>
   )
 
-  // ---------- MAIN SCREEN ----------
   return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 16px 6px' }}>
