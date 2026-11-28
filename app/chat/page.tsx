@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react"
 import { initializeApp, getApps, getApp } from "firebase/app"
 import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut, type ConfirmationResult } from "firebase/auth"
+import { getFirestore, collection, addDoc, query, where, or, orderBy, onSnapshot, serverTimestamp, updateDoc, doc } from "firebase/firestore"
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -13,10 +14,11 @@ const firebaseConfig = {
 }
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
 const auth = getAuth(app)
+const db = getFirestore(app)
 
 type Chat = { name: string; msg: string; time: string; ring: 'new' | 'seen' | 'none'; type: 'none' | 'photo' | 'live'; src?: string; start?: number; phone?: string }
 type Me = { type: 'none' | 'photo' | 'live'; src?: string; start?: number }
-type Msg = { text?: string; time: string; audioUrl?: string; kind?: 'text' | 'voice' }
+type Msg = { text?: string; time: string; audioUrl?: string; kind?: 'text' | 'voice'; status?: 'not_sent' | 'sent' | 'delivered' | 'read'; id?: string; sender?: string }
 type Contact = { name: string; phone: string; blocked?: boolean }
 
 const STICKERS = [{ name: 'Aki', src: 'stickers/aki.mp4', e: '😎' }, { name: 'Pawpaw', src: 'stickers/pawpaw.mp4', e: '🐶' }, { name: 'Fire', src: 'stickers/fire.mp4', e: '🔥' }]
@@ -39,6 +41,38 @@ let uidCounter = 0
 const fileToDataURL = (f: File) => new Promise<string>((res, rej) => {
   const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f)
 })
+
+const normalizePhoneGlobal = (raw: string, fallbackCode: string = '+234') => {
+  let p = (raw || "").replace(/[\s-]/g, "").trim()
+  if (!p) return ""
+  if (p.startsWith("+")) return p
+  if (p.startsWith("00")) return "+" + p.slice(2)
+  if (p.startsWith("0")) return fallbackCode + p.slice(1)
+  if (/^\d+$/.test(p) && p.length >= 7) {
+    if (fallbackCode === "+234" && p.length === 10) return "+234" + p
+    return fallbackCode + p
+  }
+  return p
+}
+
+function SmallDroplet({ size = 13 }: { size?: number }) {
+  return (
+    <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 2, opacity: 0.9 }} title="Not sent - no internet">
+      <svg width={size} height={size} viewBox="0 0 100 140" style={{ display: 'block' }}>
+        <path d="M50,0 C70,40 100,90 100,115 C100,135 80,140 50,140 C20,140 0,135 0,115 C0,90 30,40 50,0 Z" fill="#8a8fb0" opacity="0.95" />
+        <ellipse cx="38" cy="95" rx="10" ry="16" fill="#ffffff" opacity="0.35" transform="rotate(-15 38 95)" />
+      </svg>
+    </span>
+  )
+}
+
+function MsgStatus({ status }: { status?: string }) {
+  if (status === 'not_sent') return <span><SmallDroplet size={13} /></span>
+  if (status === 'sent') return <span style={{ color: '#aab' }}>✓</span>
+  if (status === 'delivered') return <span style={{ color: '#aab' }}>✓✓</span>
+  if (status === 'read') return <span style={{ color: '#4fc3f7' }}>✓✓</span>
+  return <span style={{ color: '#aab' }}>✓</span>
+}
 
 function Droplet({ o, w = 46, onClick, muted = true }: { o: any; w?: number; onClick?: (e: any) => void; muted?: boolean }) {
   const idRef = useRef(0)
@@ -132,7 +166,6 @@ export default function ChatPage() {
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0])
   const [showCountryPicker, setShowCountryPicker] = useState(false)
   const [countrySearch, setCountrySearch] = useState('')
-  // NUMBER 2 - WhatsApp way: Ask name AFTER code, with Skip
   const [showNameSetup, setShowNameSetup] = useState(false)
   const [signupName, setSignupName] = useState('')
   const [me, setMe] = useState<Me>({ type: 'none' })
@@ -187,15 +220,19 @@ export default function ChatPage() {
   const [qrTab, setQrTab] = useState<'my' | 'scan'>('my')
   const [scanInput, setScanInput] = useState('')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
-
+  const [showNewChatByNumber, setShowNewChatByNumber] = useState(false)
+  const [newChatNumber, setNewChatNumber] = useState('')
+  const [showSaveContactFromChat, setShowSaveContactFromChat] = useState(false)
+  const [saveNameInput, setSaveNameInput] = useState('')
+  
   const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(''), 2200) }
   const close = () => { setOverlay(null); setShowPlusMenu(false) }
   const setLive = (src: string, start: number) => { setMe({ type: 'live', src, start }); close(); setTab('chat'); setFullView(null); showToast('Live sticker set ✔') }
   const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   const formatPhone = (raw: string) => { let p = raw.replace(/\D/g, ''); if (p.startsWith('0')) p = p.slice(1); return selectedCountry.code + p }
   const filteredCountries = COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.code.includes(countrySearch))
+  const isSavedContact = (phone?: string) => { if (!phone) return false; return contacts.some(c => c.phone === phone) }
 
-  // NUMBER 4 - Always hide reCAPTCHA badge everywhere. Verification still works because RecaptchaVerifier is invisible.
   useEffect(() => {
     const id = 'eva-hide-captcha'
     if (!document.getElementById(id)) {
@@ -204,7 +241,6 @@ export default function ChatPage() {
       document.head.appendChild(el)
     }
   }, [])
-
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user && user.phoneNumber) { setMyPhone(user.phoneNumber); setIsVerified(true); localStorage.setItem('eva-my-phone', user.phoneNumber); localStorage.setItem('eva-phone-verified', 'true') }
@@ -216,14 +252,11 @@ export default function ChatPage() {
     if (!recaptchaDivRef.current) return
     try { recaptchaRef.current = new RecaptchaVerifier(auth, recaptchaDivRef.current, { size: 'invisible' }); recaptchaReady.current = true } catch {}
   }, [isVerified])
-
   useEffect(() => {
     const saved = localStorage.getItem('eva-my-phone')
     const verified = localStorage.getItem('eva-phone-verified')
     if (saved && verified === 'true') { setMyPhone(saved); setIsVerified(true); const nm = localStorage.getItem(`eva-name-${saved}`); if (nm) setMyName(nm) }
-    try {
-      const evaOn = localStorage.getItem('eva-contacts-enabled'); if (evaOn !== null) setEvaContactsOn(evaOn === 'true')
-    } catch {}
+    try { const evaOn = localStorage.getItem('eva-contacts-enabled'); if (evaOn !== null) setEvaContactsOn(evaOn === 'true') } catch {}
   }, [])
   useEffect(() => {
     if (!myPhone) return
@@ -243,6 +276,79 @@ export default function ChatPage() {
   useEffect(() => { if (!myPhone) return; try { localStorage.setItem(`eva-me-droplet-${myPhone}`, JSON.stringify(me)) } catch {} }, [me, myPhone])
   useEffect(() => { try { localStorage.setItem('eva-contacts-enabled', String(evaContactsOn)) } catch {} }, [evaContactsOn])
   useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs])
+
+  useEffect(() => {
+    if (!myPhone || !isVerified) return
+    const q = query(collection(db, "eva_messages"), or(where("sender", "==", myPhone), where("receiver", "==", myPhone)), orderBy("createdAt", "asc"))
+    const unsub = onSnapshot(q, (snap) => {
+      const byKey: Record<string, Msg[]> = {}
+      const chatMap: Record<string, Chat> = {}
+      snap.forEach((docSnap) => {
+        const d: any = docSnap.data()
+        const other = d.sender === myPhone ? d.receiver : d.sender
+        if (!other) return
+        const timeStr = d.createdAt?.toDate ? d.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : nowTime()
+        const msg: Msg = { text: d.text, time: timeStr, kind: 'text', status: d.status || 'sent', id: docSnap.id, sender: d.sender }
+        if (!byKey[other]) byKey[other] = []
+        byKey[other].push(msg)
+        const savedName = contacts.find(c => c.phone === other)?.name || other
+        chatMap[other] = { name: savedName, msg: d.text || "", time: timeStr, ring: 'none', type: 'none', phone: other }
+        if (d.receiver === myPhone && d.status === 'sent') {
+          updateDoc(doc(db, "eva_messages", docSnap.id), { status: 'delivered' }).catch(() => {})
+        }
+      })
+      setChatMsgs(prev => {
+        const merged = { ...prev }
+        Object.keys(byKey).forEach(k => {
+          const localPending = (prev[k] || []).filter(m => m.status === 'not_sent' && !m.id)
+          merged[k] = [...byKey[k], ...localPending]
+        })
+        return merged
+      })
+      setChats(prev => {
+        const prevMap: Record<string, Chat> = {}
+        prev.forEach(c => { if (c.phone) prevMap[c.phone] = c })
+        Object.keys(chatMap).forEach(k => {
+          const localName = contacts.find(c => c.phone === k)?.name
+          if (localName) chatMap[k].name = localName
+          if (prevMap[k]) chatMap[k] = { ...prevMap[k], ...chatMap[k], name: localName || prevMap[k].name }
+        })
+        const all = { ...prevMap, ...chatMap }
+        return Object.values(all)
+      })
+    })
+    return () => unsub()
+  }, [myPhone, isVerified, contacts])
+
+  useEffect(() => {
+    if (!openChat?.phone || !myPhone) return
+    const msgs = chatMsgs[openChat.phone] || []
+    msgs.forEach(m => {
+      if (m.sender && m.sender !== myPhone && m.status !== 'read' && m.id) {
+        updateDoc(doc(db, "eva_messages", m.id), { status: 'read' }).catch(() => {})
+      }
+    })
+  }, [openChat, chatMsgs])
+
+  useEffect(() => {
+    const retry = async () => {
+      if (!myPhone || !navigator.onLine) return
+      const allMsgs = Object.entries(chatMsgs)
+      for (const [other, list] of allMsgs) {
+        for (const m of list) {
+          if (m.status === 'not_sent' && m.sender === myPhone && m.text) {
+            try {
+              await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: other, text: m.text, status: 'sent', createdAt: serverTimestamp() })
+              setChatMsgs(prev => ({ ...prev, [other]: (prev[other] || []).filter(x => !(x.status === 'not_sent' && x.text === m.text)) }))
+            } catch {}
+          }
+        }
+      }
+    }
+    window.addEventListener('online', retry)
+    const t = setInterval(retry, 5000)
+    return () => { window.removeEventListener('online', retry); clearInterval(t) }
+  }, [chatMsgs, myPhone])
 
   const sendCode = async () => {
     const formatted = formatPhone(phoneInput)
@@ -275,20 +381,14 @@ export default function ChatPage() {
       const existingName = localStorage.getItem(`eva-name-${phone}`) || ''
       setMyName(existingName)
       setCodeSent(false); setOtpInput('')
-      // NUMBER 2: If Sign Up and no name saved yet, show name screen. If Log In, go straight in.
-      if (authMode === 'signup' && !existingName) {
-        setSignupName(''); setIsVerified(true); setShowNameSetup(true)
-      } else {
-        setIsVerified(true); setShowNameSetup(false)
-        showToast(authMode === 'signup' ? 'Account created ✔ Welcome to EVA Chat' : 'Number verified ✔ Welcome back to EVA Chat')
-      }
+      if (authMode === 'signup' && !existingName) { setSignupName(''); setIsVerified(true); setShowNameSetup(true) }
+      else { setIsVerified(true); setShowNameSetup(false); showToast(authMode === 'signup' ? 'Account created ✔ Welcome to EVA Chat' : 'Number verified ✔ Welcome back to EVA Chat') }
     } catch (e: any) {
       if (e.code === 'auth/invalid-verification-code') showToast('Wrong code, try again')
       else if (e.code === 'auth/code-expired') showToast('Code expired, resend code')
       else showToast('Wrong code')
     } finally { setVerifying(false) }
   }
-  // NUMBER 2: Save name with number
   const saveSignupName = () => {
     if (!signupName.trim()) return showToast('Enter your name or tap Skip for now')
     const name = signupName.trim()
@@ -311,37 +411,64 @@ export default function ChatPage() {
     if (!newName.trim()) return showToast('Enter name')
     if (newPhone.replace(/\D/g, '').length < 7) return showToast('Enter valid number')
     const phone = newPhone.startsWith('+') ? newPhone : formatPhone(newPhone)
-    if (phone === myPhone) {
-      setMyName(newName.trim()); localStorage.setItem(`eva-name-${myPhone}`, newName.trim())
-      setNewName(''); setNewPhone(''); setShowNewContact(false)
-      showToast('Your name updated to ' + newName.trim() + ' ✔'); return
-    }
+    if (phone === myPhone) { setMyName(newName.trim()); localStorage.setItem(`eva-name-${myPhone}`, newName.trim()); setNewName(''); setNewPhone(''); setShowNewContact(false); showToast('Your name updated to ' + newName.trim() + ' ✔'); return }
     if (contacts.some(c => c.phone === phone)) return showToast('Contact already exists')
-    setContacts(p => [...p, { name: newName.trim(), phone }])
-    setNewName(''); setNewPhone(''); setShowNewContact(false); showToast('Contact saved on EVA ✔')
+    setContacts(p => [...p, { name: newName.trim(), phone }]); setNewName(''); setNewPhone(''); setShowNewContact(false); showToast('Contact saved on EVA ✔')
   }
-
+  const startChatByNumber = () => {
+    const phone = normalizePhoneGlobal(newChatNumber, selectedCountry.code)
+    if (!phone || phone.replace(/\D/g, '').length < 7) return showToast('Enter valid number like 080... or +234...')
+    if (phone === myPhone) return showToast("That's your own number - use Message yourself")
+    const saved = contacts.find(c => c.phone === phone)
+    const display = saved ? saved.name : phone
+    const existing = chats.find(x => x.phone === phone)
+    if (existing) setOpenChat({ ...existing, name: display })
+    else { const n: Chat = { name: display, msg: 'Tap to chat', time: nowTime(), ring: 'none', type: 'none', phone }; setChats(p => [n, ...p]); setOpenChat(n) }
+    setNewChatNumber(''); setShowNewChatByNumber(false); setShowSelectContact(false); showToast('Chat opened - you can save this number later ✔')
+  }
+  const saveChatAsContact = () => {
+    if (!openChat?.phone) return
+    if (!saveNameInput.trim()) return showToast('Enter a name to save')
+    const phone = openChat.phone; const name = saveNameInput.trim()
+    if (contacts.some(c => c.phone === phone)) setContacts(p => p.map(c => c.phone === phone ? { ...c, name } : c))
+    else setContacts(p => [...p, { name, phone }])
+    setChats(p => p.map(c => c.phone === phone ? { ...c, name } : c))
+    setOpenChat(prev => prev ? { ...prev, name } : prev)
+    setSaveNameInput(''); setShowSaveContactFromChat(false); showToast('Saved as ' + name + ' ✔')
+  }
   const visibleContacts = contacts.filter(c => !c.blocked && c.phone !== myPhone)
   const filteredContacts = visibleContacts.filter(c => c.name.toLowerCase().includes(contactSearch.toLowerCase()) || c.phone.includes(contactSearch))
-  const visibleChats = chats.filter(c => c.name.toLowerCase().includes(searchText.toLowerCase()))
+  const visibleChats = chats.filter(c => c.name.toLowerCase().includes(searchText.toLowerCase()) || (c.phone || "").includes(searchText))
   const filteredEmojis = EMOJI_CATS[emojiCat].filter(e => !emojiSearch || e.includes(emojiSearch))
-
   const sendSelf = () => {
     if (!selfInput.trim()) return
-    setSelfMsgs(p => [...p, { text: selfInput.trim(), time: nowTime(), kind: 'text' }]); setSelfInput(''); setShowEmoji(false)
+    setSelfMsgs(p => [...p, { text: selfInput.trim(), time: nowTime(), kind: 'text', status: 'read', sender: myPhone }]); setSelfInput(''); setShowEmoji(false)
   }
-  const sendChat = () => {
+  const sendChat = async () => {
     if (!chatInput.trim() || !openChat) return
+    const text = chatInput.trim()
     const key = openChat.phone || openChat.name
-    setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text: chatInput.trim(), time: nowTime(), kind: 'text' }] }))
-    setChats(p => p.map(c => c.phone === openChat.phone ? { ...c, msg: chatInput.trim(), time: nowTime() } : c))
     setChatInput(''); setShowEmoji(false)
+    if (!navigator.onLine) {
+      setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'not_sent', sender: myPhone }] }))
+      setChats(p => p.map(c => c.phone === openChat.phone ? { ...c, msg: text, time: nowTime() } : c))
+      showToast('No internet - message saved, will send when network comes back 💧')
+      return
+    }
+    setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'sent', sender: myPhone }] }))
+    setChats(p => p.map(c => c.phone === openChat.phone ? { ...c, msg: text, time: nowTime() } : c))
+    try {
+      if (openChat.phone && openChat.phone !== myPhone) {
+        await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: openChat.phone, text, status: 'sent', createdAt: serverTimestamp() })
+      }
+    } catch (e: any) {
+      setChatMsgs(p => ({ ...p, [key]: (p[key] || []).map(m => m.text === text && m.status === 'sent' ? { ...m, status: 'not_sent' } : m) }))
+      showToast('No internet - message not sent 💧')
+    }
   }
   const addEmoji = (em: string, isSelf: boolean) => { if (isSelf) setSelfInput(p => p + em); else setChatInput(p => p + em) }
   const toggleVoice = async (isSelf: boolean) => {
-    if (isRecordingVoice) {
-      voiceRecorderRef.current?.stop(); setIsRecordingVoice(false); return
-    }
+    if (isRecordingVoice) { voiceRecorderRef.current?.stop(); setIsRecordingVoice(false); return }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const rec = new MediaRecorder(stream); voiceChunksRef.current = []
@@ -349,7 +476,7 @@ export default function ChatPage() {
       rec.onstop = async () => {
         const blob = new Blob(voiceChunksRef.current, { type: 'audio/webm' })
         const url = await fileToDataURL(new File([blob], 'voice.webm', { type: 'audio/webm' }))
-        const msg: Msg = { audioUrl: url, time: nowTime(), kind: 'voice' }
+        const msg: Msg = { audioUrl: url, time: nowTime(), kind: 'voice', status: 'read', sender: myPhone }
         if (isSelf) setSelfMsgs(p => [...p, msg])
         else if (openChat) { const key = openChat.phone || openChat.name; setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), msg] })) }
         stream.getTracks().forEach(t => t.stop())
@@ -357,26 +484,20 @@ export default function ChatPage() {
       rec.start(); voiceRecorderRef.current = rec; setIsRecordingVoice(true); showToast('Recording voice... tap mic again to stop')
     } catch { showToast('Mic not allowed') }
   }
-
   const handlePhoto = async (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
     const url = await fileToDataURL(f)
-    setMe({ type: 'photo', src: url }); setFullView(null); setShowPlusMenu(false); showToast('Photo set ✔')
-    e.target.value = ''
+    setMe({ type: 'photo', src: url }); setFullView(null); setShowPlusMenu(false); showToast('Photo set ✔'); e.target.value = ''
   }
   const handleGallery = async (e: any) => {
     const f = e.target.files?.[0]; if (!f) return
     const url = await fileToDataURL(f)
     if (f.type.startsWith('image/')) { setMe({ type: 'photo', src: url }); setShowPlusMenu(false); showToast('Photo set ✔'); e.target.value = ''; return }
     const v = document.createElement('video'); v.preload = 'metadata'; v.src = url
-    v.onloadedmetadata = () => {
-      setTrimUrl(url); setTrimDur(v.duration); setTrimStart(0); setOverlay('trim'); setShowPlusMenu(false)
-    }
+    v.onloadedmetadata = () => { setTrimUrl(url); setTrimDur(v.duration); setTrimStart(0); setOverlay('trim'); setShowPlusMenu(false) }
     e.target.value = ''
   }
-  const confirmTrim = () => {
-    setLive(trimUrl, trimStart); setOverlay(null); setTrimUrl('')
-  }
+  const confirmTrim = () => { setLive(trimUrl, trimStart); setOverlay(null); setTrimUrl('') }
   const startRecord = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
@@ -392,8 +513,7 @@ export default function ChatPage() {
       setTimeout(() => { if (rec.state !== 'inactive') rec.stop() }, 7000)
     } catch { showToast('Camera not allowed') }
   }
-
-  // NUMBER 2 - Name setup screen, after Sign Up code works
+  
   if (showNameSetup) return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 20, paddingTop: 50 }}>
       <div style={{ fontSize: 20, fontWeight: 900 }}>EVA <span style={{ color: '#ff2f6d' }}>Chat</span></div>
@@ -475,6 +595,14 @@ export default function ChatPage() {
           )}
         </div>
       </div>
+      <div style={{ margin: '0 16px 12px', background: '#171c46', borderRadius: 14, padding: 12 }}>
+        <div style={{ fontWeight: 800, fontSize: 14 }}>💬 New Chat by Number</div>
+        <div style={{ color: '#aab', fontSize: 12, marginTop: 4 }}>Type any EVA number. No need to save as contact first. You can save the name later.</div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <input placeholder="080... or +234..." value={newChatNumber} onChange={e => setNewChatNumber(e.target.value)} inputMode="tel" style={{ flex: 1, background: '#0b0e24', border: 0, borderRadius: 10, padding: '12px 12px', color: '#fff', outline: 'none' }} />
+          <button onClick={startChatByNumber} style={{ background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: 0, color: '#fff', borderRadius: 10, padding: '12px 16px', fontWeight: 800 }}>Chat →</button>
+        </div>
+      </div>
       <div style={{ padding: '0 16px 12px' }}>
         <input placeholder="Search EVA contacts" value={contactSearch} onChange={e => setContactSearch(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 22, padding: '12px 16px', color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
       </div>
@@ -499,11 +627,10 @@ export default function ChatPage() {
             <div><div style={{ fontWeight: 700 }}>{c.name}</div><div style={{ color: '#aab', fontSize: 12 }}>{c.phone}</div></div>
           </div>
         ))}
-        {filteredContacts.length === 0 && visibleContacts.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', padding: '30px 20px', fontSize: 14 }}>{contactSearch.trim() ? 'No match found' : 'No EVA contacts yet. Tap New contact to add one.'}</div>}
+        {filteredContacts.length === 0 && visibleContacts.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', padding: '30px 20px', fontSize: 14 }}>{contactSearch.trim() ? 'No match found' : 'No EVA contacts yet. Type a number above to chat, or tap New contact to save one.'}</div>}
         {filteredContacts.length === 0 && visibleContacts.length > 0 && contactSearch.trim() && <div style={{ textAlign: 'center', color: '#8a8fb0', padding: '30px 20px', fontSize: 14 }}>No match found</div>}
       </div>
-
-      {showNewContact && (
+            {showNewContact && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
           <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
             <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 12 }}>New contact</div>
@@ -560,7 +687,7 @@ export default function ChatPage() {
       {showHelp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }}>
           <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
-            <div style={{ fontWeight: 800 }}>Help</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8, lineHeight: 1.6 }}>1. Tap New contact to add person<br />2. Tap your droplet to set photo / live video<br />3. Live video must be 7 secs, it will loop<br />4. Message yourself to save notes</div>
+            <div style={{ fontWeight: 800 }}>Help</div><div style={{ color: '#aab', fontSize: 13, marginTop: 8, lineHeight: 1.6 }}>1. Type any number in New Chat by Number to chat without saving<br />2. Tap ☆ Save in chat to save name later<br />3. 💧 = no network / not sent, ✓ = sent, ✓✓ grey = delivered, ✓✓ blue = read<br />4. Tap your droplet to set photo / live video<br />5. Live video must be 7 secs, it will loop<br />6. Message yourself to save notes</div>
             <button onClick={() => setShowHelp(false)} style={{ width: '100%', marginTop: 12, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Close</button>
           </div>
         </div>
@@ -601,7 +728,7 @@ export default function ChatPage() {
           <div key={i} style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <div style={{ background: '#ff2f6d', borderRadius: '16px 16px 4px 16px', padding: '12px 16px', maxWidth: '85%', minWidth: 90 }}>
               {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 220 }} /> : <span style={{ fontSize: 17, lineHeight: 1.4 }}>{m.text}</span>}
-              <div style={{ fontSize: 11, color: '#fff', textAlign: 'right', marginTop: 6 }}>{m.time} <span style={{ color: '#b3e5fc' }}>✓✓</span></div>
+              <div style={{ fontSize: 11, color: '#fff', textAlign: 'right', marginTop: 6 }}>{m.time} <MsgStatus status={m.status} /></div>
             </div>
           </div>
         ))}
@@ -619,20 +746,33 @@ export default function ChatPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0e1230' }}>
         <button onClick={() => setOpenChat(null)} style={{ background: 'none', border: 0, color: '#fff', fontSize: 22 }}>←</button>
         <div onClick={() => setFullView(openChat)}><Droplet o={openChat} w={42} /></div>
-        <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>{openChat.name}</div><div style={{ fontSize: 12, color: '#aab' }}>{openChat.phone || 'EVA'}</div></div>
+        <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>{openChat.name}</div><div style={{ fontSize: 12, color: '#aab' }}>{openChat.phone || 'EVA'}{openChat.phone && !isSavedContact(openChat.phone) ? ' • Not saved' : ''}</div></div>
+        {openChat.phone && !isSavedContact(openChat.phone) && (
+          <button onClick={() => { setSaveNameInput(''); setShowSaveContactFromChat(true) }} style={{ background: '#ff2f6d', border: 0, color: '#fff', borderRadius: 20, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>☆ Save</button>
+        )}
         <button style={{ background: 'none', border: 0, fontSize: 22 }}>📞</button>
         <button style={{ background: 'none', border: 0, fontSize: 22 }}>📹</button>
       </div>
+      {showSaveContactFromChat && (
+        <div style={{ background: '#171c46', padding: 12, display: 'flex', gap: 8 }}>
+          <input placeholder="Save as what name? e.g. Mama" value={saveNameInput} onChange={e => setSaveNameInput(e.target.value)} style={{ flex: 1, background: '#0b0e24', border: 0, borderRadius: 10, padding: '10px 12px', color: '#fff', outline: 'none' }} />
+          <button onClick={saveChatAsContact} style={{ background: '#00c853', border: 0, color: '#fff', borderRadius: 10, padding: '10px 14px', fontWeight: 800 }}>Save ✔</button>
+          <button onClick={() => setShowSaveContactFromChat(false)} style={{ background: '#333', border: 0, color: '#fff', borderRadius: 10, padding: '10px 12px' }}>✕</button>
+        </div>
+      )}
       <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-        {(chatMsgs[openChat.phone || openChat.name] || []).length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>Say hi to {openChat.name} 👋</div>}
-        {(chatMsgs[openChat.phone || openChat.name] || []).map((m, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <div style={{ background: '#ff2f6d', borderRadius: '16px 16px 4px 16px', padding: '12px 16px', maxWidth: '85%', minWidth: 90 }}>
-              {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 220 }} /> : <span style={{ fontSize: 17, lineHeight: 1.4 }}>{m.text}</span>}
-              <div style={{ fontSize: 11, color: '#fff', textAlign: 'right', marginTop: 6 }}>{m.time} <span style={{ color: '#b3e5fc' }}>✓✓</span></div>
+        {(chatMsgs[openChat.phone || openChat.name] || []).length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>Say hi to {openChat.name} 👋<br /><span style={{ fontSize: 12 }}>{openChat.phone && !isSavedContact(openChat.phone) ? 'This number is not saved yet. Tap ☆ Save above to save the name later.' : ''}</span></div>}
+        {(chatMsgs[openChat.phone || openChat.name] || []).map((m, i) => {
+          const isMine = m.sender ? m.sender === myPhone : true
+          return (
+            <div key={m.id || i} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
+              <div style={{ background: isMine ? '#ff2f6d' : '#1a1f4a', borderRadius: isMine ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: '12px 16px', maxWidth: '85%', minWidth: 90 }}>
+                {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 220 }} /> : <span style={{ fontSize: 17, lineHeight: 1.4 }}>{m.text}</span>}
+                <div style={{ fontSize: 11, color: '#fff', textAlign: 'right', marginTop: 6 }}>{m.time} {isMine ? <MsgStatus status={m.status} /> : null}</div>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
         <div ref={msgsEndRef} />
       </div>
       <ChatBar value={chatInput} onChange={setChatInput} onSend={sendChat} isSelf={false} me={me} showEmoji={showEmoji} setShowEmoji={setShowEmoji} showAttach={showAttach} setShowAttach={setShowAttach} emojiCat={emojiCat} setEmojiCat={setEmojiCat} filteredEmojis={filteredEmojis} addEmoji={addEmoji} galleryRef={galleryRef} docRef={docRef} startRecord={startRecord} toggleVoice={toggleVoice} isRecordingVoice={isRecordingVoice} />
@@ -644,8 +784,9 @@ export default function ChatPage() {
 
   return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 16px 6px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 6px' }}>
         <div style={{ fontSize: 20, fontWeight: 900 }}>EVA <span style={{ color: '#ff2f6d' }}>Chat</span></div>
+        <div style={{ fontSize: 12, color: '#00c853' }}>● Online</div>
       </div>
       <div style={{ padding: '0 16px 10px' }}>
         <input ref={searchInputRef} placeholder="Search" value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 20, padding: '12px 14px', color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
@@ -661,7 +802,7 @@ export default function ChatPage() {
             {visibleChats.map(c => (
               <div key={c.phone || c.name} onClick={() => setOpenChat(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1f4a' }}>
                 <div onClick={e => { e.stopPropagation(); setFullView(c) }}><Droplet o={c} w={52} /></div>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800 }}>{c.name}</div><div style={{ color: '#aab', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><span style={{ color: '#4fc3f7' }}>✓✓ </span>{c.msg}</div></div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800 }}>{c.name}</div><div style={{ color: '#aab', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.msg}</div></div>
                 <span style={{ color: '#aab', fontSize: 12 }}>{c.time}</span>
               </div>
             ))}
