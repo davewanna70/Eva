@@ -18,7 +18,8 @@ const db = getFirestore(app)
 
 type Chat = { name: string; msg: string; time: string; ring: 'new' | 'seen' | 'none'; type: 'none' | 'photo' | 'live'; src?: string; start?: number; phone?: string }
 type Me = { type: 'none' | 'photo' | 'live'; src?: string; start?: number }
-type Msg = { text?: string; time: string; audioUrl?: string; kind?: 'text' | 'voice'; status?: 'not_sent' | 'sent' | 'delivered' | 'read'; id?: string; sender?: string }
+// FIXED ORDER: ts = real timestamp number to sort by. time is only for display.
+type Msg = { text?: string; time: string; audioUrl?: string; kind?: 'text' | 'voice'; status?: 'not_sent' | 'sent' | 'delivered' | 'read'; id?: string; sender?: string; ts?: number }
 type Contact = { name: string; phone: string; blocked?: boolean }
 
 const STICKERS = [{ name: 'Aki', src: 'stickers/aki.mp4', e: '😎' }, { name: 'Pawpaw', src: 'stickers/pawpaw.mp4', e: '🐶' }, { name: 'Fire', src: 'stickers/fire.mp4', e: '🔥' }]
@@ -61,6 +62,9 @@ const normPhone = (p: string) => {
   if (x.startsWith("234") && x.length === 13) x = "0" + x.slice(3)
   return x
 }
+
+// FIXED ORDER: sort helper - oldest at top, newest at bottom. Messages without ts keep their order.
+const sortByTs = (list: Msg[]) => [...list].sort((a, b) => (a.ts || 0) - (b.ts || 0))
 
 function SmallDroplet({ size = 13 }: { size?: number }) {
   return (
@@ -308,8 +312,10 @@ export default function ChatPage() {
         const d: any = docSnap.data()
         if (!d.sender || !d.receiver) return
         if (normPhone(d.sender) !== normPhone(myPhone) && normPhone(d.receiver) !== normPhone(myPhone)) return
+        // FIXED ORDER: get real timestamp, not just "09:22" text. Fallback to d.ts (for local) or 0.
+        const ts = d.createdAt?.toMillis ? d.createdAt.toMillis() : (d.createdAt?.toDate ? d.createdAt.toDate().getTime() : (d.ts || 0))
         const timeStr = d.createdAt?.toDate ? d.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : nowTime()
-        const msg: Msg = { text: d.text, time: timeStr, kind: 'text', status: d.status || 'sent', id: docSnap.id, sender: d.sender }
+        const msg: Msg = { text: d.text, time: timeStr, kind: 'text', status: d.status || 'sent', id: docSnap.id, sender: d.sender, ts }
         if (normPhone(d.sender) === normPhone(myPhone) && normPhone(d.receiver) === normPhone(myPhone)) {
           selfList.push(msg)
           return
@@ -325,12 +331,15 @@ export default function ChatPage() {
           updateDoc(doc(db, "eva_messages", docSnap.id), { status: 'delivered' }).catch(() => {})
         }
       })
-      if (selfList.length > 0) {
+      // FIXED ORDER: sort every chat by ts before saving. Oldest top, newest bottom.
+      Object.keys(byKey).forEach(k => { byKey[k] = sortByTs(byKey[k]) })
+      const sortedSelf = sortByTs(selfList)
+      if (sortedSelf.length > 0) {
         setSelfMsgs(prev => {
           const seen = new Set(prev.map(p => p.id))
-          const fresh = selfList.filter(m => m.id && !seen.has(m.id))
+          const fresh = sortedSelf.filter(m => m.id && !seen.has(m.id))
           if (fresh.length === 0) return prev
-          return [...prev, ...fresh]
+          return sortByTs([...prev, ...fresh])
         })
       }
       setChatMsgs(prev => {
@@ -338,7 +347,7 @@ export default function ChatPage() {
         Object.keys(prev).forEach(k => { merged[normPhone(k)] = prev[k] })
         Object.keys(byKey).forEach(k => {
           const localPending = (merged[k] || []).filter(m => m.status === 'not_sent' && !m.id)
-          merged[k] = [...byKey[k], ...localPending]
+          merged[k] = sortByTs([...byKey[k], ...localPending])
         })
         return merged
       })
@@ -379,7 +388,7 @@ export default function ChatPage() {
         for (const m of list) {
           if (m.status === 'not_sent' && m.sender === myPhone && m.text) {
             try {
-              await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: other, text: m.text, status: 'sent', createdAt: serverTimestamp() })
+              await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: other, text: m.text, status: 'sent', createdAt: serverTimestamp(), ts: Date.now() })
               setChatMsgs(prev => ({ ...prev, [other]: (prev[other] || []).filter(x => !(x.status === 'not_sent' && x.text === m.text)) }))
             } catch {}
           }
@@ -487,9 +496,11 @@ export default function ChatPage() {
     if (!selfInput.trim()) return
     if (!auth.currentUser) { showToast('Please login again - session expired'); setIsVerified(false); return }
     const text = selfInput.trim()
-    setSelfMsgs(p => [...p, { text, time: nowTime(), kind: 'text', status: 'read', sender: myPhone }]); setSelfInput(''); setShowEmoji(false)
+    // FIXED ORDER: give self message a real ts, so it sorts to the bottom as newest.
+    const ts = Date.now()
+    setSelfMsgs(p => [...p, { text, time: nowTime(), kind: 'text', status: 'read', sender: myPhone, ts }]); setSelfInput(''); setShowEmoji(false)
     try {
-      await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: myPhone, text, status: 'read', createdAt: serverTimestamp(), isSelf: true })
+      await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: myPhone, text, status: 'read', createdAt: serverTimestamp(), ts, isSelf: true })
     } catch {}
   }
   const sendChat = async () => {
@@ -498,18 +509,20 @@ export default function ChatPage() {
     if (!openChat.phone || !normPhone(openChat.phone)) { showToast('No number for this chat - start new chat by number'); return }
     const text = chatInput.trim()
     const key = normPhone(openChat.phone || openChat.name)
+    // FIXED ORDER: one ts for this send, used for local + Firebase, so both phones sort it the same.
+    const ts = Date.now()
     setChatInput(''); setShowEmoji(false)
     if (!navigator.onLine) {
-      setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'not_sent', sender: myPhone }] }))
+      setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'not_sent', sender: myPhone, ts }] }))
       setChats(p => p.map(c => c.phone && normPhone(c.phone) === normPhone(openChat.phone || '') ? { ...c, msg: text, time: nowTime() } : c))
       showToast('No internet - message saved, will send when network comes back 💧')
       return
     }
-    setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'sent', sender: myPhone }] }))
+    setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'sent', sender: myPhone, ts }] }))
     setChats(p => p.map(c => c.phone && normPhone(c.phone) === normPhone(openChat.phone || '') ? { ...c, msg: text, time: nowTime() } : c))
     try {
       if (openChat.phone && normPhone(openChat.phone) !== normPhone(myPhone)) {
-        await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: openChat.phone, text, status: 'sent', createdAt: serverTimestamp() })
+        await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: openChat.phone, text, status: 'sent', createdAt: serverTimestamp(), ts })
       }
     } catch (e: any) {
       setChatMsgs(p => ({ ...p, [key]: (p[key] || []).map(m => m.text === text && m.status === 'sent' ? { ...m, status: 'not_sent' } : m) }))
@@ -526,7 +539,7 @@ export default function ChatPage() {
       rec.onstop = async () => {
         const blob = new Blob(voiceChunksRef.current, { type: 'audio/webm' })
         const url = await fileToDataURL(new File([blob], 'voice.webm', { type: 'audio/webm' }))
-        const msg: Msg = { audioUrl: url, time: nowTime(), kind: 'voice', status: 'read', sender: myPhone }
+        const msg: Msg = { audioUrl: url, time: nowTime(), kind: 'voice', status: 'read', sender: myPhone, ts: Date.now() }
         if (isSelf) setSelfMsgs(p => [...p, msg])
         else if (openChat) { const key = normPhone(openChat.phone || openChat.name); setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), msg] })) }
         stream.getTracks().forEach(t => t.stop())
@@ -563,13 +576,12 @@ export default function ChatPage() {
       setTimeout(() => { if (rec.state !== 'inactive') rec.stop() }, 7000)
     } catch { showToast('Camera not allowed') }
   }
-    // PART 2 CLEAN FIXED - your original design, only 2 fixes inside
-  // FIX 1: group- chats use raw key, not normPhone. FIX 2: openChat no-phone warning.
-
+  // PART 2 - your original, only ORDER fix + group fix kept
   // FIXED: Find chat messages by normPhone key, not raw phone. Group chats bypass normPhone.
   const isGroupChat = (p?: string) => !!p && p.startsWith('group-')
   const openChatKey = openChat ? (isGroupChat(openChat.phone) ? (openChat.phone || '') : (Object.keys(chatMsgs).find(k => normPhone(k) === normPhone(openChat.phone || openChat.name)) || normPhone(openChat.phone || openChat.name))) : ''
-  const openChatMsgs = openChat ? (chatMsgs[openChatKey] || chatMsgs[normPhone(openChat.phone || '')] || []) : []
+  // FIXED ORDER: always sort open chat by ts - oldest top, newest bottom. Latest always at bottom.
+  const openChatMsgs = openChat ? sortByTs(chatMsgs[openChatKey] || chatMsgs[normPhone(openChat.phone || '')] || []) : []
   const openChatHasPhone = !!openChat?.phone && !isGroupChat(openChat.phone) && !!normPhone(openChat.phone)
 
   if (showNameSetup) return (
@@ -782,7 +794,7 @@ export default function ChatPage() {
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
         {selfMsgs.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>No messages yet.<br />Send yourself notes, photos, voice.</div>}
-        {selfMsgs.map((m, i) => (
+        {sortByTs(selfMsgs).map((m, i) => (
           <div key={m.id || i} style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <div style={{ background: '#ff2f6d', borderRadius: '16px 16px 4px 16px', padding: '12px 16px', maxWidth: '85%', minWidth: 90 }}>
               {m.kind === 'voice' && m.audioUrl ? <audio controls src={m.audioUrl} style={{ width: 220 }} /> : <span style={{ fontSize: 17, lineHeight: 1.4 }}>{m.text}</span>}
