@@ -55,7 +55,6 @@ const normalizePhoneGlobal = (raw: string, fallbackCode: string = '+234') => {
   return p
 }
 
-// Normalize for compare: 080... and +23480... are same person
 const normPhone = (p: string) => {
   if (!p) return ""
   let x = String(p).replace(/\D/g, "")
@@ -285,7 +284,7 @@ export default function ChatPage() {
   useEffect(() => { try { localStorage.setItem('eva-contacts-enabled', String(evaContactsOn)) } catch {} }, [evaContactsOn])
   useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [selfMsgs, chatMsgs])
 
-  // FIXED: Simple Firestore listener - no or / orderBy, no index needed. Normalizes 080 vs +234.
+  // FIXED: All keys are normPhone (080...). 080... and +23480... are the same key now.
   useEffect(() => {
     if (!myPhone || !isVerified) return
     const q = query(collection(db, "eva_messages"))
@@ -299,17 +298,17 @@ export default function ChatPage() {
         if (normPhone(d.sender) !== normPhone(myPhone) && normPhone(d.receiver) !== normPhone(myPhone)) return
         const timeStr = d.createdAt?.toDate ? d.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : nowTime()
         const msg: Msg = { text: d.text, time: timeStr, kind: 'text', status: d.status || 'sent', id: docSnap.id, sender: d.sender }
-        // Self message - sender == receiver == me
         if (normPhone(d.sender) === normPhone(myPhone) && normPhone(d.receiver) === normPhone(myPhone)) {
           selfList.push(msg)
           return
         }
         const other = normPhone(d.sender) === normPhone(myPhone) ? d.receiver : d.sender
         if (!other) return
-        if (!byKey[other]) byKey[other] = []
-        byKey[other].push(msg)
+        const otherKey = normPhone(other)
+        if (!byKey[otherKey]) byKey[otherKey] = []
+        byKey[otherKey].push(msg)
         const savedName = contacts.find(c => normPhone(c.phone) === normPhone(other))?.name || other
-        chatMap[other] = { name: savedName, msg: d.text || "", time: timeStr, ring: 'none', type: 'none', phone: other }
+        chatMap[otherKey] = { name: savedName, msg: d.text || "", time: timeStr, ring: 'none', type: 'none', phone: other }
         if (normPhone(d.receiver) === normPhone(myPhone) && d.status === 'sent') {
           updateDoc(doc(db, "eva_messages", docSnap.id), { status: 'delivered' }).catch(() => {})
         }
@@ -323,16 +322,18 @@ export default function ChatPage() {
         })
       }
       setChatMsgs(prev => {
-        const merged = { ...prev }
+        const merged: Record<string, Msg[]> = {}
+        // Re-key old local messages to normPhone too, so old chats don't get lost
+        Object.keys(prev).forEach(k => { merged[normPhone(k)] = prev[k] })
         Object.keys(byKey).forEach(k => {
-          const localPending = (prev[k] || []).filter(m => m.status === 'not_sent' && !m.id)
+          const localPending = (merged[k] || []).filter(m => m.status === 'not_sent' && !m.id)
           merged[k] = [...byKey[k], ...localPending]
         })
         return merged
       })
       setChats(prev => {
         const prevMap: Record<string, Chat> = {}
-        prev.forEach(c => { if (c.phone) prevMap[c.phone] = c })
+        prev.forEach(c => { if (c.phone) prevMap[normPhone(c.phone)] = c })
         Object.keys(chatMap).forEach(k => {
           const localName = contacts.find(c => normPhone(c.phone) === normPhone(k))?.name
           if (localName) chatMap[k].name = localName
@@ -350,7 +351,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!openChat?.phone || !myPhone) return
-    const msgs = chatMsgs[openChat.phone] || []
+    const msgs = chatMsgs[normPhone(openChat.phone)] || chatMsgs[openChat.phone] || []
     msgs.forEach(m => {
       if (m.sender && normPhone(m.sender) !== normPhone(myPhone) && m.status !== 'read' && m.id) {
         updateDoc(doc(db, "eva_messages", m.id), { status: 'read' }).catch(() => {})
@@ -430,7 +431,6 @@ export default function ChatPage() {
     setIsVerified(false); setMyPhone(''); setMyName(''); setCodeSent(false); setOtpInput(''); setPhoneInput('')
     setShowNameSetup(false); setSignupName('')
     setShowLogoutConfirm(false); setShowContactMenu(false); setShowSelectContact(false); setOpenChat(null); setOpenSelf(false)
-    // FIXED: Do NOT wipe selfMsgs - keep them, they are now in Firebase too
     setChats([]); setChatMsgs({}); setContacts([]); setMe({ type: 'none' })
     setSelfInput(''); setChatInput(''); setSearchText(''); setContactSearch(''); setNewName(''); setNewPhone('')
     setFullView(null); setOverlay(null); setShowPlusMenu(false); setTab('chat')
@@ -469,7 +469,6 @@ export default function ChatPage() {
   const filteredContacts = visibleContacts.filter(c => c.name.toLowerCase().includes(contactSearch.toLowerCase()) || c.phone.includes(contactSearch))
   const visibleChats = chats.filter(c => c.name.toLowerCase().includes(searchText.toLowerCase()) || (c.phone || "").includes(searchText))
   const filteredEmojis = EMOJI_CATS[emojiCat].filter(e => !emojiSearch || e.includes(emojiSearch))
-  // FIXED: Message Yourself now saves to Firebase too
   const sendSelf = async () => {
     if (!selfInput.trim()) return
     const text = selfInput.trim()
@@ -481,16 +480,16 @@ export default function ChatPage() {
   const sendChat = async () => {
     if (!chatInput.trim() || !openChat) return
     const text = chatInput.trim()
-    const key = openChat.phone || openChat.name
+    const key = normPhone(openChat.phone || openChat.name)
     setChatInput(''); setShowEmoji(false)
     if (!navigator.onLine) {
       setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'not_sent', sender: myPhone }] }))
-      setChats(p => p.map(c => c.phone === openChat.phone ? { ...c, msg: text, time: nowTime() } : c))
+      setChats(p => p.map(c => c.phone && normPhone(c.phone) === normPhone(openChat.phone || '') ? { ...c, msg: text, time: nowTime() } : c))
       showToast('No internet - message saved, will send when network comes back 💧')
       return
     }
     setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'sent', sender: myPhone }] }))
-    setChats(p => p.map(c => c.phone === openChat.phone ? { ...c, msg: text, time: nowTime() } : c))
+    setChats(p => p.map(c => c.phone && normPhone(c.phone) === normPhone(openChat.phone || '') ? { ...c, msg: text, time: nowTime() } : c))
     try {
       if (openChat.phone && normPhone(openChat.phone) !== normPhone(myPhone)) {
         await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: openChat.phone, text, status: 'sent', createdAt: serverTimestamp() })
@@ -512,7 +511,7 @@ export default function ChatPage() {
         const url = await fileToDataURL(new File([blob], 'voice.webm', { type: 'audio/webm' }))
         const msg: Msg = { audioUrl: url, time: nowTime(), kind: 'voice', status: 'read', sender: myPhone }
         if (isSelf) setSelfMsgs(p => [...p, msg])
-        else if (openChat) { const key = openChat.phone || openChat.name; setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), msg] })) }
+        else if (openChat) { const key = normPhone(openChat.phone || openChat.name); setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), msg] })) }
         stream.getTracks().forEach(t => t.stop())
       }
       rec.start(); voiceRecorderRef.current = rec; setIsRecordingVoice(true); showToast('Recording voice... tap mic again to stop')
@@ -548,6 +547,10 @@ export default function ChatPage() {
     } catch { showToast('Camera not allowed') }
   }
   
+  // FIXED: Find chat messages by normPhone key, not raw phone
+  const openChatKey = openChat ? (Object.keys(chatMsgs).find(k => normPhone(k) === normPhone(openChat.phone || openChat.name)) || normPhone(openChat.phone || openChat.name)) : ''
+  const openChatMsgs = openChat ? (chatMsgs[openChatKey] || chatMsgs[normPhone(openChat.phone || '')] || []) : []
+
   if (showNameSetup) return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 20, paddingTop: 50 }}>
       <div style={{ fontSize: 20, fontWeight: 900 }}>EVA <span style={{ color: '#ff2f6d' }}>Chat</span></div>
@@ -795,8 +798,8 @@ export default function ChatPage() {
         </div>
       )}
       <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-        {(chatMsgs[openChat.phone || openChat.name] || []).length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>Say hi to {openChat.name} 👋<br /><span style={{ fontSize: 12 }}>{openChat.phone && !isSavedContact(openChat.phone) ? 'This number is not saved yet. Tap ☆ Save above to save the name later.' : ''}</span></div>}
-        {(chatMsgs[openChat.phone || openChat.name] || []).map((m, i) => {
+        {openChatMsgs.length === 0 && <div style={{ textAlign: 'center', color: '#8a8fb0', marginTop: 40, fontSize: 13 }}>Say hi to {openChat.name} 👋<br /><span style={{ fontSize: 12 }}>{openChat.phone && !isSavedContact(openChat.phone) ? 'This number is not saved yet. Tap ☆ Save above to save the name later.' : ''}</span></div>}
+        {openChatMsgs.map((m, i) => {
           const isMine = m.sender ? normPhone(m.sender) === normPhone(myPhone) : true
           return (
             <div key={m.id || i} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
