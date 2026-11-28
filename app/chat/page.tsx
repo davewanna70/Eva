@@ -16,7 +16,8 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
 const auth = getAuth(app)
 const db = getFirestore(app)
 
-type Chat = { name: string; msg: string; time: string; ring: 'new' | 'seen' | 'none'; type: 'none' | 'photo' | 'live'; src?: string; start?: number; phone?: string }
+// FIXED PREVIEW: Chat now has ts, so outside list can know which message is newest.
+type Chat = { name: string; msg: string; time: string; ring: 'new' | 'seen' | 'none'; type: 'none' | 'photo' | 'live'; src?: string; start?: number; phone?: string; ts?: number }
 type Me = { type: 'none' | 'photo' | 'live'; src?: string; start?: number }
 // FIXED ORDER: ts = real timestamp number to sort by. time is only for display.
 type Msg = { text?: string; time: string; audioUrl?: string; kind?: 'text' | 'voice'; status?: 'not_sent' | 'sent' | 'delivered' | 'read'; id?: string; sender?: string; ts?: number }
@@ -326,7 +327,11 @@ export default function ChatPage() {
         if (!byKey[otherKey]) byKey[otherKey] = []
         byKey[otherKey].push(msg)
         const savedName = contacts.find(c => normPhone(c.phone) === normPhone(other))?.name || other
-        chatMap[otherKey] = { name: savedName, msg: d.text || "", time: timeStr, ring: 'none', type: 'none', phone: other }
+        // FIXED PREVIEW: only keep this message as preview if it is NEWER than the preview we already have.
+        // Before: every message overwrote the preview anyhow, so old 09:22 could win over new 10:52.
+        if (!chatMap[otherKey] || ts >= (chatMap[otherKey].ts || 0)) {
+          chatMap[otherKey] = { name: savedName, msg: d.text || "", time: timeStr, ring: 'none', type: 'none', phone: other, ts }
+        }
         if (normPhone(d.receiver) === normPhone(myPhone) && d.status === 'sent') {
           updateDoc(doc(db, "eva_messages", docSnap.id), { status: 'delivered' }).catch(() => {})
         }
@@ -357,7 +362,16 @@ export default function ChatPage() {
         Object.keys(chatMap).forEach(k => {
           const localName = contacts.find(c => normPhone(c.phone) === normPhone(k))?.name
           if (localName) chatMap[k].name = localName
-          if (prevMap[k]) chatMap[k] = { ...prevMap[k], ...chatMap[k], name: localName || prevMap[k].name }
+          if (prevMap[k]) {
+            // FIXED PREVIEW: keep whichever preview is newer by ts. Don't let old Firebase overwrite new local.
+            const prevTs = prevMap[k].ts || 0
+            const newTs = chatMap[k].ts || 0
+            if (prevTs > newTs) {
+              chatMap[k] = { ...chatMap[k], msg: prevMap[k].msg, time: prevMap[k].time, ts: prevTs, name: localName || prevMap[k].name }
+            } else {
+              chatMap[k] = { ...prevMap[k], ...chatMap[k], name: localName || prevMap[k].name }
+            }
+          }
         })
         const all = { ...prevMap, ...chatMap }
         return Object.values(all)
@@ -475,7 +489,7 @@ export default function ChatPage() {
     const display = saved ? saved.name : phone
     const existing = chats.find(x => x.phone && normPhone(x.phone) === normPhone(phone))
     if (existing) setOpenChat({ ...existing, name: display })
-    else { const n: Chat = { name: display, msg: 'Tap to chat', time: nowTime(), ring: 'none', type: 'none', phone }; setChats(p => [n, ...p]); setOpenChat(n) }
+    else { const n: Chat = { name: display, msg: 'Tap to chat', time: nowTime(), ring: 'none', type: 'none', phone, ts: Date.now() }; setChats(p => [n, ...p]); setOpenChat(n) }
     setNewChatNumber(''); setShowNewChatByNumber(false); setShowSelectContact(false); showToast('Chat opened - you can save this number later ✔')
   }
   const saveChatAsContact = () => {
@@ -514,12 +528,14 @@ export default function ChatPage() {
     setChatInput(''); setShowEmoji(false)
     if (!navigator.onLine) {
       setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'not_sent', sender: myPhone, ts }] }))
-      setChats(p => p.map(c => c.phone && normPhone(c.phone) === normPhone(openChat.phone || '') ? { ...c, msg: text, time: nowTime() } : c))
+      // FIXED PREVIEW: outside list also saves ts, so it knows this is the newest.
+      setChats(p => p.map(c => c.phone && normPhone(c.phone) === normPhone(openChat.phone || '') ? { ...c, msg: text, time: nowTime(), ts } : c))
       showToast('No internet - message saved, will send when network comes back 💧')
       return
     }
     setChatMsgs(p => ({ ...p, [key]: [...(p[key] || []), { text, time: nowTime(), kind: 'text', status: 'sent', sender: myPhone, ts }] }))
-    setChats(p => p.map(c => c.phone && normPhone(c.phone) === normPhone(openChat.phone || '') ? { ...c, msg: text, time: nowTime() } : c))
+    // FIXED PREVIEW: outside list also saves ts, so it knows this is the newest.
+    setChats(p => p.map(c => c.phone && normPhone(c.phone) === normPhone(openChat.phone || '') ? { ...c, msg: text, time: nowTime(), ts } : c))
     try {
       if (openChat.phone && normPhone(openChat.phone) !== normPhone(myPhone)) {
         await addDoc(collection(db, "eva_messages"), { sender: myPhone, receiver: openChat.phone, text, status: 'sent', createdAt: serverTimestamp(), ts })
@@ -576,7 +592,7 @@ export default function ChatPage() {
       setTimeout(() => { if (rec.state !== 'inactive') rec.stop() }, 7000)
     } catch { showToast('Camera not allowed') }
   }
-  // PART 2 - your original, only ORDER fix + group fix kept
+  // PART 2 - your original, only ORDER + PREVIEW fix kept
   // FIXED: Find chat messages by normPhone key, not raw phone. Group chats bypass normPhone.
   const isGroupChat = (p?: string) => !!p && p.startsWith('group-')
   const openChatKey = openChat ? (isGroupChat(openChat.phone) ? (openChat.phone || '') : (Object.keys(chatMsgs).find(k => normPhone(k) === normPhone(openChat.phone || openChat.name)) || normPhone(openChat.phone || openChat.name))) : ''
@@ -690,7 +706,7 @@ export default function ChatPage() {
           <div key={c.phone} onClick={() => {
             const existing = chats.find(x => x.phone && normPhone(x.phone) === normPhone(c.phone))
             if (existing) setOpenChat(existing)
-            else { const n: Chat = { name: c.name, msg: 'Tap to chat', time: nowTime(), ring: 'none', type: 'none', phone: c.phone }; setChats(p => [n, ...p]); setOpenChat(n) }
+            else { const n: Chat = { name: c.name, msg: 'Tap to chat', time: nowTime(), ring: 'none', type: 'none', phone: c.phone, ts: Date.now() }; setChats(p => [n, ...p]); setOpenChat(n) }
             setShowSelectContact(false)
           }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1f4a' }}>
             <Droplet o={{ type: 'none', ring: 'none' }} w={48} />
@@ -716,7 +732,7 @@ export default function ChatPage() {
           <div style={{ background: '#12163a', width: '100%', borderRadius: '20px 20px 0 0', padding: 16 }}>
             <div style={{ fontWeight: 800, marginBottom: 12 }}>New group</div>
             <input placeholder="Group name" value={groupName} onChange={e => setGroupName(e.target.value)} style={{ width: '100%', background: '#171c46', border: 0, borderRadius: 12, padding: 12, color: '#fff', outline: 'none', boxSizing: 'border-box' }} />
-            <button onClick={() => { if (!groupName.trim()) return showToast('Enter group name'); const g: Chat = { name: groupName.trim(), msg: 'Group created', time: nowTime(), ring: 'none', type: 'none', phone: 'group-' + Date.now() }; setChats(p => [g, ...p]); setGroupName(''); setShowGroup(false); setShowSelectContact(false); setOpenChat(g) }} style={{ width: '100%', marginTop: 12, padding: 14, borderRadius: 12, border: 0, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', color: '#fff', fontWeight: 800 }}>Create group</button>
+            <button onClick={() => { if (!groupName.trim()) return showToast('Enter group name'); const g: Chat = { name: groupName.trim(), msg: 'Group created', time: nowTime(), ring: 'none', type: 'none', phone: 'group-' + Date.now(), ts: Date.now() }; setChats(p => [g, ...p]); setGroupName(''); setShowGroup(false); setShowSelectContact(false); setOpenChat(g) }} style={{ width: '100%', marginTop: 12, padding: 14, borderRadius: 12, border: 0, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', color: '#fff', fontWeight: 800 }}>Create group</button>
             <button onClick={() => setShowGroup(false)} style={{ width: '100%', marginTop: 8, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
           </div>
         </div>
