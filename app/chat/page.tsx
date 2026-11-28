@@ -132,6 +132,9 @@ export default function ChatPage() {
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0])
   const [showCountryPicker, setShowCountryPicker] = useState(false)
   const [countrySearch, setCountrySearch] = useState('')
+  // NUMBER 2 - WhatsApp way: Ask name AFTER code, with Skip
+  const [showNameSetup, setShowNameSetup] = useState(false)
+  const [signupName, setSignupName] = useState('')
   const [me, setMe] = useState<Me>({ type: 'none' })
   const [chats, setChats] = useState<Chat[]>([])
   const [tab, setTab] = useState<'chat' | 'check' | 'call'>('chat')
@@ -192,7 +195,7 @@ export default function ChatPage() {
   const formatPhone = (raw: string) => { let p = raw.replace(/\D/g, ''); if (p.startsWith('0')) p = p.slice(1); return selectedCountry.code + p }
   const filteredCountries = COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.code.includes(countrySearch))
 
-  // NUMBER 4 - UPDATED: Always hide reCAPTCHA badge everywhere. Verification still works because RecaptchaVerifier is invisible.
+  // NUMBER 4 - Always hide reCAPTCHA badge everywhere. Verification still works because RecaptchaVerifier is invisible.
   useEffect(() => {
     const id = 'eva-hide-captcha'
     if (!document.getElementById(id)) {
@@ -268,19 +271,36 @@ export default function ChatPage() {
       const result = await confirmationRef.current.confirm(otpInput.trim())
       const phone = result.user.phoneNumber || myPhone
       localStorage.setItem('eva-my-phone', phone); localStorage.setItem('eva-phone-verified', 'true'); localStorage.setItem('eva-user-id', result.user.uid)
-      setMyPhone(phone); setMyName(localStorage.getItem(`eva-name-${phone}`) || '')
-      setIsVerified(true); setCodeSent(false); setOtpInput('')
-      showToast(authMode === 'signup' ? 'Account created ✔ Welcome to EVA Chat' : 'Number verified ✔ Welcome back to EVA Chat')
+      setMyPhone(phone)
+      const existingName = localStorage.getItem(`eva-name-${phone}`) || ''
+      setMyName(existingName)
+      setCodeSent(false); setOtpInput('')
+      // NUMBER 2: If Sign Up and no name saved yet, show name screen. If Log In, go straight in.
+      if (authMode === 'signup' && !existingName) {
+        setSignupName(''); setIsVerified(true); setShowNameSetup(true)
+      } else {
+        setIsVerified(true); setShowNameSetup(false)
+        showToast(authMode === 'signup' ? 'Account created ✔ Welcome to EVA Chat' : 'Number verified ✔ Welcome back to EVA Chat')
+      }
     } catch (e: any) {
       if (e.code === 'auth/invalid-verification-code') showToast('Wrong code, try again')
       else if (e.code === 'auth/code-expired') showToast('Code expired, resend code')
       else showToast('Wrong code')
     } finally { setVerifying(false) }
   }
+  // NUMBER 2: Save name with number
+  const saveSignupName = () => {
+    if (!signupName.trim()) return showToast('Enter your name or tap Skip for now')
+    const name = signupName.trim()
+    localStorage.setItem(`eva-name-${myPhone}`, name); setMyName(name)
+    setShowNameSetup(false); setSignupName(''); showToast('Welcome to EVA Chat, ' + name + ' ✔')
+  }
+  const skipSignupName = () => { setShowNameSetup(false); setSignupName(''); showToast('Welcome to EVA Chat ✔') }
   const doLogout = async () => {
     try { await signOut(auth) } catch {}
     localStorage.removeItem('eva-my-phone'); localStorage.removeItem('eva-phone-verified')
     setIsVerified(false); setMyPhone(''); setMyName(''); setCodeSent(false); setOtpInput(''); setPhoneInput('')
+    setShowNameSetup(false); setSignupName('')
     setShowLogoutConfirm(false); setShowContactMenu(false); setShowSelectContact(false); setOpenChat(null); setOpenSelf(false)
     setSelfMsgs([]); setChats([]); setChatMsgs({}); setContacts([]); setMe({ type: 'none' })
     setSelfInput(''); setChatInput(''); setSearchText(''); setContactSearch(''); setNewName(''); setNewPhone('')
@@ -372,6 +392,36 @@ export default function ChatPage() {
       setTimeout(() => { if (rec.state !== 'inactive') rec.stop() }, 7000)
     } catch { showToast('Camera not allowed') }
   }
+
+  // NUMBER 2 - Name setup screen, after Sign Up code works
+  if (showNameSetup) return (
+    <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 20, paddingTop: 50 }}>
+      <div style={{ fontSize: 20, fontWeight: 900 }}>EVA <span style={{ color: '#ff2f6d' }}>Chat</span></div>
+      <div style={{ position: 'relative', marginTop: 36 }}>
+        <Droplet o={{ ...me, ring: 'none' }} w={150} />
+        <button onClick={() => galleryRef.current?.click()} style={{ position: 'absolute', right: -6, bottom: 18, width: 46, height: 46, borderRadius: '50%', background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', border: '3px solid #0b0e24', color: '#fff', fontSize: 20 }}>📷</button>
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 900, marginTop: 28, textAlign: 'center' }}>What's your name?</div>
+      <input placeholder="Your name" value={signupName} onChange={e => setSignupName(e.target.value)} autoComplete="name" style={{ width: '100%', maxWidth: 380, background: '#171c46', border: 0, borderRadius: 14, padding: 14, color: '#fff', outline: 'none', fontSize: 16, marginTop: 26, boxSizing: 'border-box' }} />
+      <button onClick={saveSignupName} style={{ width: '100%', maxWidth: 380, marginTop: 14, padding: 14, borderRadius: 14, border: 0, background: 'linear-gradient(90deg,#ff2f6d,#8a2be2)', color: '#fff', fontWeight: 800, fontSize: 16 }}>Continue</button>
+      <button onClick={skipSignupName} style={{ background: 'transparent', border: 0, color: '#aab', marginTop: 14, fontSize: 14, textDecoration: 'underline' }}>Skip for now</button>
+      <input ref={galleryRef} type="file" accept="image/*,video/*" hidden onChange={handleGallery} />
+      <input ref={photoRef} type="file" accept="image/*" hidden onChange={handlePhoto} />
+      {toast && <div style={{ position: 'fixed', bottom: 20, background: '#fff', color: '#000', padding: '10px 16px', borderRadius: 20, fontSize: 13 }}>{toast}</div>}
+      {overlay === 'trim' && trimUrl && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)', zIndex: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ fontWeight: 800, marginBottom: 10 }}>Trim - Choose where 7 secs start</div>
+          <video src={trimUrl} autoPlay muted loop playsInline onTimeUpdate={e => { const v = e.currentTarget; if (v.currentTime >= trimStart + 7) v.currentTime = trimStart }} style={{ width: '100%', maxWidth: 320, borderRadius: 16, background: '#000' }} />
+          <div style={{ color: '#aab', fontSize: 12, marginTop: 10 }}>Video length: {trimDur.toFixed(1)}s • Showing: {trimStart.toFixed(1)}s to {(Math.min(trimStart + 7, trimDur)).toFixed(1)}s • Loops</div>
+          <input type="range" min={0} max={Math.max(0, trimDur - 7)} step={0.1} value={trimStart} onChange={e => setTrimStart(Number(e.target.value))} style={{ width: '100%', maxWidth: 320, marginTop: 14 }} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, width: '100%', maxWidth: 320 }}>
+            <button onClick={confirmTrim} style={{ flex: 1, padding: 12, borderRadius: 12, border: 0, background: '#ff2f6d', color: '#fff', fontWeight: 800 }}>Use this 7 secs ✔</button>
+            <button onClick={() => { setOverlay(null); setTrimUrl('') }} style={{ flex: 1, padding: 12, borderRadius: 12, border: 0, background: '#333', color: '#fff' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 
   if (!isVerified) return (
     <div style={{ minHeight: '100dvh', background: '#0b0e24', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 20, paddingTop: 60 }}>
